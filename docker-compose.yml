@@ -31,30 +31,30 @@ services:
     environment:
       DATABASE_URL: postgresql://cherri:cherri_secret@postgres:5432/cherri_hosting
       PORT: 4000
-      NODE_ENV: development
+      NODE_ENV: production
+      ALLOWED_ORIGIN: http://localhost:8080
     ports:
       - '4000:4000'
-    volumes:
-      - ./server:/app
-      - /app/node_modules
-    command: npm run dev
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:4000/health || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   client:
     build:
       context: ./client
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://localhost:4000
     container_name: cherri_client
     restart: unless-stopped
     depends_on:
-      - server
-    environment:
-      VITE_API_URL: http://localhost:4000
+      server:
+        condition: service_healthy
     ports:
-      - '5173:5173'
-    volumes:
-      - ./client:/app
-      - /app/node_modules
-    command: npm run dev -- --host
+      - '8080:80'
 
 volumes:
   postgres_data:
