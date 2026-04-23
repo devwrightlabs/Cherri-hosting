@@ -57,7 +57,7 @@ cd server && npm install && npx prisma migrate dev && npm run dev
 cd client && npm install && npm run dev
 ```
 
-The frontend will be available at <http://localhost:5173> and the API at <http://localhost:4000>.
+The frontend will be available at http://localhost:5173 and the API at http://localhost:4000.
 
 ### Docker (Production)
 

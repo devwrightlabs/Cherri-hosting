@@ -47,6 +47,10 @@ services:
       context: ./client
       dockerfile: Dockerfile
       args:
+        # VITE_API_URL is baked into the browser bundle at build time.
+        # It must be the URL the *browser* uses to reach the API server.
+        # For a single-host deploy this is http://localhost:4000.
+        # Override with the public API hostname when deploying to a server.
         VITE_API_URL: http://localhost:4000
     container_name: cherri_client
     restart: unless-stopped
