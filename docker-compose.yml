@@ -1,0 +1,60 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cherri_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cherri
+      POSTGRES_PASSWORD: cherri_secret
+      POSTGRES_DB: cherri_hosting
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U cherri -d cherri_hosting']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: cherri_server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://cherri:cherri_secret@postgres:5432/cherri_hosting
+      PORT: 4000
+      NODE_ENV: development
+    ports:
+      - '4000:4000'
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+    command: npm run dev
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: cherri_client
+    restart: unless-stopped
+    depends_on:
+      - server
+    environment:
+      VITE_API_URL: http://localhost:4000
+    ports:
+      - '5173:5173'
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    command: npm run dev -- --host
+
+volumes:
+  postgres_data:
