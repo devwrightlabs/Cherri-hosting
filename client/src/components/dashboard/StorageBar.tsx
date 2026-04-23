@@ -1,5 +1,3 @@
-
-
 interface StorageBarProps {
   used: number;
   limit: number;

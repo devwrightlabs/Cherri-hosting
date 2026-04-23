@@ -34,7 +34,8 @@ deploymentsRouter.post(
     }
 
     const { projectId } = parsed.data;
-    const files = req.files as Express.Multer.File[];
+    const rawFiles = req.files;
+    const files: Express.Multer.File[] = Array.isArray(rawFiles) ? rawFiles : [];
 
     if (!files || files.length === 0) {
       res.status(400).json({ error: 'No files uploaded' });
