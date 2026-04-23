@@ -8,13 +8,15 @@ import {
   verifyPayment,
 } from '../services/piPaymentService';
 import { logger } from '../utils/logger';
+import {
+  FREE_STORAGE_LIMIT_BYTES,
+  PREMIUM_PRICE_PI,
+  PREMIUM_STORAGE_LIMIT_BYTES,
+} from '../utils/constants';
 
 export const subscriptionsRouter = Router();
 
 subscriptionsRouter.use(piAuthMiddleware);
-
-const PREMIUM_PRICE_PI = 10;
-const PREMIUM_STORAGE_LIMIT = 10 * 1024 * 1024 * 1024; // 10 GB
 
 /**
  * GET /api/subscriptions/current
@@ -121,7 +123,7 @@ subscriptionsRouter.post('/payments/complete', async (req: AuthenticatedRequest,
       where: { id: req.user!.id },
       data: {
         tier: 'PREMIUM',
-        storageLimit: BigInt(PREMIUM_STORAGE_LIMIT),
+        storageLimit: BigInt(PREMIUM_STORAGE_LIMIT_BYTES),
       },
     });
 
@@ -148,7 +150,7 @@ subscriptionsRouter.post('/cancel', async (req: AuthenticatedRequest, res: Respo
       where: { id: req.user!.id },
       data: {
         tier: 'FREE',
-        storageLimit: BigInt(500 * 1024 * 1024),
+        storageLimit: BigInt(FREE_STORAGE_LIMIT_BYTES),
       },
     });
 

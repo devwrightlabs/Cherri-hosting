@@ -19,6 +19,8 @@ const PiSDKContext = createContext<PiSDKContextValue | null>(null);
 
 const MAX_RETRIES = 5;
 const TIMEOUT_MS = 10_000;
+const BASE_RETRY_DELAY_MS = 1_000;
+const MAX_RETRY_DELAY_MS = 30_000;
 
 function loadPiSDKScript(): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -61,7 +63,7 @@ async function initWithRetry(attempt = 0): Promise<void> {
     });
   } catch (err) {
     if (attempt < MAX_RETRIES) {
-      const delay = Math.min(1_000 * Math.pow(2, attempt), 30_000);
+      const delay = Math.min(BASE_RETRY_DELAY_MS * Math.pow(2, attempt), MAX_RETRY_DELAY_MS);
       await new Promise((r) => setTimeout(r, delay));
       return initWithRetry(attempt + 1);
     }

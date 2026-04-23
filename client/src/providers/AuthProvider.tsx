@@ -25,7 +25,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
   const [isLoading, setIsLoading] = useState(false);
 
-  // Re-hydrate user on mount if we have a stored token
+  // Re-hydrate user on mount using the token that was stored before this render.
+  // We intentionally run this only once on mount; the token value at mount time
+  // is captured via the lazy initialiser of useState above, so the closure is stable.
   useEffect(() => {
     if (!token) return;
     setIsLoading(true);
@@ -37,7 +39,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setToken(null);
       })
       .finally(() => setIsLoading(false));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const signIn = useCallback(async () => {
     if (!window.Pi) throw new Error('Pi SDK not ready');

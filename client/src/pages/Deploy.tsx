@@ -40,19 +40,19 @@ export default function Deploy() {
   const [liveDeployment, setLiveDeployment] = useState<Deployment | null>(null);
   const [error, setError] = useState('');
 
-  // Load projects for the selector
+  // Load projects for the selector (run once on mount; selectedProjectId is only
+  // read to skip auto-selection when a ?projectId= param was already provided)
   useEffect(() => {
     projectsApi
       .list()
       .then((res) => {
         const p = (res.data as { projects: Project[] }).projects;
         setProjects(p);
-        if (!selectedProjectId && p.length > 0) {
-          setSelectedProjectId(p[0].id);
-        }
+        setSelectedProjectId((prev) => (prev || (p.length > 0 ? p[0].id : '')));
       })
       .catch(console.error);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Poll deployment status
   useEffect(() => {

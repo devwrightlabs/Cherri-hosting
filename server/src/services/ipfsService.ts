@@ -1,6 +1,7 @@
 import axios from 'axios';
 import FormData from 'form-data';
 import { logger } from '../utils/logger';
+import { IPFS_CID_VERSION } from '../utils/constants';
 
 const PINATA_BASE = 'https://api.pinata.cloud';
 
@@ -38,7 +39,7 @@ export async function pinFileToIPFS(
   const metadata = JSON.stringify({ name: fileName });
   form.append('pinataMetadata', metadata);
 
-  const options = JSON.stringify({ cidVersion: 1 });
+  const options = JSON.stringify({ cidVersion: IPFS_CID_VERSION });
   form.append('pinataOptions', options);
 
   const response = await axios.post<{ IpfsHash: string; PinSize: number }>(
@@ -82,7 +83,7 @@ export async function pinDirectoryToIPFS(
   const metadata = JSON.stringify({ name: dirName });
   form.append('pinataMetadata', metadata);
 
-  const options = JSON.stringify({ cidVersion: 1, wrapWithDirectory: true });
+  const options = JSON.stringify({ cidVersion: IPFS_CID_VERSION, wrapWithDirectory: true });
   form.append('pinataOptions', options);
 
   const response = await axios.post<{ IpfsHash: string; PinSize: number }>(
