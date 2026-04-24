@@ -62,7 +62,7 @@ model Subscription {
   /// 'FREE' or 'PREMIUM'
   tier        String
   piTxId      String?
-  amount      Float
+  amount      Decimal  @db.Decimal(18, 8)
   currency    String
   /// 'active' or 'cancelled'
   status      String
