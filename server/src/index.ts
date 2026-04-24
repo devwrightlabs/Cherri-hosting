@@ -6,6 +6,7 @@ import { rateLimit } from 'express-rate-limit';
 import { authRouter } from './routes/auth';
 import { projectsRouter } from './routes/projects';
 import { deploymentsRouter } from './routes/deployments';
+import { deployRouter } from './routes/deploy';
 import { subscriptionsRouter } from './routes/subscriptions';
 import { logger } from './utils/logger';
 
@@ -44,6 +45,7 @@ app.get('/health', (_req, res) => {
 app.use('/api/auth', authRouter);
 app.use('/api/projects', projectsRouter);
 app.use('/api/deployments', deploymentsRouter);
+app.use('/api/deploy', deployRouter);
 app.use('/api/subscriptions', subscriptionsRouter);
 
 // 404 handler
