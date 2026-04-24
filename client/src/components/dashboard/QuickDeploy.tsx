@@ -1,10 +1,11 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import DropZone from '../deploy/DropZone';
 import Button from '../ui/Button';
 import Badge from '../ui/Badge';
+import ProgressBar from '../ui/ProgressBar';
 import Spinner from '../ui/Spinner';
-import { deploymentsApi } from '../../lib/api';
+import { deployFiles, getDeployment, extractDeployError, DeployError } from '../../api/deployApi';
 import { Deployment, DeploymentStatus, Project } from '../../types';
 
 interface QuickDeployProps {
@@ -35,10 +36,11 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
     projects.length > 0 ? projects[0].id : '',
   );
   const [isDeploying, setIsDeploying] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [deploymentId, setDeploymentId] = useState('');
   const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus | null>(null);
   const [liveDeployment, setLiveDeployment] = useState<Deployment | null>(null);
-  const [error, setError] = useState('');
+  const [deployError, setDeployError] = useState<DeployError | null>(null);
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Clear polling timeout when component unmounts
@@ -60,8 +62,7 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
 
     const poll = async () => {
       try {
-        const res = await deploymentsApi.get(id);
-        const d = (res.data as { deployment: Deployment }).deployment;
+        const d = await getDeployment(id);
         setDeploymentStatus(d.status);
 
         if (d.status === 'ACTIVE' || d.status === 'FAILED') {
@@ -90,25 +91,19 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
   const handleDeploy = useCallback(async () => {
     if (!selectedProjectId || files.length === 0) return;
     setIsDeploying(true);
-    setError('');
+    setDeployError(null);
+    setUploadProgress(0);
     setDeploymentStatus('PENDING');
     setLiveDeployment(null);
     setDeploymentId('');
 
     try {
-      const formData = new FormData();
-      formData.append('projectId', selectedProjectId);
-      files.forEach((f) => formData.append('files', f, f.name));
-
-      const res = await deploymentsApi.deploy(formData);
-      const d = (res.data as { deployment: { id: string; status: DeploymentStatus } }).deployment;
+      const d = await deployFiles(selectedProjectId, files, setUploadProgress);
       setDeploymentId(d.id);
-      setDeploymentStatus(d.status);
+      setDeploymentStatus(d.status as DeploymentStatus);
       pollStatus(d.id);
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : 'Deployment failed. Please try again.';
-      setError(msg);
+      setDeployError(extractDeployError(err));
       setDeploymentStatus(null);
     } finally {
       setIsDeploying(false);
@@ -120,10 +115,22 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
     setDeploymentId('');
     setDeploymentStatus(null);
     setLiveDeployment(null);
-    setError('');
+    setDeployError(null);
+    setUploadProgress(0);
   };
 
   const canDeploy = selectedProjectId && files.length > 0 && !isDeploying && deploymentStatus === null;
+
+  /** Whether this error kind should show a tier-upgrade call-to-action. */
+  const isUpgradeError = (kind: DeployError['kind']) =>
+    kind === 'storage_limit' || kind === 'upload_too_large';
+
+  /** Progress bar value (0-100). During HTTP upload this reflects real byte progress. */
+  const progressBarValue = isDeploying
+    ? uploadProgress
+    : deploymentStatus === 'ACTIVE'
+    ? 100
+    : 0;
 
   return (
     <div className="space-y-5">
@@ -189,6 +196,13 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
       {/* Progress / result */}
       {deploymentStatus && (
         <div className="glass rounded-xl p-4">
+          {/* Progress bar */}
+          <ProgressBar
+            value={progressBarValue}
+            indeterminate={!isDeploying && deploymentStatus !== 'ACTIVE' && deploymentStatus !== 'FAILED'}
+            className="mb-4"
+          />
+
           <div className="flex items-center gap-3">
             {deploymentStatus !== 'ACTIVE' && deploymentStatus !== 'FAILED' ? (
               <Spinner size="sm" />
@@ -202,7 +216,9 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
                 {deploymentStatus}
               </Badge>
               <p className="text-surface-400 text-sm mt-0.5">
-                {STATUS_LABELS[deploymentStatus]}
+                {isDeploying
+                  ? `Uploading… ${uploadProgress}%`
+                  : STATUS_LABELS[deploymentStatus]}
               </p>
             </div>
           </div>
@@ -220,7 +236,7 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
                     href={liveDeployment.gateway}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-cherry-400 hover:text-cherry-300 underline"
+                    className="text-cherry-400 hover:text-cherry-300 underline break-all"
                   >
                     {liveDeployment.gateway}
                   </a>
@@ -257,9 +273,23 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
         </div>
       )}
 
-      {error && (
-        <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
-          {error}
+      {deployError && (
+        <div
+          className={`p-3 rounded-lg border text-sm ${
+            isUpgradeError(deployError.kind)
+              ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+              : 'bg-red-500/10 border-red-500/30 text-red-400'
+          }`}
+        >
+          <p>{deployError.message}</p>
+          {isUpgradeError(deployError.kind) && (
+            <Link
+              to="/pricing"
+              className="inline-block mt-2 text-xs font-medium underline hover:opacity-80"
+            >
+              Upgrade to Premium →
+            </Link>
+          )}
         </div>
       )}
 
