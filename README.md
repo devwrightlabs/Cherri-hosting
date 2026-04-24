@@ -40,16 +40,44 @@ Cherri Hosting enables developers to deploy static websites and web apps to IPFS
 - A Pinata API key (https://pinata.cloud)
 - Pi Network developer account (https://developers.minepi.com)
 
-### Quick Start
+### Local Development
 
 ```bash
+# 1. Copy environment files and fill in your API keys
 cp server/.env.example server/.env
 cp client/.env.example client/.env
+
+# 2. Start PostgreSQL
 docker-compose up postgres -d
+
+# 3. Install deps, run migrations, and start the API server
 cd server && npm install && npx prisma migrate dev && npm run dev
-# second terminal:
+
+# 4. In a second terminal, start the React dev server
 cd client && npm install && npm run dev
 ```
+
+The frontend will be available at http://localhost:5173 and the API at http://localhost:4000.
+
+### Docker (Production)
+
+```bash
+# 1. Copy and configure the server environment
+cp server/.env.example server/.env
+# Edit server/.env — fill in PI_API_KEY, PINATA_JWT, etc.
+
+# 2. Build and start all services
+docker-compose up --build -d
+
+# 3. Run database migrations from the server workspace
+cd server && npm install && npx prisma migrate deploy
+```
+
+The frontend is served by nginx on **http://localhost:8080** and the API on **http://localhost:4000**.
+
+> **Note:** The client Docker image bakes `VITE_API_URL` into the build.  
+> Override it at build time with `docker-compose build --build-arg VITE_API_URL=https://api.example.com client`
+> or update the `args` section in `docker-compose.yml` before building.
 
 ## License
 
