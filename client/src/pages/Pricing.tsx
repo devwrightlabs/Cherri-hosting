@@ -8,8 +8,7 @@ import Spinner from '../components/ui/Spinner';
 import { subscriptionsApi } from '../lib/api';
 import { useAuth } from '../providers/AuthProvider';
 import { Subscription } from '../types';
-
-const PREMIUM_AMOUNT = 10;
+import { PREMIUM_PRICE_PI } from '../lib/constants';
 
 interface SubscriptionData {
   subscription: Subscription | null;
@@ -44,7 +43,7 @@ export default function Pricing() {
 
     window.Pi.createPayment(
       {
-        amount: PREMIUM_AMOUNT,
+        amount: PREMIUM_PRICE_PI,
         memo: 'Cherri Hosting Premium — 1 month',
         metadata: { plan: 'premium', months: 1 },
       },
@@ -180,7 +179,7 @@ export default function Pricing() {
                     <Badge variant="premium">POPULAR</Badge>
                   </div>
                   <div className="flex items-baseline gap-1 mt-2">
-                    <span className="text-4xl font-bold text-white">{PREMIUM_AMOUNT}</span>
+                    <span className="text-4xl font-bold text-white">{PREMIUM_PRICE_PI}</span>
                     <span className="text-surface-400">Pi / month</span>
                   </div>
                 </div>

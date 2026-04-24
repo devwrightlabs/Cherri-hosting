@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { User, PiAuthResult, PiPaymentDTO } from '../types';
-import { authApi } from '../lib/api';
+import { authApi, paymentsApi } from '../lib/api';
 
 interface AuthContextValue {
   user: User | null;
@@ -9,13 +9,19 @@ interface AuthContextValue {
   isLoading: boolean;
   signIn: () => Promise<void>;
   signOut: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 function handleIncompletePayment(payment: PiPaymentDTO) {
-  // In production: call backend to check payment status and complete if necessary
-  console.warn('Incomplete Pi payment found:', payment.identifier);
+  paymentsApi.verify(payment.identifier).catch((err: unknown) => {
+    console.warn(
+      'Could not recover incomplete Pi payment:',
+      payment.identifier,
+      err instanceof Error ? err.message : err,
+    );
+  });
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -81,6 +87,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await authApi.me();
+      setUser((res.data as { user: User }).user);
+    } catch {
+      // If refresh fails, keep the existing user state
+    }
+  }, [token]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -90,6 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         signIn,
         signOut,
+        refreshUser,
       }}
     >
       {children}

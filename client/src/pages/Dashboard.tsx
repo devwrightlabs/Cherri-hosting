@@ -7,6 +7,7 @@ import Button from '../components/ui/Button';
 import StorageBar from '../components/dashboard/StorageBar';
 import DeploymentCard from '../components/dashboard/DeploymentCard';
 import QuickDeploy from '../components/dashboard/QuickDeploy';
+import UpgradeBanner from '../components/dashboard/UpgradeBanner';
 import Spinner from '../components/ui/Spinner';
 import { useAuth } from '../providers/AuthProvider';
 import { projectsApi } from '../lib/api';
@@ -24,7 +25,7 @@ function formatBytes(bytes: number): string {
 }
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -39,6 +40,13 @@ export default function Dashboard() {
   useEffect(() => {
     loadProjects();
   }, [loadProjects]);
+
+  // Refresh user data (e.g. after an upgrade) then reload projects so the
+  // UpgradeBanner reflects the updated subscription tier immediately.
+  const handleUpgradeSuccess = useCallback(async () => {
+    await refreshUser();
+    loadProjects();
+  }, [refreshUser, loadProjects]);
 
   // Flatten and sort all deployments across every project, newest first
   const allDeployments: Deployment[] = projects
@@ -145,62 +153,8 @@ export default function Dashboard() {
             {/* Right — Subscription & Storage */}
             <div className="lg:col-span-2 space-y-4">
 
-              {/* Subscription tier card */}
-              <Card>
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-sm font-semibold text-white">Subscription</h2>
-                  <Badge variant={user?.tier === 'PREMIUM' ? 'premium' : 'default'}>
-                    {user?.tier ?? 'FREE'}
-                  </Badge>
-                </div>
-
-                <div className="space-y-2 text-sm">
-                  {user?.tier === 'PREMIUM' ? (
-                    <>
-                      <div className="flex items-center gap-2 text-emerald-400">
-                        <span>✓</span>
-                        <span>10 GB storage</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-emerald-400">
-                        <span>✓</span>
-                        <span>Priority IPFS pinning</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-emerald-400">
-                        <span>✓</span>
-                        <span>Custom domains</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-emerald-400">
-                        <span>✓</span>
-                        <span>Unlimited deployments</span>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex items-center gap-2 text-surface-400">
-                        <span>✓</span>
-                        <span>500 MB storage</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-surface-400">
-                        <span>✓</span>
-                        <span>IPFS hosting</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-surface-600">
-                        <span>✗</span>
-                        <span>Custom domains</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-surface-600">
-                        <span>✗</span>
-                        <span>Priority pinning</span>
-                      </div>
-                      <Link to="/pricing" className="block mt-3">
-                        <Button size="sm" className="w-full justify-center">
-                          Upgrade to Premium 💎
-                        </Button>
-                      </Link>
-                    </>
-                  )}
-                </div>
-              </Card>
+              {/* Subscription tier / upgrade card */}
+              <UpgradeBanner onUpgradeSuccess={handleUpgradeSuccess} />
 
               {/* Storage bar */}
               {user && (
