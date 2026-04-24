@@ -61,7 +61,7 @@ model Subscription {
   id          String   @id @default(uuid())
   /// 'FREE' or 'PREMIUM'
   tier        String
-  piTxId      String?
+  piTxId      String?  @unique
   amount      Decimal  @db.Decimal(18, 8)
   currency    String
   /// 'active' or 'cancelled'
