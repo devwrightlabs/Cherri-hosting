@@ -16,9 +16,13 @@ FROM base AS prod-deps
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY prisma ./prisma
-# Copy generated Prisma client from builder (avoids needing prisma CLI in prod)
+# Copy generated Prisma client from builder so runtime database access works
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
+# Retain the Prisma CLI in the image so `prisma migrate deploy` can run in Docker
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /app/node_modules/.bin ./node_modules/.bin
+COPY --from=builder /app/node_modules/@prisma/engines ./node_modules/@prisma/engines
 
 # Production runner
 FROM node:20-alpine AS runner
