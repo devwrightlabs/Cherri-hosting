@@ -11,7 +11,7 @@ datasource db {
 model SubscriptionTier {
   id          String   @id @default(uuid())
   name        String   @unique
-  maxStorage  Int      
+  maxStorage  BigInt   // Stored in bytes; use BigInt to avoid overflow for multi-GB limits
   price       Decimal  @db.Decimal(10, 2)
   users       User[]
   createdAt   DateTime @default(now())
