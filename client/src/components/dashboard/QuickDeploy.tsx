@@ -39,41 +39,52 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
   const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus | null>(null);
   const [liveDeployment, setLiveDeployment] = useState<Deployment | null>(null);
   const [error, setError] = useState('');
-  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Clear polling interval when component unmounts
+  // Clear polling timeout when component unmounts
   useEffect(() => {
     return () => {
-      if (pollIntervalRef.current !== null) {
-        clearInterval(pollIntervalRef.current);
+      if (pollTimeoutRef.current !== null) {
+        clearTimeout(pollTimeoutRef.current);
+        pollTimeoutRef.current = null;
       }
     };
   }, []);
 
   // Poll deployment status until terminal
   const pollStatus = useCallback((id: string) => {
-    if (pollIntervalRef.current !== null) {
-      clearInterval(pollIntervalRef.current);
+    if (pollTimeoutRef.current !== null) {
+      clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = null;
     }
-    pollIntervalRef.current = setInterval(async () => {
+
+    const poll = async () => {
       try {
         const res = await deploymentsApi.get(id);
         const d = (res.data as { deployment: Deployment }).deployment;
         setDeploymentStatus(d.status);
+
         if (d.status === 'ACTIVE' || d.status === 'FAILED') {
-          if (pollIntervalRef.current !== null) {
-            clearInterval(pollIntervalRef.current);
-            pollIntervalRef.current = null;
+          if (pollTimeoutRef.current !== null) {
+            clearTimeout(pollTimeoutRef.current);
+            pollTimeoutRef.current = null;
           }
           if (d.status === 'ACTIVE') {
             setLiveDeployment(d);
             onDeploySuccess(d);
           }
+          return;
         }
       } catch {
         // ignore transient polling errors
       }
-    }, 2000);
+
+      pollTimeoutRef.current = setTimeout(() => {
+        void poll();
+      }, 2000);
+    };
+
+    void poll();
   }, [onDeploySuccess]);
 
   const handleDeploy = useCallback(async () => {
