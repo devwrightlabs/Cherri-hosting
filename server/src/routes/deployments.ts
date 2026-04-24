@@ -5,6 +5,7 @@ import { piAuthMiddleware, AuthenticatedRequest } from '../middleware/piAuth';
 import { prisma } from '../utils/prismaClient';
 import { pinDirectoryToIPFS, pinFileToIPFS } from '../services/ipfsService';
 import { logger } from '../utils/logger';
+import { getRouteParam } from '../utils/routeParams';
 
 export const deploymentsRouter = Router();
 
@@ -146,7 +147,7 @@ deploymentsRouter.get('/:id', async (req: AuthenticatedRequest, res: Response): 
   try {
     const deployment = await prisma.deployment.findFirst({
       where: {
-        id: String(req.params.id),
+        id: getRouteParam(req.params.id),
         project: { userId: req.user!.id },
       },
       include: {
@@ -173,7 +174,7 @@ deploymentsRouter.get('/:id', async (req: AuthenticatedRequest, res: Response): 
 deploymentsRouter.get('/project/:projectId', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const project = await prisma.project.findFirst({
-      where: { id: String(req.params.projectId), userId: req.user!.id },
+      where: { id: getRouteParam(req.params.projectId), userId: req.user!.id },
     });
 
     if (!project) {
@@ -182,7 +183,7 @@ deploymentsRouter.get('/project/:projectId', async (req: AuthenticatedRequest, r
     }
 
     const deployments = await prisma.deployment.findMany({
-      where: { projectId: String(req.params.projectId) },
+      where: { projectId: getRouteParam(req.params.projectId) },
       orderBy: { createdAt: 'desc' },
     });
 

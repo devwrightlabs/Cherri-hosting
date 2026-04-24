@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { piAuthMiddleware, AuthenticatedRequest } from '../middleware/piAuth';
 import { prisma } from '../utils/prismaClient';
 import { logger } from '../utils/logger';
+import { getRouteParam } from '../utils/routeParams';
 
 export const projectsRouter = Router();
 
@@ -72,7 +73,7 @@ projectsRouter.post('/', async (req: AuthenticatedRequest, res: Response): Promi
 projectsRouter.get('/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const project = await prisma.project.findFirst({
-      where: { id: String(req.params.id), userId: req.user!.id },
+      where: { id: getRouteParam(req.params.id), userId: req.user!.id },
       include: {
         deployments: {
           orderBy: { createdAt: 'desc' },
@@ -106,7 +107,7 @@ projectsRouter.patch('/:id', async (req: AuthenticatedRequest, res: Response): P
 
   try {
     const existing = await prisma.project.findFirst({
-      where: { id: String(req.params.id), userId: req.user!.id },
+      where: { id: getRouteParam(req.params.id), userId: req.user!.id },
     });
     if (!existing) {
       res.status(404).json({ error: 'Project not found' });
@@ -114,7 +115,7 @@ projectsRouter.patch('/:id', async (req: AuthenticatedRequest, res: Response): P
     }
 
     const project = await prisma.project.update({
-      where: { id: String(req.params.id) },
+      where: { id: getRouteParam(req.params.id) },
       data: parsed.data,
     });
     res.json({ project });
@@ -131,15 +132,15 @@ projectsRouter.patch('/:id', async (req: AuthenticatedRequest, res: Response): P
 projectsRouter.delete('/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const existing = await prisma.project.findFirst({
-      where: { id: String(req.params.id), userId: req.user!.id },
+      where: { id: getRouteParam(req.params.id), userId: req.user!.id },
     });
     if (!existing) {
       res.status(404).json({ error: 'Project not found' });
       return;
     }
 
-    await prisma.deployment.deleteMany({ where: { projectId: String(req.params.id) } });
-    await prisma.project.delete({ where: { id: String(req.params.id) } });
+    await prisma.deployment.deleteMany({ where: { projectId: getRouteParam(req.params.id) } });
+    await prisma.project.delete({ where: { id: getRouteParam(req.params.id) } });
 
     res.status(204).send();
   } catch (err) {
