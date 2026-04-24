@@ -43,11 +43,11 @@ if (!hasPinata) {
 // These are last-resort guards; individual routes still handle their own errors.
 // ---------------------------------------------------------------------------
 process.on('unhandledRejection', (reason) => {
-  logger.error('Unhandled promise rejection', { reason });
+  console.error('Unhandled promise rejection', { reason });
 });
 
 process.on('uncaughtException', (err) => {
-  logger.error('Uncaught exception — shutting down', {
+  console.error('Uncaught exception — shutting down', {
     message: err.message,
     stack: err.stack,
   });
