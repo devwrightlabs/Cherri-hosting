@@ -146,7 +146,7 @@ deploymentsRouter.get('/:id', async (req: AuthenticatedRequest, res: Response): 
   try {
     const deployment = await prisma.deployment.findFirst({
       where: {
-        id: req.params.id,
+        id: String(req.params.id),
         project: { userId: req.user!.id },
       },
       include: {
@@ -173,7 +173,7 @@ deploymentsRouter.get('/:id', async (req: AuthenticatedRequest, res: Response): 
 deploymentsRouter.get('/project/:projectId', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const project = await prisma.project.findFirst({
-      where: { id: req.params.projectId, userId: req.user!.id },
+      where: { id: String(req.params.projectId), userId: req.user!.id },
     });
 
     if (!project) {
@@ -182,7 +182,7 @@ deploymentsRouter.get('/project/:projectId', async (req: AuthenticatedRequest, r
     }
 
     const deployments = await prisma.deployment.findMany({
-      where: { projectId: req.params.projectId },
+      where: { projectId: String(req.params.projectId) },
       orderBy: { createdAt: 'desc' },
     });
 

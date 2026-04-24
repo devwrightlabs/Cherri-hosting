@@ -8,36 +8,66 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model SubscriptionTier {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  maxStorage  BigInt   // Stored in bytes; use BigInt to avoid overflow for multi-GB limits
-  price       Decimal  @db.Decimal(10, 2)
-  users       User[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model User {
+  id           String         @id @default(uuid())
+  piUserId     String         @unique
+  username     String
+  email        String?
+  /// 'FREE' or 'PREMIUM'
+  tier         String         @default("FREE")
+  /// Bytes consumed so far; use BigInt to avoid overflow for multi-GB usage
+  storageUsed  BigInt         @default(0)
+  /// Bytes allowed for this tier; use BigInt to avoid overflow for multi-GB limits
+  storageLimit BigInt         @default(524288000) // 500 MB default (FREE tier)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  projects     Project[]
+  subscriptions Subscription[]
 }
 
-model User {
-  id                   String           @id @default(uuid())
-  piUid                String           @unique
-  username             String
-  // Store only encrypted token material at rest; application code must encrypt/decrypt.
-  encryptedAccessToken Bytes?
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
-  tierId               String
-  subscriptionTier     SubscriptionTier @relation(fields: [tierId], references: [id])
-  deployments          Deployment[]
+model Project {
+  id           String       @id @default(uuid())
+  name         String
+  description  String?
+  customDomain String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  userId       String
+  user         User         @relation(fields: [userId], references: [id])
+  deployments  Deployment[]
+
+  @@index([userId])
 }
 
 model Deployment {
+  id        String   @id @default(uuid())
+  /// IPFS content identifier
+  cid       String   @default("")
+  /// Public gateway URL
+  gateway   String   @default("")
+  /// File/directory size in bytes; use BigInt to avoid overflow for large uploads
+  size      BigInt   @default(0)
+  /// PENDING | UPLOADING | PINNING | ACTIVE | FAILED
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id])
+
+  @@index([projectId])
+}
+
+model Subscription {
   id          String   @id @default(uuid())
-  appName     String
-  ipfsHash    String   @unique
-  hostingUrl  String
-  fileSize    BigInt   // Stored in bytes; use BigInt to avoid overflow for large uploads
-  status      String   @default("PENDING") 
+  /// 'FREE' or 'PREMIUM'
+  tier        String
+  piTxId      String?
+  amount      Float
+  currency    String
+  /// 'active' or 'cancelled'
+  status      String
+  periodStart DateTime
+  periodEnd   DateTime
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   userId      String
