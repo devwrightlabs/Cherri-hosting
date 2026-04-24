@@ -29,7 +29,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-cherri}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-cherri_hosting}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
       PORT: 4000
       NODE_ENV: production
       ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-http://localhost:8080}
