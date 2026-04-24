@@ -238,11 +238,14 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
       )}
 
       {/* ID badge for debugging */}
-      {deploymentId && deploymentStatus !== 'ACTIVE' && deploymentStatus !== 'FAILED' && (
-        <p className="text-xs text-surface-600 font-mono text-center">
-          id: {deploymentId}
-        </p>
-      )}
+      {import.meta.env.DEV &&
+        deploymentId &&
+        deploymentStatus !== 'ACTIVE' &&
+        deploymentStatus !== 'FAILED' && (
+          <p className="text-xs text-surface-600 font-mono text-center">
+            id: {deploymentId}
+          </p>
+        )}
     </div>
   );
 }
