@@ -8,6 +8,7 @@ import { projectsRouter } from './routes/projects';
 import { deploymentsRouter } from './routes/deployments';
 import { deployRouter } from './routes/deploy';
 import { subscriptionsRouter } from './routes/subscriptions';
+import { paymentsRouter } from './routes/payments';
 import { logger } from './utils/logger';
 
 const app = express();
@@ -47,6 +48,7 @@ app.use('/api/projects', projectsRouter);
 app.use('/api/deployments', deploymentsRouter);
 app.use('/api/deploy', deployRouter);
 app.use('/api/subscriptions', subscriptionsRouter);
+app.use('/api/payments', paymentsRouter);
 
 // 404 handler
 app.use((_req, res) => {

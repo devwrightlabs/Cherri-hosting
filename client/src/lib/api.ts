@@ -57,3 +57,9 @@ export const subscriptionsApi = {
     apiClient.post('/subscriptions/payments/complete', { paymentId, txid }),
   cancel: () => apiClient.post('/subscriptions/cancel'),
 };
+
+// Payments (incomplete payment recovery)
+export const paymentsApi = {
+  verify: (paymentId: string) =>
+    apiClient.post('/payments/verify', { paymentId }),
+};
