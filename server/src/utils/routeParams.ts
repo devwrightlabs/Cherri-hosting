@@ -1,8 +1,13 @@
 /**
  * Safely extract a single string value from an Express route parameter.
- * Express 5 types route params as `string | string[]`; in practice, named
- * path segments always resolve to a single string at runtime.
+ * Express 5 types route params as `string | string[]`; named path segments
+ * are expected to resolve to a single string at runtime, so array values are
+ * treated as an unexpected routing mismatch and rejected.
  */
 export function getRouteParam(param: string | string[]): string {
-  return Array.isArray(param) ? param[0] : param;
+  if (Array.isArray(param)) {
+    throw new Error('Expected a single route parameter value but received multiple values.');
+  }
+
+  return param;
 }
