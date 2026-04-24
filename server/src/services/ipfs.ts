@@ -19,9 +19,19 @@ function buildAuthHeaders(): Record<string, string> {
   if (jwt) {
     return { Authorization: `Bearer ${jwt}` };
   }
+
+  const apiKey = process.env.PINATA_API_KEY;
+  const apiSecret = process.env.PINATA_API_SECRET;
+
+  if (!apiKey || !apiSecret) {
+    throw new Error(
+      'Pinata credentials are not configured. Set PINATA_JWT or both PINATA_API_KEY and PINATA_API_SECRET.',
+    );
+  }
+
   return {
-    pinata_api_key: process.env.PINATA_API_KEY ?? '',
-    pinata_secret_api_key: process.env.PINATA_API_SECRET ?? '',
+    pinata_api_key: apiKey,
+    pinata_secret_api_key: apiSecret,
   };
 }
 
