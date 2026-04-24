@@ -36,7 +36,7 @@ model Deployment {
   appName     String
   ipfsHash    String   @unique
   hostingUrl  String
-  fileSize    Int      
+  fileSize    BigInt   // Stored in bytes; use BigInt to avoid overflow for large uploads
   status      String   @default("PENDING") 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
