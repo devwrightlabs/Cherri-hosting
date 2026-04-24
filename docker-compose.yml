@@ -6,15 +6,15 @@ services:
     container_name: cherri_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: cherri
-      POSTGRES_PASSWORD: cherri_secret
-      POSTGRES_DB: cherri_hosting
+      POSTGRES_USER: ${POSTGRES_USER:-cherri}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DB:-cherri_hosting}
     ports:
       - '5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U cherri -d cherri_hosting']
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-cherri} -d ${POSTGRES_DB:-cherri_hosting}']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -29,10 +29,14 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://cherri:cherri_secret@postgres:5432/cherri_hosting
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cherri}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-cherri_hosting}
       PORT: 4000
       NODE_ENV: production
-      ALLOWED_ORIGIN: http://localhost:8080
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-http://localhost:8080}
+      PI_API_KEY: ${PI_API_KEY:?PI_API_KEY must be set}
+      PINATA_JWT: ${PINATA_JWT:-}
+      PINATA_API_KEY: ${PINATA_API_KEY:-}
+      PINATA_API_SECRET: ${PINATA_API_SECRET:-}
     ports:
       - '4000:4000'
     healthcheck:
@@ -51,7 +55,8 @@ services:
         # It must be the URL the *browser* uses to reach the API server.
         # For a single-host deploy this is http://localhost:4000.
         # Override with the public API hostname when deploying to a server.
-        VITE_API_URL: http://localhost:4000
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
+        VITE_PI_SANDBOX: ${VITE_PI_SANDBOX:-false}
     container_name: cherri_client
     restart: unless-stopped
     depends_on:

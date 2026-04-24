@@ -43,6 +43,7 @@ deploymentsRouter.post(
       return;
     }
 
+    try {
     // Verify project belongs to the user
     const project = await prisma.project.findFirst({
       where: { id: projectId, userId: req.user!.id },
@@ -136,6 +137,10 @@ deploymentsRouter.post(
     })();
 
     res.status(202).json({ deployment: { id: deployment.id, status: 'PENDING' } });
+    } catch (err) {
+      logger.error('Failed to create deployment record', { error: err });
+      res.status(500).json({ error: 'Failed to create deployment' });
+    }
   },
 );
 

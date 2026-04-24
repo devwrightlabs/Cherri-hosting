@@ -11,6 +11,50 @@ import { subscriptionsRouter } from './routes/subscriptions';
 import { paymentsRouter } from './routes/payments';
 import { logger } from './utils/logger';
 
+// ---------------------------------------------------------------------------
+// Startup environment validation
+// Fail fast with a clear message if required secrets are missing.
+// ---------------------------------------------------------------------------
+const REQUIRED_ENV_VARS = ['DATABASE_URL', 'PI_API_KEY'] as const;
+const missingVars = REQUIRED_ENV_VARS.filter((v) => !process.env[v]);
+if (missingVars.length > 0) {
+  // Use console.error here in case the logger is not yet initialised
+  console.error(
+    `[startup] Missing required environment variables: ${missingVars.join(', ')}. ` +
+      'Copy server/.env.example to server/.env and fill in the values.',
+  );
+  process.exit(1);
+}
+
+const hasPinata =
+  process.env.PINATA_JWT ||
+  (process.env.PINATA_API_KEY && process.env.PINATA_API_SECRET);
+if (!hasPinata) {
+  console.error(
+    '[startup] Missing Pinata credentials. ' +
+      'Set PINATA_JWT or both PINATA_API_KEY and PINATA_API_SECRET.',
+  );
+  process.exit(1);
+}
+
+// ---------------------------------------------------------------------------
+// Process-level safety nets — prevent the server from crashing silently.
+// These are last-resort guards; individual routes still handle their own errors.
+// ---------------------------------------------------------------------------
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled promise rejection', { reason });
+});
+
+process.on('uncaughtException', (err) => {
+  logger.error('Uncaught exception — shutting down', {
+    message: err.message,
+    stack: err.stack,
+  });
+  // The process is in an undefined state after an uncaught exception;
+  // exit so a process manager (Docker restart policy, PM2, etc.) can restart it.
+  process.exit(1);
+});
+
 const app = express();
 const PORT = parseInt(process.env.PORT ?? '4000', 10);
 
