@@ -12,7 +12,7 @@ model SubscriptionTier {
   id          String   @id @default(uuid())
   name        String   @unique
   maxStorage  Int      
-  price       Float    
+  price       Decimal  @db.Decimal(10, 2)
   users       User[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
