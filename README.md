@@ -69,8 +69,8 @@ cp server/.env.example server/.env
 # 2. Build and start all services
 docker-compose up --build -d
 
-# 3. Run database migrations
-docker-compose exec server npx prisma migrate deploy
+# 3. Run database migrations from the server workspace
+cd server && npm install && npx prisma migrate deploy
 ```
 
 The frontend is served by nginx on **http://localhost:8080** and the API on **http://localhost:4000**.
