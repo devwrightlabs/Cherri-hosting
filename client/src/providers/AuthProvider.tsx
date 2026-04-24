@@ -15,8 +15,12 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 function handleIncompletePayment(payment: PiPaymentDTO) {
-  paymentsApi.verify(payment.identifier).catch(() => {
-    console.warn('Could not recover incomplete Pi payment:', payment.identifier);
+  paymentsApi.verify(payment.identifier).catch((err: unknown) => {
+    console.warn(
+      'Could not recover incomplete Pi payment:',
+      payment.identifier,
+      err instanceof Error ? err.message : err,
+    );
   });
 }
 

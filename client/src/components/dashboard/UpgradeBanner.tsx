@@ -5,8 +5,7 @@ import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import { subscriptionsApi } from '../../lib/api';
 import { useAuth } from '../../providers/AuthProvider';
-
-const PREMIUM_AMOUNT = 10;
+import { PREMIUM_PRICE_PI } from '../../lib/constants';
 
 interface UpgradeBannerProps {
   /** Called when payment succeeds so parent can refresh user data */
@@ -31,7 +30,7 @@ export default function UpgradeBanner({ onUpgradeSuccess }: UpgradeBannerProps) 
 
     window.Pi.createPayment(
       {
-        amount: PREMIUM_AMOUNT,
+        amount: PREMIUM_PRICE_PI,
         memo: 'Cherri Hosting Premium — 1 month',
         metadata: { plan: 'premium', months: 1 },
       },
@@ -131,7 +130,7 @@ export default function UpgradeBanner({ onUpgradeSuccess }: UpgradeBannerProps) 
               onClick={handleUpgrade}
               isLoading={isPaying}
             >
-              🍒 Upgrade with Pi ({PREMIUM_AMOUNT} Pi/mo)
+              🍒 Upgrade with Pi ({PREMIUM_PRICE_PI} Pi/mo)
             </Button>
             <Link to="/pricing" className="block">
               <p className="text-xs text-center text-surface-500 hover:text-cherry-400 transition-colors">

@@ -53,16 +53,18 @@ paymentsRouter.post('/verify', async (req: AuthenticatedRequest, res: Response):
     if (payment.transaction?.txid) {
       const txid = payment.transaction.txid;
 
+      // Validate amount before completing, to avoid marking an insufficient
+      // payment as developer_completed with Pi Network.
+      if (payment.amount < PREMIUM_PRICE_PI) {
+        res.status(400).json({ error: 'Payment amount is insufficient' });
+        return;
+      }
+
       await completePayment(paymentId, txid);
 
       const isVerified = await verifyPayment(paymentId);
       if (!isVerified) {
         res.status(400).json({ error: 'Payment could not be verified on-chain' });
-        return;
-      }
-
-      if (payment.amount < PREMIUM_PRICE_PI) {
-        res.status(400).json({ error: 'Payment amount is insufficient' });
         return;
       }
 
