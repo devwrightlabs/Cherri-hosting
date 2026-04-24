@@ -29,11 +29,12 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
-COPY --from=prod-deps /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-COPY prisma ./prisma
-COPY package.json ./
+COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/dist ./dist
+COPY --chown=node:node prisma ./prisma
+COPY --chown=node:node package.json ./
 
+USER node
 EXPOSE 4000
 
 CMD ["node", "dist/index.js"]
