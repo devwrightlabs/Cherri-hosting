@@ -219,9 +219,16 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
                 </p>
               )}
               <div className="flex gap-2 pt-2 font-sans">
-                <a href={liveDeployment.gateway} target="_blank" rel="noopener noreferrer">
-                  <Button size="sm">Open site ↗</Button>
-                </a>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    if (liveDeployment.gateway) {
+                      window.open(liveDeployment.gateway, '_blank', 'noopener,noreferrer');
+                    }
+                  }}
+                >
+                  Open site ↗
+                </Button>
                 <Button size="sm" variant="secondary" onClick={reset}>
                   Deploy another
                 </Button>
