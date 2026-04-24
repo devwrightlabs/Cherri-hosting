@@ -161,7 +161,15 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
       {deploymentStatus === null && (
         <DropZone
           onFilesAccepted={setFiles}
-          accept={{ 'application/zip': ['.zip'], 'application/octet-stream': [] }}
+          accept={{
+            'application/zip': ['.zip'],
+            'application/octet-stream': [],
+            'text/html': ['.html', '.htm'],
+            'text/css': ['.css'],
+            'application/javascript': ['.js', '.mjs', '.cjs'],
+            'text/javascript': ['.js', '.mjs', '.cjs'],
+            'image/*': ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.bmp', '.avif'],
+          }}
         />
       )}
 
