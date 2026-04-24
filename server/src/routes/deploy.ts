@@ -83,21 +83,21 @@ deployRouter.post(
     }
 
     // --- Tier-based per-upload size enforcement ---
-    const uploadSize = files.reduce((acc, f) => acc + f.size, 0);
-    const tierLimit = maxUploadBytesForTier(user.tier);
+    const uploadSize = files.reduce((acc, f) => acc + BigInt(f.size), 0n);
+    const tierLimit = BigInt(maxUploadBytesForTier(user.tier));
 
     if (uploadSize > tierLimit) {
       res.status(413).json({
-        error: `Upload size (${uploadSize} bytes) exceeds the ${user.tier} tier limit of ${tierLimit} bytes. Please upgrade to upload larger files.`,
+        error: `Upload size (${uploadSize.toString()} bytes) exceeds the ${user.tier} tier limit of ${tierLimit.toString()} bytes. Please upgrade to upload larger files.`,
         tier: user.tier,
-        limitBytes: tierLimit,
-        uploadBytes: uploadSize,
+        limitBytes: tierLimit.toString(),
+        uploadBytes: uploadSize.toString(),
       });
       return;
     }
 
     // --- Cumulative storage quota check ---
-    if (user.storageUsed + BigInt(uploadSize) > user.storageLimit) {
+    if (user.storageUsed + uploadSize > user.storageLimit) {
       res.status(402).json({
         error: 'Storage quota exceeded. Please upgrade to Premium for more storage.',
         storageUsed: user.storageUsed.toString(),
