@@ -21,7 +21,8 @@ if (missingVars.length > 0) {
   // Use console.error here in case the logger is not yet initialised
   console.error(
     `[startup] Missing required environment variables: ${missingVars.join(', ')}. ` +
-      'Copy server/.env.example to server/.env and fill in the values.',
+      'For local server runs, copy server/.env.example to server/.env and fill in the values. ' +
+      'For Docker Compose runs, copy .env.example to .env at the repository root and fill in the values.',
   );
   process.exit(1);
 }
