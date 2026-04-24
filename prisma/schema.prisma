@@ -1,3 +1,4 @@
+// prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,67 +8,40 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model SubscriptionTier {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  maxStorage  BigInt   // Stored in bytes; use BigInt to avoid overflow for multi-GB limits
+  price       Decimal  @db.Decimal(10, 2)
+  users       User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model User {
-  id            String         @id @default(cuid())
-  piUserId      String         @unique
-  username      String         @unique
-  email         String?
-  tier          Tier           @default(FREE)
-  storageUsed   BigInt         @default(0)
-  storageLimit  BigInt         @default(524288000)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  projects      Project[]
-  subscriptions Subscription[]
-}
-
-enum Tier {
-  FREE
-  PREMIUM
-}
-
-model Project {
-  id           String       @id @default(cuid())
-  name         String
-  description  String?
-  userId       String
-  user         User         @relation(fields: [userId], references: [id])
-  deployments  Deployment[]
-  customDomain String?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id                   String           @id @default(uuid())
+  piUid                String           @unique
+  username             String
+  // Store only encrypted token material at rest; application code must encrypt/decrypt.
+  encryptedAccessToken Bytes?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  tierId               String
+  subscriptionTier     SubscriptionTier @relation(fields: [tierId], references: [id])
+  deployments          Deployment[]
 }
 
 model Deployment {
-  id        String           @id @default(cuid())
-  projectId String
-  project   Project          @relation(fields: [projectId], references: [id])
-  cid       String
-  gateway   String
-  size      BigInt
-  status    DeploymentStatus @default(PENDING)
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
-}
-
-enum DeploymentStatus {
-  PENDING
-  UPLOADING
-  PINNING
-  ACTIVE
-  FAILED
-}
-
-model Subscription {
-  id          String   @id @default(cuid())
+  id          String   @id @default(uuid())
+  appName     String
+  ipfsHash    String   @unique
+  hostingUrl  String
+  fileSize    BigInt   // Stored in bytes; use BigInt to avoid overflow for large uploads
+  status      String   @default("PENDING") 
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   userId      String
   user        User     @relation(fields: [userId], references: [id])
-  tier        Tier
-  piTxId      String?
-  amount      Float
-  currency    String   @default("Pi")
-  status      String   @default("active")
-  periodStart DateTime
-  periodEnd   DateTime
-  createdAt   DateTime @default(now())
+
+  @@index([userId])
 }
