@@ -1,9 +1,17 @@
 /**
- * Phase 3: IPFS Pinning Service
+ * IPFS Pinning Service (Pinata)
  *
- * Connects to Pinata (a managed IPFS pinning service) and provides helpers to
- * pin uploaded file buffers, returning the content identifier (CID / IPFS hash)
- * and a public gateway URL so the uploaded asset can be accessed immediately.
+ * Single canonical module for pinning content to IPFS via Pinata. This file
+ * consolidates the previous `ipfs.ts` and `ipfsService.ts` modules into one
+ * source of truth.
+ *
+ * Public API:
+ *   - pinFile(buffer, name, mimeType)            -> PinResult
+ *   - pinDirectory(files[], dirName)             -> PinResult
+ *   - unpin(cid)                                 -> void
+ *
+ * All functions return `{ cid, gatewayUrl, size }`. The CID field is the
+ * canonical IPFS content identifier.
  */
 
 import axios from 'axios';
@@ -35,9 +43,9 @@ function buildAuthHeaders(): Record<string, string> {
   };
 }
 
-export interface IpfsPinResult {
-  /** IPFS content identifier (CID / hash) */
-  ipfsHash: string;
+export interface PinResult {
+  /** IPFS content identifier (CID / hash) of the pinned content */
+  cid: string;
   /** Public Pinata gateway URL for the pinned content */
   gatewayUrl: string;
   /** Size of the pinned content in bytes */
@@ -46,13 +54,13 @@ export interface IpfsPinResult {
 
 /**
  * Pin a single file buffer to IPFS via Pinata.
- * Returns the IPFS hash, a public gateway URL, and the pinned size.
+ * Returns the IPFS CID, a public gateway URL, and the pinned size.
  */
-export async function pinUpload(
+export async function pinFile(
   fileBuffer: Buffer,
   fileName: string,
   mimeType: string,
-): Promise<IpfsPinResult> {
+): Promise<PinResult> {
   const form = new FormData();
   form.append('file', fileBuffer, { filename: fileName, contentType: mimeType });
   form.append('pinataMetadata', JSON.stringify({ name: fileName }));
@@ -68,12 +76,12 @@ export async function pinUpload(
     },
   );
 
-  const ipfsHash = response.data.IpfsHash;
+  const cid = response.data.IpfsHash;
   const size = response.data.PinSize;
-  const gatewayUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
+  const gatewayUrl = `https://gateway.pinata.cloud/ipfs/${cid}`;
 
-  logger.info('File pinned to IPFS', { ipfsHash, size, fileName });
-  return { ipfsHash, gatewayUrl, size };
+  logger.info('File pinned to IPFS', { cid, size, fileName });
+  return { cid, gatewayUrl, size };
 }
 
 /**
@@ -83,7 +91,7 @@ export async function pinUpload(
 export async function pinDirectory(
   files: Array<{ buffer: Buffer; path: string; mimeType: string }>,
   dirName: string,
-): Promise<IpfsPinResult> {
+): Promise<PinResult> {
   const form = new FormData();
 
   for (const file of files) {
@@ -109,21 +117,21 @@ export async function pinDirectory(
     },
   );
 
-  const ipfsHash = response.data.IpfsHash;
+  const cid = response.data.IpfsHash;
   const size = response.data.PinSize;
-  const gatewayUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
+  const gatewayUrl = `https://gateway.pinata.cloud/ipfs/${cid}`;
 
-  logger.info('Directory pinned to IPFS', { ipfsHash, size, dirName, fileCount: files.length });
-  return { ipfsHash, gatewayUrl, size };
+  logger.info('Directory pinned to IPFS', { cid, size, dirName, fileCount: files.length });
+  return { cid, gatewayUrl, size };
 }
 
 /**
  * Unpin a CID from Pinata to free up pinned storage.
  */
-export async function unpinUpload(ipfsHash: string): Promise<void> {
-  await axios.delete(`${PINATA_BASE}/pinning/unpin/${ipfsHash}`, {
+export async function unpin(cid: string): Promise<void> {
+  await axios.delete(`${PINATA_BASE}/pinning/unpin/${cid}`, {
     headers: buildAuthHeaders(),
     timeout: 15_000,
   });
-  logger.info('Unpinned from IPFS', { ipfsHash });
+  logger.info('Unpinned from IPFS', { cid });
 }

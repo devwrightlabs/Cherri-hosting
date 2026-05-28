@@ -4,21 +4,43 @@ export default {
   theme: {
     extend: {
       colors: {
+        /**
+         * Enterprise gold accent palette, anchored on the brand accent
+         * #F0C040. The palette name `cherry` is preserved for backwards
+         * compatibility with existing utility classes (e.g. `text-cherry-400`,
+         * `bg-cherry-500`); the values map to gold shades so the rendered UI
+         * matches the #0A0A0F / #F0C040 enterprise dark theme.
+         */
         cherry: {
-          50: '#fdf2f8',
-          100: '#fce7f3',
-          200: '#fbcfe8',
-          300: '#f9a8d4',
-          400: '#f472b6',
-          500: '#ec4899',
-          600: '#db2777',
-          700: '#be185d',
-          800: '#9d174d',
-          900: '#831843',
-          950: '#500724',
+          50: '#fdf8e8',
+          100: '#fbf0c8',
+          200: '#f7e394',
+          300: '#f3d566',
+          400: '#f0c040', // primary accent
+          500: '#e0aa1e',
+          600: '#b88815',
+          700: '#8c6610',
+          800: '#66490b',
+          900: '#3d2b06',
+          950: '#1f1503',
+        },
+        /** Direct semantic alias for the brand accent. */
+        accent: {
+          DEFAULT: '#f0c040',
+          50: '#fdf8e8',
+          100: '#fbf0c8',
+          200: '#f7e394',
+          300: '#f3d566',
+          400: '#f0c040',
+          500: '#e0aa1e',
+          600: '#b88815',
+          700: '#8c6610',
+          800: '#66490b',
+          900: '#3d2b06',
+          950: '#1f1503',
         },
         surface: {
-          950: '#0a0a0f',
+          950: '#0a0a0f', // enterprise dark base
           900: '#111118',
           800: '#1a1a26',
           700: '#242435',
@@ -30,7 +52,12 @@ export default {
         mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
       },
       backgroundImage: {
-        'cherry-gradient': 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)',
+        /**
+         * Gold accent gradient. Kept under the `cherry-gradient` key so
+         * existing `bg-cherry-gradient` utility usages continue to work.
+         */
+        'cherry-gradient': 'linear-gradient(135deg, #f0c040 0%, #b88815 100%)',
+        'accent-gradient': 'linear-gradient(135deg, #f0c040 0%, #b88815 100%)',
         'dark-gradient': 'linear-gradient(180deg, #111118 0%, #0a0a0f 100%)',
       },
       animation: {

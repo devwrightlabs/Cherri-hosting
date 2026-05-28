@@ -3,7 +3,7 @@ import multer from 'multer';
 import { z } from 'zod';
 import { piAuthMiddleware, AuthenticatedRequest } from '../middleware/piAuth';
 import { prisma } from '../utils/prismaClient';
-import { pinDirectoryToIPFS, pinFileToIPFS } from '../services/ipfsService';
+import { pinDirectory, pinFile } from '../services/ipfs';
 import { logger } from '../utils/logger';
 import { getRouteParam } from '../utils/routeParams';
 
@@ -88,7 +88,7 @@ deploymentsRouter.post(
 
         let pinResult;
         if (files.length === 1) {
-          pinResult = await pinFileToIPFS(
+          pinResult = await pinFile(
             files[0].buffer,
             files[0].originalname,
             files[0].mimetype,
@@ -99,7 +99,7 @@ deploymentsRouter.post(
             path: f.originalname,
             mimeType: f.mimetype,
           }));
-          pinResult = await pinDirectoryToIPFS(fileMaps, project.name);
+          pinResult = await pinDirectory(fileMaps, project.name);
         }
 
         await prisma.deployment.update({
