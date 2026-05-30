@@ -13,7 +13,7 @@ import multer, { MulterError } from 'multer';
 import { z } from 'zod';
 import { piAuthMiddleware, AuthenticatedRequest } from '../middleware/piAuth';
 import { prisma } from '../utils/prismaClient';
-import { pinUpload, pinDirectory } from '../services/ipfs';
+import { pinFile, pinDirectory } from '../services/ipfs';
 import { logger } from '../utils/logger';
 import { FREE_MAX_UPLOAD_BYTES, PREMIUM_MAX_UPLOAD_BYTES } from '../utils/constants';
 
@@ -135,7 +135,7 @@ deployRouter.post(
         // Pin single file or multi-file directory to IPFS
         const pinResult =
           files.length === 1
-            ? await pinUpload(files[0].buffer, files[0].originalname, files[0].mimetype)
+            ? await pinFile(files[0].buffer, files[0].originalname, files[0].mimetype)
             : await pinDirectory(
                 files.map((f) => ({ buffer: f.buffer, path: f.originalname, mimeType: f.mimetype })),
                 project.name,
@@ -145,7 +145,7 @@ deployRouter.post(
         await prisma.deployment.update({
           where: { id: deployment.id },
           data: {
-            cid: pinResult.ipfsHash,
+            cid: pinResult.cid,
             gateway: pinResult.gatewayUrl,
             size: BigInt(pinResult.size),
             status: 'ACTIVE',
@@ -160,7 +160,7 @@ deployRouter.post(
 
         logger.info('Deployment activated via /api/deploy', {
           deploymentId: deployment.id,
-          ipfsHash: pinResult.ipfsHash,
+          cid: pinResult.cid,
           tier: user.tier,
           uploadBytes: uploadSize,
         });

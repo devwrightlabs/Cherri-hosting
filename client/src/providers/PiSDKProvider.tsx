@@ -121,7 +121,7 @@ export function PiSDKProvider({ children }: { children: React.ReactNode }) {
         </p>
         <button
           onClick={retry}
-          className="px-6 py-2 bg-cherry-gradient rounded-lg text-white font-medium hover:opacity-90 transition-opacity"
+          className="px-6 py-2 bg-cherry-gradient rounded-lg text-surface-950 font-semibold hover:opacity-90 transition-opacity"
         >
           Retry
         </button>
