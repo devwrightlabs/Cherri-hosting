@@ -56,8 +56,8 @@ export default {
          * Gold accent gradient. Kept under the `cherry-gradient` key so
          * existing `bg-cherry-gradient` utility usages continue to work.
          */
-        'cherry-gradient': 'linear-gradient(135deg, #f0c040 0%, #b88815 100%)',
-        'accent-gradient': 'linear-gradient(135deg, #f0c040 0%, #b88815 100%)',
+'cherry-gradient': 'linear-gradient(135deg, #f0c040 0%, #c99a1a 100%)',
+        'accent-gradient': 'linear-gradient(135deg, #f0c040 0%, #c99a1a 100%)'
         'dark-gradient': 'linear-gradient(180deg, #111118 0%, #0a0a0f 100%)',
       },
       animation: {
