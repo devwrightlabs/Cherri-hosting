@@ -160,7 +160,7 @@ deployRouter.post(
 
         logger.info('Deployment activated via /api/deploy', {
           deploymentId: deployment.id,
-          ipfsHash: pinResult.cid,
+          cid: pinResult.cid,
           tier: user.tier,
           uploadBytes: uploadSize,
         });
