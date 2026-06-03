@@ -8,6 +8,7 @@ import {
   verifyPayment,
 } from '../services/piPaymentService';
 import { logger } from '../utils/logger';
+import { IntegrationUnavailableError } from '../utils/integrations';
 import {
   PREMIUM_PRICE_PI,
   PREMIUM_STORAGE_LIMIT_BYTES,
@@ -121,6 +122,10 @@ paymentsRouter.post('/verify', async (req: AuthenticatedRequest, res: Response):
     // Payment exists but has no transaction yet — nothing to recover on the server
     res.json({ status: 'pending' });
   } catch (err) {
+    if (err instanceof IntegrationUnavailableError) {
+      res.status(503).json({ error: err.message, integration: err.integration });
+      return;
+    }
     logger.error('Failed to verify payment', { paymentId, error: err });
     res.status(500).json({ error: 'Failed to verify payment' });
   }

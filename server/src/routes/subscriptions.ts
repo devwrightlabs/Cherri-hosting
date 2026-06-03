@@ -8,6 +8,7 @@ import {
   verifyPayment,
 } from '../services/piPaymentService';
 import { logger } from '../utils/logger';
+import { IntegrationUnavailableError } from '../utils/integrations';
 import {
   FREE_STORAGE_LIMIT_BYTES,
   PREMIUM_PRICE_PI,
@@ -69,6 +70,10 @@ subscriptionsRouter.post('/payments/approve', async (req: AuthenticatedRequest, 
 
     res.json({ success: true, payment });
   } catch (err) {
+    if (err instanceof IntegrationUnavailableError) {
+      res.status(503).json({ error: err.message, integration: err.integration });
+      return;
+    }
     logger.error('Failed to approve payment', { error: err });
     res.status(500).json({ error: 'Failed to approve payment' });
   }
@@ -130,6 +135,10 @@ subscriptionsRouter.post('/payments/complete', async (req: AuthenticatedRequest,
     logger.info('User upgraded to PREMIUM', { userId: req.user!.id, txid });
     res.json({ success: true, subscription });
   } catch (err) {
+    if (err instanceof IntegrationUnavailableError) {
+      res.status(503).json({ error: err.message, integration: err.integration });
+      return;
+    }
     logger.error('Failed to complete payment', { error: err });
     res.status(500).json({ error: 'Failed to complete payment' });
   }

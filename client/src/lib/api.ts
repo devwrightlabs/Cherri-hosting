@@ -63,3 +63,18 @@ export const paymentsApi = {
   verify: (paymentId: string) =>
     apiClient.post('/payments/verify', { paymentId }),
 };
+
+export interface IntegrationStatus {
+  pi: boolean;
+  pinata: boolean;
+  database: boolean;
+}
+
+// System status — which external integrations are available on the server.
+// Public (no auth) and intended to be fetched once, not polled.
+export const statusApi = {
+  get: () =>
+    apiClient.get<{ integrations: IntegrationStatus; timestamp: string }>(
+      '/status',
+    ),
+};

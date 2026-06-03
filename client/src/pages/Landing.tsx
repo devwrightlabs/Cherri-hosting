@@ -16,7 +16,7 @@ const features = [
       'Every deployment is content-addressed. Your site lives on the decentralised web forever.',
   },
   {
-    icon: '🍒',
+    icon: '💰',
     title: 'Pi Payments',
     description:
       'Pay with Pi cryptocurrency. No credit cards, no KYC — just your Pi wallet.',
@@ -77,8 +77,8 @@ export default function Landing() {
       <header className="border-b border-surface-700/50 bg-surface-900/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2">
-            <span className="text-2xl">🍒</span>
-            <span className="font-bold text-white text-xl">Cherri Hosting</span>
+            <span className="text-2xl">🌐</span>
+            <span className="font-bold text-white text-xl">Sherry Hosting</span>
           </Link>
           <div className="flex items-center gap-3">
             <Link to="/pricing" className="text-surface-400 hover:text-white text-sm transition-colors">
@@ -121,7 +121,7 @@ export default function Landing() {
             </Link>
           ) : (
             <Button size="lg" onClick={signIn} isLoading={isLoading}>
-              🍒 Sign in with Pi
+              Sign in with Pi
             </Button>
           )}
           <Link to="/pricing">
@@ -184,7 +184,7 @@ export default function Landing() {
 
       {/* Footer */}
       <footer className="border-t border-surface-700/50 py-8 text-center text-surface-500 text-sm">
-        <p>© {new Date().getFullYear()} Cherri Hosting. Built on IPFS & Pi Network.</p>
+        <p>© {new Date().getFullYear()} Sherry Hosting. Built on IPFS & Pi Network.</p>
       </footer>
     </div>
   );

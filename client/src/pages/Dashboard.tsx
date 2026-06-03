@@ -9,6 +9,8 @@ import DeploymentCard from '../components/dashboard/DeploymentCard';
 import QuickDeploy from '../components/dashboard/QuickDeploy';
 import UpgradeBanner from '../components/dashboard/UpgradeBanner';
 import Spinner from '../components/ui/Spinner';
+import Skeleton from '../components/ui/Skeleton';
+import SystemStatusBanner from '../components/SystemStatusBanner';
 import { useAuth } from '../providers/AuthProvider';
 import { projectsApi } from '../lib/api';
 import { Deployment, Project } from '../types';
@@ -69,6 +71,9 @@ export default function Dashboard() {
 
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-6xl mx-auto px-6 py-8 space-y-8">
+
+          {/* ── Degraded-mode notice (only shows when an integration is down) ── */}
+          <SystemStatusBanner />
 
           {/* ── Header ── */}
           <div className="flex items-center justify-between">
@@ -210,8 +215,17 @@ export default function Dashboard() {
             </div>
 
             {isLoading ? (
-              <div className="flex justify-center py-10">
-                <Spinner />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Card key={i} className="h-full">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <Skeleton className="h-5 w-32" />
+                      <Skeleton className="h-5 w-16" />
+                    </div>
+                    <Skeleton className="h-3 w-40 mb-2" />
+                    <Skeleton className="h-3 w-24" />
+                  </Card>
+                ))}
               </div>
             ) : projects.length === 0 ? (
               <Card className="text-center py-10">

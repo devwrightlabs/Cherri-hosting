@@ -31,7 +31,7 @@ export default function UpgradeBanner({ onUpgradeSuccess }: UpgradeBannerProps) 
     window.Pi.createPayment(
       {
         amount: PREMIUM_PRICE_PI,
-        memo: 'Cherri Hosting Premium — 1 month',
+        memo: 'Sherry Hosting Premium — 1 month',
         metadata: { plan: 'premium', months: 1 },
       },
       {
@@ -130,7 +130,7 @@ export default function UpgradeBanner({ onUpgradeSuccess }: UpgradeBannerProps) 
               onClick={handleUpgrade}
               isLoading={isPaying}
             >
-              🍒 Upgrade with Pi ({PREMIUM_PRICE_PI} Pi/mo)
+              Upgrade with Pi ({PREMIUM_PRICE_PI} Pi/mo)
             </Button>
             <Link to="/pricing" className="block">
               <p className="text-xs text-center text-surface-500 hover:text-cherry-400 transition-colors">

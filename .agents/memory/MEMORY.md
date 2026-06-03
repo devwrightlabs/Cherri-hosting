@@ -1,0 +1,2 @@
+- [Integration resilience pattern](integration-resilience.md) — how Sherry Hosting isolates Pi/Pinata/DB so missing config or timeouts never crash the app.
+- [Dev workflow & branding](dev-environment.md) — start.sh runs server+client; Tailwind palette is gold but legacy `cherry-*` class keys kept for compat.

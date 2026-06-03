@@ -10,32 +10,37 @@ import { deployRouter } from './routes/deploy';
 import { subscriptionsRouter } from './routes/subscriptions';
 import { paymentsRouter } from './routes/payments';
 import { logger } from './utils/logger';
+import { integrationStatus } from './utils/integrations';
 
 // ---------------------------------------------------------------------------
-// Startup environment validation
-// Fail fast with a clear message if required secrets are missing.
+// Startup environment check (non-fatal by design)
+//
+// The app is built to stay online even when optional external integrations
+// are not configured. Instead of crashing on missing secrets, we log a clear
+// warning and let the affected feature return a structured 503 at call time.
+// Only DATABASE_URL is treated as strictly required, since nearly every route
+// depends on it — but we still warn rather than hard-exit so the static UI and
+// the /api/status endpoint remain reachable for diagnostics.
 // ---------------------------------------------------------------------------
-const REQUIRED_ENV_VARS = ['DATABASE_URL', 'PI_API_KEY'] as const;
-const missingVars = REQUIRED_ENV_VARS.filter((v) => !process.env[v]);
-if (missingVars.length > 0) {
-  // Use console.error here in case the logger is not yet initialised
-  console.error(
-    `[startup] Missing required environment variables: ${missingVars.join(', ')}. ` +
-      'For local server runs, copy server/.env.example to server/.env and fill in the values. ' +
-      'For Docker Compose runs, copy .env.example to .env at the repository root and fill in the values.',
+const status = integrationStatus();
+if (!status.database) {
+  console.warn(
+    '[startup] DATABASE_URL is not set. Database-backed routes will be unavailable. ' +
+      'Provision a database and set DATABASE_URL to enable them.',
   );
-  process.exit(1);
 }
-
-const hasPinata =
-  process.env.PINATA_JWT ||
-  (process.env.PINATA_API_KEY && process.env.PINATA_API_SECRET);
-if (!hasPinata) {
-  console.error(
-    '[startup] Missing Pinata credentials. ' +
-      'Set PINATA_JWT or both PINATA_API_KEY and PINATA_API_SECRET.',
+if (!status.pi) {
+  console.warn(
+    '[startup] PI_API_KEY is not set. Pi Network payment features are disabled ' +
+      'until it is configured (the app will continue running).',
   );
-  process.exit(1);
+}
+if (!status.pinata) {
+  console.warn(
+    '[startup] Pinata credentials are not set (PINATA_JWT or PINATA_API_KEY + ' +
+      'PINATA_API_SECRET). IPFS deployments are disabled until configured ' +
+      '(the app will continue running).',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -47,13 +52,18 @@ process.on('unhandledRejection', (reason) => {
 });
 
 process.on('uncaughtException', (err) => {
-  console.error('Uncaught exception — shutting down', {
+  // After an uncaught exception the process is in an undefined state. In
+  // production we fail fast so the deployment supervisor restarts a clean
+  // instance. In development there is no supervisor, so we log and stay alive
+  // to keep the app reachable while iterating (external-service errors are
+  // already handled in their own routes/services and won't reach here).
+  console.error('Uncaught exception', {
     message: err.message,
     stack: err.stack,
   });
-  // The process is in an undefined state after an uncaught exception;
-  // exit so a process manager (Docker restart policy, PM2, etc.) can restart it.
-  process.exit(1);
+  if (process.env.NODE_ENV === 'production') {
+    process.exit(1);
+  }
 });
 
 const app = express();
@@ -87,6 +97,12 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Integration status — lets the frontend show a clear "degraded mode" banner
+// when an optional external service (Pi Network, Pinata/IPFS) is not configured.
+app.get('/api/status', (_req, res) => {
+  res.json({ integrations: integrationStatus(), timestamp: new Date().toISOString() });
+});
+
 // Routes
 app.use('/api/auth', authRouter);
 app.use('/api/projects', projectsRouter);
@@ -114,7 +130,7 @@ app.use(
 );
 
 app.listen(PORT, () => {
-  logger.info(`Cherri Hosting API running on port ${PORT}`);
+  logger.info(`Sherry Hosting API running on port ${PORT}`);
 });
 
 export default app;

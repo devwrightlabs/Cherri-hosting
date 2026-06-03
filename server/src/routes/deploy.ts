@@ -15,6 +15,7 @@ import { piAuthMiddleware, AuthenticatedRequest } from '../middleware/piAuth';
 import { prisma } from '../utils/prismaClient';
 import { pinFile, pinDirectory } from '../services/ipfs';
 import { logger } from '../utils/logger';
+import { isPinataConfigured } from '../utils/integrations';
 import { FREE_MAX_UPLOAD_BYTES, PREMIUM_MAX_UPLOAD_BYTES } from '../utils/constants';
 
 export const deployRouter = Router();
@@ -63,6 +64,17 @@ deployRouter.post(
 
     if (files.length === 0) {
       res.status(400).json({ error: 'No files uploaded' });
+      return;
+    }
+
+    // Preflight: if IPFS (Pinata) is not configured, fail fast with a clear 503
+    // instead of accepting the upload and silently flipping it to FAILED later.
+    if (!isPinataConfigured()) {
+      res.status(503).json({
+        error:
+          'IPFS deployments are currently unavailable (Pinata is not configured on the server).',
+        integration: 'pinata',
+      });
       return;
     }
 

@@ -26,26 +26,35 @@ authRouter.post('/signin', async (req: AuthenticatedRequest, res: Response): Pro
   // Delegate actual verification to the middleware by manually injecting the header
   req.headers.authorization = `Bearer ${parsed.data.piAccessToken}`;
   await piAuthMiddleware(req, res, async () => {
-    if (!req.user) {
-      res.status(401).json({ error: 'Authentication failed' });
-      return;
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: 'Authentication failed' });
+        return;
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: {
+          id: true,
+          piUserId: true,
+          username: true,
+          email: true,
+          tier: true,
+          storageUsed: true,
+          storageLimit: true,
+          createdAt: true,
+        },
+      });
+
+      res.json({ user });
+    } catch (err) {
+      // Without this guard a DB failure here becomes an unhandled rejection and
+      // the request hangs with no response. Always answer the client.
+      logger.error('Failed to load user during signin', { error: err });
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to sign in' });
+      }
     }
-
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: {
-        id: true,
-        piUserId: true,
-        username: true,
-        email: true,
-        tier: true,
-        storageUsed: true,
-        storageLimit: true,
-        createdAt: true,
-      },
-    });
-
-    res.json({ user });
   });
 });
 

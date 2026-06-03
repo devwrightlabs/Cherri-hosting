@@ -18,6 +18,7 @@ import axios from 'axios';
 import FormData from 'form-data';
 import { logger } from '../utils/logger';
 import { IPFS_CID_VERSION } from '../utils/constants';
+import { IntegrationUnavailableError } from '../utils/integrations';
 
 const PINATA_BASE = 'https://api.pinata.cloud';
 
@@ -32,8 +33,9 @@ function buildAuthHeaders(): Record<string, string> {
   const apiSecret = process.env.PINATA_API_SECRET;
 
   if (!apiKey || !apiSecret) {
-    throw new Error(
-      'Pinata credentials are not configured. Set PINATA_JWT or both PINATA_API_KEY and PINATA_API_SECRET.',
+    throw new IntegrationUnavailableError(
+      'pinata',
+      'Pinata/IPFS is not configured on the server. Set PINATA_JWT or both PINATA_API_KEY and PINATA_API_SECRET.',
     );
   }
 

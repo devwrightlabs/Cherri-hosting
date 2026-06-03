@@ -153,7 +153,7 @@ export default function PiAuth({ onSuccess, className = '' }: PiAuthProps) {
         onClick={handleSignIn}
         isLoading={isLoading}
         disabled={sdkState !== 'ready' || isLoading}
-        leftIcon={<span>🍒</span>}
+        leftIcon={<span aria-hidden="true">π</span>}
       >
         Sign in with Pi
       </Button>

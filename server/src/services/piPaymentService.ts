@@ -1,7 +1,18 @@
 import axios from 'axios';
 import { logger } from '../utils/logger';
+import { isPiConfigured, IntegrationUnavailableError } from '../utils/integrations';
 
 const PI_API_BASE = 'https://api.minepi.com/v2';
+
+/** Guard every outbound Pi API call so missing config fails fast and clearly. */
+function assertPiConfigured(): void {
+  if (!isPiConfigured()) {
+    throw new IntegrationUnavailableError(
+      'pi',
+      'Pi Network is not configured on the server (PI_API_KEY missing). Payment features are unavailable.',
+    );
+  }
+}
 
 interface PiPayment {
   identifier: string;
@@ -34,6 +45,7 @@ function getPiApiHeaders(): Record<string, string> {
  * Fetch a Pi payment by its identifier.
  */
 export async function getPayment(paymentId: string): Promise<PiPayment> {
+  assertPiConfigured();
   const response = await axios.get<PiPayment>(
     `${PI_API_BASE}/payments/${paymentId}`,
     {
@@ -48,6 +60,7 @@ export async function getPayment(paymentId: string): Promise<PiPayment> {
  * Approve a payment on the server side (step 1 of payment flow).
  */
 export async function approvePayment(paymentId: string): Promise<PiPayment> {
+  assertPiConfigured();
   const response = await axios.post<PiPayment>(
     `${PI_API_BASE}/payments/${paymentId}/approve`,
     {},
@@ -67,6 +80,7 @@ export async function completePayment(
   paymentId: string,
   txid: string,
 ): Promise<PiPayment> {
+  assertPiConfigured();
   const response = await axios.post<PiPayment>(
     `${PI_API_BASE}/payments/${paymentId}/complete`,
     { txid },

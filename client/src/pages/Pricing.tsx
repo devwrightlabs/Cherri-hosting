@@ -44,7 +44,7 @@ export default function Pricing() {
     window.Pi.createPayment(
       {
         amount: PREMIUM_PRICE_PI,
-        memo: 'Cherri Hosting Premium — 1 month',
+        memo: 'Sherry Hosting Premium — 1 month',
         metadata: { plan: 'premium', months: 1 },
       },
       {
@@ -91,8 +91,8 @@ export default function Pricing() {
           {!isAuthenticated && (
             <div className="flex items-center gap-2 mb-8">
               <Link to="/" className="flex items-center gap-2">
-                <span className="text-2xl">🍒</span>
-                <span className="font-bold text-white text-xl">Cherri Hosting</span>
+                <span className="text-2xl">🌐</span>
+                <span className="font-bold text-white text-xl">Sherry Hosting</span>
               </Link>
             </div>
           )}
@@ -206,7 +206,7 @@ export default function Pricing() {
                       onClick={handleUpgrade}
                       isLoading={isPaying}
                     >
-                      🍒 Upgrade with Pi
+                      Upgrade with Pi
                     </Button>
                   )
                 ) : (

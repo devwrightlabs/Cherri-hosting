@@ -101,7 +101,7 @@ export function PiSDKProvider({ children }: { children: React.ReactNode }) {
   if (state === 'loading') {
     return (
       <div className="min-h-screen bg-surface-950 flex flex-col items-center justify-center gap-4">
-        <div className="text-4xl">🍒</div>
+        <div className="text-4xl">🌐</div>
         <Spinner size="lg" />
         <p className="text-surface-600 text-sm">Initializing Pi SDK…</p>
       </div>
@@ -111,7 +111,7 @@ export function PiSDKProvider({ children }: { children: React.ReactNode }) {
   if (state === 'error') {
     return (
       <div className="min-h-screen bg-surface-950 flex flex-col items-center justify-center gap-6 px-4 text-center">
-        <div className="text-5xl">🍒</div>
+        <div className="text-5xl">🌐</div>
         <h2 className="text-xl font-semibold text-white">
           Could not reach Pi Network
         </h2>
