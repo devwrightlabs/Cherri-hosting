@@ -8,9 +8,11 @@ import { projectsRouter } from './routes/projects';
 import { deploymentsRouter } from './routes/deployments';
 import { deployRouter } from './routes/deploy';
 import { subscriptionsRouter } from './routes/subscriptions';
+import { pirc2Router } from './routes/pirc2';
 import { paymentsRouter } from './routes/payments';
 import { logger } from './utils/logger';
 import { integrationStatus } from './utils/integrations';
+import { startBillingScheduler } from './services/billingScheduler';
 
 // ---------------------------------------------------------------------------
 // Startup environment check (non-fatal by design)
@@ -40,6 +42,13 @@ if (!status.pinata) {
     '[startup] Pinata credentials are not set (PINATA_JWT or PINATA_API_KEY + ' +
       'PINATA_API_SECRET). IPFS deployments are disabled until configured ' +
       '(the app will continue running).',
+  );
+}
+if (!status.pirc2) {
+  console.warn(
+    '[startup] PiRC2 is not configured (PIRC2_CONTRACT_ID, SOROBAN_RPC_URL, ' +
+      'PIRC2_NETWORK_PASSPHRASE). Recurring subscriptions are disabled until ' +
+      'configured (the app will continue running).',
   );
 }
 
@@ -109,6 +118,7 @@ app.use('/api/projects', projectsRouter);
 app.use('/api/deployments', deploymentsRouter);
 app.use('/api/deploy', deployRouter);
 app.use('/api/subscriptions', subscriptionsRouter);
+app.use('/api/subscriptions/pirc2', pirc2Router);
 app.use('/api/payments', paymentsRouter);
 
 // 404 handler
@@ -131,6 +141,9 @@ app.use(
 
 app.listen(PORT, () => {
   logger.info(`Sherry Hosting API running on port ${PORT}`);
+  // Start the PiRC2 recurring-billing loop. It self-skips when PiRC2 is not
+  // configured, so it is always safe to start.
+  startBillingScheduler();
 });
 
 export default app;

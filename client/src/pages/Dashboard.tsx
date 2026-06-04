@@ -8,6 +8,7 @@ import StorageBar from '../components/dashboard/StorageBar';
 import DeploymentCard from '../components/dashboard/DeploymentCard';
 import QuickDeploy from '../components/dashboard/QuickDeploy';
 import UpgradeBanner from '../components/dashboard/UpgradeBanner';
+import Pirc2Subscription from '../components/dashboard/Pirc2Subscription';
 import DomainGateway from '../components/dashboard/DomainGateway';
 import Spinner from '../components/ui/Spinner';
 import Skeleton from '../components/ui/Skeleton';
@@ -161,6 +162,9 @@ export default function Dashboard() {
 
               {/* Subscription tier / upgrade card */}
               <UpgradeBanner onUpgradeSuccess={handleUpgradeSuccess} />
+
+              {/* Recurring (PiRC2) subscription card */}
+              <Pirc2Subscription onChange={handleUpgradeSuccess} />
 
               {/* Domain redirection gateway — domains are acquired via Pi Network */}
               <DomainGateway />

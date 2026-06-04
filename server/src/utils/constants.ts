@@ -13,5 +13,11 @@ export const PREMIUM_MAX_UPLOAD_BYTES = 1024 * 1024 * 1024;
 /** Premium plan price in Pi */
 export const PREMIUM_PRICE_PI = 10;
 
+/** Default PiRC2 billing interval: 30 days per cycle. */
+export const PREMIUM_BILLING_INTERVAL_DAYS = 30;
+
+/** Default PiRC2 billing horizon: allowance authorizes up to 12 monthly cycles. */
+export const PREMIUM_DEFAULT_CYCLES_AUTHORIZED = 12;
+
 /** IPFS CID version used when pinning content */
 export const IPFS_CID_VERSION = 1 as const;

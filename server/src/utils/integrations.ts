@@ -26,6 +26,20 @@ export function isDatabaseConfigured(): boolean {
 }
 
 /**
+ * True when the PiRC2 on-chain subscription standard is configured (required to
+ * verify allowance approvals and draw recurring charges). PiRC2 is a Soroban
+ * smart-contract standard; it needs the subscription contract id, a Soroban RPC
+ * endpoint, and the network passphrase.
+ */
+export function isPirc2Configured(): boolean {
+  return Boolean(
+    process.env.PIRC2_CONTRACT_ID &&
+      process.env.SOROBAN_RPC_URL &&
+      process.env.PIRC2_NETWORK_PASSPHRASE,
+  );
+}
+
+/**
  * Error thrown when a feature is invoked but its required external integration
  * is not configured. Routes catch this and return HTTP 503 so the client can
  * surface a friendly "service unavailable" message rather than a 500 crash.
@@ -45,5 +59,6 @@ export function integrationStatus() {
     pi: isPiConfigured(),
     pinata: isPinataConfigured(),
     database: isDatabaseConfigured(),
+    pirc2: isPirc2Configured(),
   };
 }

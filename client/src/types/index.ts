@@ -99,6 +99,27 @@ declare global {
         paymentData: { amount: number; memo: string; metadata: Record<string, unknown> },
         callbacks: PiPaymentCallbacks,
       ) => void;
+      /**
+       * PiRC2 recurring-subscription allowance approval. This is part of Pi's
+       * on-chain subscription standard and is only present in Pi Browser builds
+       * that support PiRC2. Optional so the app degrades honestly where absent.
+       */
+      createSubscription?: (
+        subscriptionData: {
+          amount: number;
+          interval: { days: number };
+          cycles: number;
+          memo: string;
+          metadata: Record<string, unknown>;
+        },
+      ) => Promise<PiAllowanceApproval>;
     };
   }
+}
+
+export interface PiAllowanceApproval {
+  /** Hash of the on-chain allowance approval transaction. */
+  txid: string;
+  /** Subscriber's on-chain account address that granted the allowance. */
+  address: string;
 }

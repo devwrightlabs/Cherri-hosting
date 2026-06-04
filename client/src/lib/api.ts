@@ -64,10 +64,64 @@ export const paymentsApi = {
     apiClient.post('/payments/verify', { paymentId }),
 };
 
+// PiRC2 recurring subscriptions
+export interface BillingEvent {
+  id: string;
+  type: string;
+  status: string;
+  amount: string | null;
+  txId: string | null;
+  message: string | null;
+  createdAt: string;
+}
+
+export interface PiSubscription {
+  id: string;
+  tier: string;
+  status: string;
+  subscriberAddress: string | null;
+  contractId: string | null;
+  approvalTxId: string | null;
+  currency: string;
+  amountPerCycle: string;
+  allowanceTotal: string;
+  allowanceRemaining: string;
+  intervalDays: number;
+  cyclesAuthorized: number;
+  cyclesBilled: number;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+  nextBillingAt: string | null;
+  createdAt: string;
+  events: BillingEvent[];
+}
+
+export interface SubscribeParams {
+  approvalTxId: string;
+  subscriberAddress: string;
+  amountPerCycle?: number;
+  intervalDays?: number;
+  cyclesAuthorized?: number;
+}
+
+export const pirc2Api = {
+  current: () =>
+    apiClient.get<{ subscription: PiSubscription | null }>(
+      '/subscriptions/pirc2/current',
+    ),
+  subscribe: (params: SubscribeParams) =>
+    apiClient.post<{ subscription: PiSubscription }>(
+      '/subscriptions/pirc2/subscribe',
+      params,
+    ),
+  cancel: () => apiClient.post('/subscriptions/pirc2/cancel'),
+};
+
 export interface IntegrationStatus {
   pi: boolean;
   pinata: boolean;
   database: boolean;
+  pirc2: boolean;
 }
 
 // System status — which external integrations are available on the server.

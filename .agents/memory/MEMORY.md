@@ -1,2 +1,2 @@
-- [Integration resilience pattern](integration-resilience.md) — how Sherry Hosting isolates Pi/Pinata/DB so missing config or timeouts never crash the app.
-- [Dev workflow & branding](dev-environment.md) — start.sh runs server+client; Tailwind palette is gold but legacy `cherry-*` class keys kept for compat.
+- [Prisma client generation](prisma-client-generation.md) — schema lives at root/prisma; `prisma generate` outputs to root node_modules, but the server imports its own copy — must sync.
+- [PiRC2 subscriptions](pirc2-subscriptions.md) — on-chain recurring subscription system; honest 503 degradation, never fakes a charge; adapter seam for chain wiring.

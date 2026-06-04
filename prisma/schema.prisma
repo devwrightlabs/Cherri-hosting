@@ -23,6 +23,7 @@ model User {
   updatedAt    DateTime       @updatedAt
   projects     Project[]
   subscriptions Subscription[]
+  piSubscriptions PiSubscription[]
 }
 
 model Project {
@@ -74,4 +75,69 @@ model Subscription {
   user        User     @relation(fields: [userId], references: [id])
 
   @@index([userId])
+}
+
+/// PiRC2 recurring subscription (Pi Network's on-chain subscription standard).
+///
+/// The subscriber grants a one-time spending allowance to the PiRC2 contract;
+/// funds stay in their wallet and the billing scheduler draws one `amountPerCycle`
+/// per interval (via the contract's transfer_from) until the allowance horizon
+/// (`cyclesAuthorized`) is reached or the subscription is cancelled.
+model PiSubscription {
+  id                 String   @id @default(uuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id])
+  /// Granted tier while active (currently always 'PREMIUM').
+  tier               String   @default("PREMIUM")
+  /// PENDING_APPROVAL | ACTIVE | PAST_DUE | CANCELLED | EXPIRED
+  status             String   @default("PENDING_APPROVAL")
+  /// On-chain account that granted the allowance.
+  subscriberAddress  String?
+  /// PiRC2 subscription smart-contract id this allowance targets.
+  contractId         String?
+  /// The on-chain tx hash that granted the spending allowance (one-time approval).
+  approvalTxId       String?  @unique
+  currency           String   @default("PI")
+  /// Amount drawn each billing cycle.
+  amountPerCycle     Decimal  @db.Decimal(18, 8)
+  /// Total approved spending limit (amountPerCycle * cyclesAuthorized).
+  allowanceTotal     Decimal  @db.Decimal(18, 8)
+  /// Remaining un-drawn allowance.
+  allowanceRemaining Decimal  @db.Decimal(18, 8)
+  /// Billing interval length in days.
+  intervalDays       Int      @default(30)
+  /// Max number of cycles the allowance authorizes (billing horizon).
+  cyclesAuthorized   Int
+  /// Cycles successfully billed so far.
+  cyclesBilled       Int      @default(0)
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  /// When the next charge should be attempted (null once horizon reached).
+  nextBillingAt      DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  events             BillingEvent[]
+
+  @@index([userId])
+  @@index([status, nextBillingAt])
+}
+
+/// Immutable log of subscription lifecycle / on-chain billing events. These are
+/// what the app tracks subscription status from.
+model BillingEvent {
+  id             String         @id @default(uuid())
+  subscriptionId String
+  subscription   PiSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  /// APPROVAL | CHARGE | RENEWAL | CANCELLATION | INSUFFICIENT_FUNDS | EXPIRY
+  type           String
+  /// SUCCESS | FAILED
+  status         String
+  amount         Decimal?       @db.Decimal(18, 8)
+  txId           String?
+  periodStart    DateTime?
+  periodEnd      DateTime?
+  message        String?
+  createdAt      DateTime       @default(now())
+
+  @@index([subscriptionId])
 }
