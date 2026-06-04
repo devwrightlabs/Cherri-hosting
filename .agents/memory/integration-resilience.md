@@ -28,3 +28,17 @@ logs then `process.exit(1)` (deployment supervisor restarts clean). In
 development it logs and stays alive (no supervisor; exiting would take the app
 fully down, defeating the uptime goal). External-service errors are handled in
 their own routes/services and shouldn't reach this handler.
+
+## Domain separation (utility, not reseller)
+Sherry is hosting infrastructure only. It must NEVER sell domains or process
+domain bids/billing. Domain acquisition routes to Pi Network's OFFICIAL domain
+auction via a redirection gateway (`client/src/components/dashboard/DomainGateway.tsx`,
+opens `PI_DOMAIN_PORTAL_URL` from `client/src/lib/constants.ts`, configurable via
+`VITE_PI_DOMAIN_PORTAL_URL`). UI copy says "Pi domain mapping" (mapping an
+already-owned domain to a deployment's IPFS gateway/CID) — never "custom domain
+support / point your CNAME to our gateway" (that framing reads as reseller).
+**Why:** explicit product/compliance boundary — purchases happen on Pi Network, not here.
+
+## Identity
+Auth is strictly "Sign in with Pi" (Pi SDK). No traditional Sign Up / register /
+email-password. Unauthenticated CTAs must trigger `signIn()` and read "Sign in with Pi".

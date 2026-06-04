@@ -59,7 +59,7 @@ const tiers = [
     features: [
       '10 GB storage',
       'Unlimited deployments',
-      'Custom domain support',
+      'Pi domain mapping',
       'Priority pinning',
       'Priority support',
     ],
@@ -231,7 +231,7 @@ function TierContent({
           onClick={signIn}
           isLoading={isLoading}
         >
-          {tier.cta}
+          Sign in with Pi
         </Button>
       )}
     </>

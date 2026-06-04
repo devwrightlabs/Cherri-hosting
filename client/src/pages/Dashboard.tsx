@@ -8,6 +8,7 @@ import StorageBar from '../components/dashboard/StorageBar';
 import DeploymentCard from '../components/dashboard/DeploymentCard';
 import QuickDeploy from '../components/dashboard/QuickDeploy';
 import UpgradeBanner from '../components/dashboard/UpgradeBanner';
+import DomainGateway from '../components/dashboard/DomainGateway';
 import Spinner from '../components/ui/Spinner';
 import Skeleton from '../components/ui/Skeleton';
 import SystemStatusBanner from '../components/SystemStatusBanner';
@@ -160,6 +161,9 @@ export default function Dashboard() {
 
               {/* Subscription tier / upgrade card */}
               <UpgradeBanner onUpgradeSuccess={handleUpgradeSuccess} />
+
+              {/* Domain redirection gateway — domains are acquired via Pi Network */}
+              <DomainGateway />
 
               {/* Storage bar */}
               {user && (

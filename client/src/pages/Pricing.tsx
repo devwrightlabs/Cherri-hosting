@@ -164,7 +164,7 @@ export default function Pricing() {
               ) : (
                 <Link to="/">
                   <Button variant="secondary" className="w-full justify-center">
-                    Get started free
+                    Sign in with Pi
                   </Button>
                 </Link>
               )}
@@ -187,7 +187,7 @@ export default function Pricing() {
                   {[
                     '10 GB storage',
                     'Unlimited deployments',
-                    'Custom domain support',
+                    'Pi domain mapping',
                     'Priority IPFS pinning',
                     'Priority support',
                     'All Free features',
@@ -232,7 +232,7 @@ export default function Pricing() {
               },
               {
                 q: 'Can I use a custom domain?',
-                a: 'Custom domains are available on the Premium plan. Point your domain\'s CNAME to our gateway and we handle the rest.',
+                a: 'Yes. Domains are acquired through Pi Network\'s official domain auction — Sherry does not sell domains or process bids. Once you own a Pi domain, Premium lets you map it to your IPFS deployment from the dashboard.',
               },
               {
                 q: 'What happens if I exceed my storage?',

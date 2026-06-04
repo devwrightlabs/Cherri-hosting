@@ -99,7 +99,7 @@ export default function UpgradeBanner({ onUpgradeSuccess }: UpgradeBannerProps) 
             </div>
             <div className="flex items-center gap-2 text-emerald-400">
               <span>✓</span>
-              <span>Custom domains</span>
+              <span>Pi domain mapping</span>
             </div>
             <div className="flex items-center gap-2 text-emerald-400">
               <span>✓</span>
@@ -118,7 +118,7 @@ export default function UpgradeBanner({ onUpgradeSuccess }: UpgradeBannerProps) 
             </div>
             <div className="flex items-center gap-2 text-surface-600">
               <span>✗</span>
-              <span>Custom domains</span>
+              <span>Pi domain mapping</span>
             </div>
             <div className="flex items-center gap-2 text-surface-600">
               <span>✗</span>
