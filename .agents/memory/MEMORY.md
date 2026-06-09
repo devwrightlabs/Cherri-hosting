@@ -1,2 +1,4 @@
 - [Prisma client generation](prisma-client-generation.md) — schema lives at root/prisma; `prisma generate` outputs to root node_modules, but the server imports its own copy — must sync.
 - [PiRC2 subscriptions](pirc2-subscriptions.md) — on-chain recurring subscription system; honest 503 degradation, never fakes a charge; adapter seam for chain wiring.
+- [Folder upload architecture](folder-upload-architecture.md) — FileSystemEntry API + webkitdirectory; server receives filePaths JSON alongside files; adm-zip handles ZIP extraction with common-root stripping.
+- [Multi-tier subscriptions](multi-tier-subscriptions.md) — amount passed from client in complete request; resolveTierFromAmount() maps Pi amount → tier; TIER1/2/3/4 extend FREE/PREMIUM.

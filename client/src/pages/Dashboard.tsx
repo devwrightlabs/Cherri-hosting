@@ -167,7 +167,7 @@ export default function Dashboard() {
               <Pirc2Subscription onChange={handleUpgradeSuccess} />
 
               {/* Domain redirection gateway — domains are acquired via Pi Network */}
-              <DomainGateway />
+              <DomainGateway projects={projects} />
 
               {/* Storage bar */}
               {user && (

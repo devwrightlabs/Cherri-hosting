@@ -45,7 +45,7 @@ export default function UpgradeBanner({ onUpgradeSuccess }: UpgradeBannerProps) 
         },
         onReadyForServerCompletion: async (paymentId, txid) => {
           try {
-            await subscriptionsApi.completePayment(paymentId, txid);
+            await subscriptionsApi.completePayment(paymentId, txid, PREMIUM_PRICE_PI);
             setPaySuccess(true);
             onUpgradeSuccess?.();
           } catch {

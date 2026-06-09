@@ -1,4 +1,4 @@
-export type Tier = 'FREE' | 'PREMIUM';
+export type Tier = 'FREE' | 'PREMIUM' | 'TIER1' | 'TIER2' | 'TIER3' | 'TIER4';
 
 export type DeploymentStatus =
   | 'PENDING'
@@ -58,6 +58,8 @@ export interface Subscription {
 export interface PiUser {
   uid: string;
   username: string;
+  /** Wallet address, present when 'wallet_address' scope is granted. */
+  walletAddress?: string;
 }
 
 export interface PiAuthResult {

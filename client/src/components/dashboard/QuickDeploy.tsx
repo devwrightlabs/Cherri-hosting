@@ -32,6 +32,7 @@ const STATUS_VARIANTS: Record<DeploymentStatus, 'default' | 'warning' | 'info' |
 export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployProps) {
   const navigate = useNavigate();
   const [files, setFiles] = useState<File[]>([]);
+  const [filePaths, setFilePaths] = useState<string[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState(
     projects.length > 0 ? projects[0].id : '',
   );
@@ -98,7 +99,7 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
     setDeploymentId('');
 
     try {
-      const d = await deployFiles(selectedProjectId, files, setUploadProgress);
+      const d = await deployFiles(selectedProjectId, files, filePaths, setUploadProgress);
       setDeploymentId(d.id);
       setDeploymentStatus(d.status as DeploymentStatus);
       pollStatus(d.id);
@@ -112,6 +113,7 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
 
   const reset = () => {
     setFiles([]);
+    setFilePaths([]);
     setDeploymentId('');
     setDeploymentStatus(null);
     setLiveDeployment(null);
@@ -119,7 +121,7 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
     setUploadProgress(0);
   };
 
-  const canDeploy = selectedProjectId && files.length > 0 && !isDeploying && deploymentStatus === null;
+  const canDeploy = selectedProjectId && files.length > 0 && filePaths.length > 0 && !isDeploying && deploymentStatus === null;
 
   /** Whether this error kind should show a tier-upgrade call-to-action. */
   const isUpgradeError = (kind: DeployError['kind']) =>
@@ -164,18 +166,12 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
         </div>
       )}
 
-      {/* Drop zone — the centerpiece */}
+      {/* Drop zone — folder / ZIP aware */}
       {deploymentStatus === null && (
         <DropZone
-          onFilesAccepted={setFiles}
-          accept={{
-            'application/zip': ['.zip'],
-            'application/octet-stream': [],
-            'text/html': ['.html', '.htm'],
-            'text/css': ['.css'],
-            'application/javascript': ['.js', '.mjs', '.cjs'],
-            'text/javascript': ['.js', '.mjs', '.cjs'],
-            'image/*': ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.bmp', '.avif'],
+          onFilesAccepted={(acceptedFiles, acceptedPaths) => {
+            setFiles(acceptedFiles);
+            setFilePaths(acceptedPaths);
           }}
         />
       )}

@@ -1,0 +1,23 @@
+Role: Senior Full-Stack Engineer and AI Deployment Automation Expert.
+
+Context:
+You are building and optimizing 'Cherri-hosting', a decentralized web hosting platform tailored for the Pi Network ecosystem. The application utilizes a minimalist, enterprise-grade dark-themed aesthetic (#0A0A0F with #F0C040 gold accents).
+
+Core Features to Implement:
+1. Pi Network Integration: Seamless login using the Pi Authentication SDK and automated transactions handled exclusively in Pi. Note that the Pi Core Team takes a 30% share of all app revenue, which must be factored into the backend transaction processing logic.
+2. Deployment Pipeline (Vercel-style): A frontend drag-and-drop zone allowing users to upload a ZIP folder (e.g., exported from Replit or GitHub). The backend must automatically unzip, read the entire folder structure, detect the project type, configuration, and entry points, and deploy it seamlessly to IPFS for permanent decentralized hosting.
+3. Pi Domain Mapping: A configuration interface for domain mapping. Instead of selling domains, the app must safely redirect users to the official Pi domain auction page within the Pi Browser to secure their domain, then allow them to map that self-purchased domain back to their Cherri-hosting deployment.
+
+Tier and Feature Structure:
+- Free Tier: $0 Pi. 1 initial app upload deployment, unlimited preview/development builds, and 500 MB of IPFS storage space. Users can re-upload/update the same project folder to update existing project files. Once a user maps their own purchased Pi domain, they can run independently.
+- Tier 1 (17 Pi/month): 2 GB of IPFS storage, mapping support for 1 custom Pi domain, and standard community support.
+- Tier 2 (35 Pi/month): 10 GB of IPFS storage, mapping support for up to 5 custom Pi domains (domains must be purchased by the user separately), and email support.
+- Tier 3 (88 Pi/month): 50 GB of IPFS storage, mapping support for unlimited custom Pi domains, dedicated support, and custom SSL configurations.
+- Tier 4 (125 Pi/month): 100 GB of IPFS storage, unlimited domains, premium priority support, and dedicated decentralized infrastructure.
+
+Task:
+Write the complete, production-grade frontend components and backend logic to handle:
+1. The drag-and-drop ZIP upload, auto-unzipping, and project structure detection.
+2. The UI state management for project updates vs. new deployments.
+3. The Pi Browser redirect link logic for the official domain auction page.
+4. The subscription/billing logic that processes the 4 paid tiers in Pi while accounting for the 30% Core Team revenue split.

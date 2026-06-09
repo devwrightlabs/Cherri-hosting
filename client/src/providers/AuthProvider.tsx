@@ -57,7 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         authResult = await window.Pi.authenticate(
-          ['username', 'payments'],
+          ['username', 'payments', 'wallet_address'],
           handleIncompletePayment,
         );
         break;

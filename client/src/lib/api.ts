@@ -53,8 +53,8 @@ export const subscriptionsApi = {
   current: () => apiClient.get('/subscriptions/current'),
   approvePayment: (paymentId: string) =>
     apiClient.post('/subscriptions/payments/approve', { paymentId }),
-  completePayment: (paymentId: string, txid: string) =>
-    apiClient.post('/subscriptions/payments/complete', { paymentId, txid }),
+  completePayment: (paymentId: string, txid: string, amount: number) =>
+    apiClient.post('/subscriptions/payments/complete', { paymentId, txid, amount }),
   cancel: () => apiClient.post('/subscriptions/cancel'),
 };
 
