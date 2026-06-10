@@ -11,6 +11,16 @@ export interface DropZoneProps {
   onFilesAccepted: (files: File[], paths: string[]) => void;
 }
 
+// ─── Tier definitions (mirrors server constants) ──────────────────────────────
+
+const TIERS = [
+  { key: 'FREE',  label: 'Free',   price: '0π',    storageBytes: 500 * 1024 * 1024,                  color: 'text-surface-400', bg: 'bg-surface-700/50' },
+  { key: 'TIER1', label: 'Tier 1', price: '17π/mo', storageBytes: 2   * 1024 * 1024 * 1024,           color: 'text-blue-400',    bg: 'bg-blue-900/30'    },
+  { key: 'TIER2', label: 'Tier 2', price: '35π/mo', storageBytes: 10  * 1024 * 1024 * 1024,           color: 'text-cherry-400',  bg: 'bg-cherry-900/30'  },
+  { key: 'TIER3', label: 'Tier 3', price: '88π/mo', storageBytes: 50  * 1024 * 1024 * 1024,           color: 'text-amber-400',   bg: 'bg-amber-900/30'   },
+  { key: 'TIER4', label: 'Tier 4', price: '125π/mo', storageBytes: 100 * 1024 * 1024 * 1024,          color: 'text-emerald-400', bg: 'bg-emerald-900/30' },
+] as const;
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const IGNORED_NAMES = new Set([
@@ -26,6 +36,11 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function appsPerTier(appBytes: number, tierBytes: number): number {
+  if (appBytes <= 0) return 0;
+  return Math.floor(tierBytes / appBytes);
 }
 
 async function readAllEntries(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {
@@ -64,11 +79,88 @@ async function traverseDirectory(
   return result;
 }
 
+// ─── Sub-component: Capacity Calculator ──────────────────────────────────────
+
+function CapacityPanel({ totalBytes }: { totalBytes: number }) {
+  if (totalBytes <= 0) return null;
+
+  const maxApps = appsPerTier(totalBytes, TIERS[TIERS.length - 1].storageBytes);
+
+  return (
+    <div className="rounded-xl border border-surface-700/50 bg-surface-900/60 overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-surface-700/40 flex items-center gap-2">
+        <span className="text-sm">📊</span>
+        <span className="text-surface-300 text-xs font-medium">
+          How many apps this size can each plan host?
+        </span>
+        <span className="text-surface-500 text-xs ml-auto">{formatBytes(totalBytes)} per app</span>
+      </div>
+
+      <div className="divide-y divide-surface-800/60">
+        {TIERS.map((tier) => {
+          const count = appsPerTier(totalBytes, tier.storageBytes);
+          const pct = maxApps > 0 ? Math.min((count / maxApps) * 100, 100) : 0;
+          const tooBig = count === 0;
+
+          return (
+            <div key={tier.key} className={`flex items-center gap-3 px-4 py-2.5 ${tooBig ? 'opacity-40' : ''}`}>
+              {/* Tier badge */}
+              <div className={`flex-shrink-0 w-[68px] rounded-md px-2 py-0.5 text-center text-xs font-semibold ${tier.bg} ${tier.color}`}>
+                {tier.label}
+              </div>
+
+              {/* Storage label */}
+              <div className="w-[52px] flex-shrink-0 text-right text-xs text-surface-500">
+                {formatBytes(tier.storageBytes)}
+              </div>
+
+              {/* Bar */}
+              <div className="flex-1 min-w-0">
+                <div className="h-1.5 rounded-full bg-surface-800 overflow-hidden">
+                  {!tooBig && (
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        tier.key === 'FREE'  ? 'bg-surface-500' :
+                        tier.key === 'TIER1' ? 'bg-blue-500'    :
+                        tier.key === 'TIER2' ? 'bg-cherry-500'  :
+                        tier.key === 'TIER3' ? 'bg-amber-500'   : 'bg-emerald-500'
+                      }`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Count */}
+              <div className="flex-shrink-0 w-[90px] text-right">
+                {tooBig ? (
+                  <span className="text-xs text-red-500">app too large</span>
+                ) : (
+                  <span className={`text-sm font-bold ${tier.color}`}>
+                    ×{count.toLocaleString()}
+                    <span className="text-xs font-normal text-surface-500 ml-1">apps</span>
+                  </span>
+                )}
+              </div>
+
+              {/* Price */}
+              <div className="flex-shrink-0 w-[58px] text-right text-xs text-surface-600">
+                {tier.price}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function DropZone({ onFilesAccepted }: DropZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [scanCount, setScanCount] = useState(0);
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [error, setError] = useState('');
   const [folderName, setFolderName] = useState('');
@@ -133,6 +225,7 @@ export default function DropZone({ onFilesAccepted }: DropZoneProps) {
       }
 
       setIsProcessing(true);
+      setScanCount(0);
       try {
         const collected: FileEntry[] = [];
         let rootName = '';
@@ -144,13 +237,17 @@ export default function DropZone({ onFilesAccepted }: DropZoneProps) {
 
           if (entry.isDirectory) {
             rootName = rootName || entry.name;
-            // Traverse starting with empty basePath so top-level dir name is stripped.
+            // Wrap traverseDirectory to live-update the scan counter
+            const before = collected.length;
             await traverseDirectory(entry as FileSystemDirectoryEntry, '', collected);
+            const added = collected.length - before;
+            setScanCount((c) => c + added);
           } else if (entry.isFile) {
             const file = await new Promise<File>((resolve, reject) =>
               (entry as FileSystemFileEntry).file(resolve, reject),
             );
             collected.push({ file, path: entry.name });
+            setScanCount((c) => c + 1);
           }
         }
 
@@ -203,6 +300,7 @@ export default function DropZone({ onFilesAccepted }: DropZoneProps) {
     setEntries([]);
     setFolderName('');
     setError('');
+    setScanCount(0);
     onFilesAccepted([], []);
   };
 
@@ -224,6 +322,7 @@ export default function DropZone({ onFilesAccepted }: DropZoneProps) {
         onChange={handleFileInputChange}
       />
 
+      {/* Drop target — shown until files are selected */}
       {!isSelected && (
         <div
           onDragOver={handleDragOver}
@@ -242,17 +341,20 @@ export default function DropZone({ onFilesAccepted }: DropZoneProps) {
           {isProcessing ? (
             <>
               <div className="text-3xl animate-pulse">📂</div>
-              <p className="text-surface-300 text-sm">Reading folder structure…</p>
+              <p className="text-white text-sm font-medium">Reading folder…</p>
+              <p className="text-surface-400 text-xs">
+                {scanCount > 0 ? `${scanCount.toLocaleString()} files scanned so far` : 'Scanning directory tree…'}
+              </p>
             </>
           ) : (
             <>
               <div className="text-4xl">{isDragging ? '📂' : '🗂️'}</div>
               <div>
                 <p className="text-white font-medium text-sm">
-                  {isDragging ? 'Drop your project here' : 'Drag & drop your project folder or ZIP'}
+                  {isDragging ? 'Drop your project folder here' : 'Drag & drop your entire project folder'}
                 </p>
                 <p className="text-surface-500 text-xs mt-1">
-                  Full folder structure is preserved on IPFS
+                  Whole folder structure is preserved · node_modules &amp; .git are ignored
                 </p>
               </div>
               <div className="flex gap-2 pt-1">
@@ -276,34 +378,42 @@ export default function DropZone({ onFilesAccepted }: DropZoneProps) {
         </div>
       )}
 
+      {/* Selected state — summary + capacity calculator */}
       {isSelected && (
-        <div className="rounded-xl border border-surface-700/60 bg-surface-800/50 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-surface-700/40">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="text-lg flex-shrink-0">📂</span>
-              <span className="text-white text-sm font-medium truncate">
-                {folderName || 'Selected files'}
-              </span>
-              <span className="text-surface-400 text-xs flex-shrink-0">
-                {entries.length} file{entries.length !== 1 ? 's' : ''} · {formatBytes(totalBytes)}
-              </span>
+        <div className="space-y-2">
+          {/* Header row */}
+          <div className="rounded-xl border border-surface-700/60 bg-surface-800/50 overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-surface-700/40">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-lg flex-shrink-0">📂</span>
+                <span className="text-white text-sm font-medium truncate">
+                  {folderName || 'Selected files'}
+                </span>
+                <span className="text-surface-400 text-xs flex-shrink-0">
+                  {entries.length.toLocaleString()} file{entries.length !== 1 ? 's' : ''} · {formatBytes(totalBytes)}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={reset}
+                className="text-surface-500 hover:text-surface-300 text-xs ml-3 flex-shrink-0 transition-colors"
+              >
+                ✕ Clear
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={reset}
-              className="text-surface-500 hover:text-surface-300 text-xs ml-3 flex-shrink-0 transition-colors"
-            >
-              ✕ Clear
-            </button>
+            {/* Path preview */}
+            <div className="px-4 py-2 space-y-0.5 font-mono text-xs text-surface-400 max-h-28 overflow-y-auto">
+              {entries.slice(0, 10).map((e) => (
+                <div key={e.path} className="truncate">{e.path}</div>
+              ))}
+              {entries.length > 10 && (
+                <div className="text-surface-600">…and {(entries.length - 10).toLocaleString()} more files</div>
+              )}
+            </div>
           </div>
-          <div className="px-4 py-2 space-y-0.5 font-mono text-xs text-surface-400 max-h-32 overflow-y-auto">
-            {entries.slice(0, 8).map((e) => (
-              <div key={e.path} className="truncate">{e.path}</div>
-            ))}
-            {entries.length > 8 && (
-              <div className="text-surface-600">…and {entries.length - 8} more</div>
-            )}
-          </div>
+
+          {/* Capacity calculator */}
+          <CapacityPanel totalBytes={totalBytes} />
         </div>
       )}
 
