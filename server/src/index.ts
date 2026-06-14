@@ -80,6 +80,17 @@ process.on('uncaughtException', (err) => {
 const app = express();
 const PORT = parseInt(process.env.PORT ?? '4000', 10);
 
+// Replit (and most PaaS) sit behind a reverse proxy that sets X-Forwarded-For.
+// Without trust proxy, express-rate-limit throws a ValidationError on every
+// request and the whole auth flow fails with 500.
+app.set('trust proxy', 1);
+
+// BigInt fields (storageUsed, storageLimit) cannot be JSON-serialised by default.
+// A global replacer converts them to strings so res.json() never throws.
+app.set('json replacer', (_key: string, value: unknown) =>
+  typeof value === 'bigint' ? value.toString() : value,
+);
+
 // ---------------------------------------------------------------------------
 // Security headers — Pi Network app requirements
 //
