@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import path from 'path';
+import fs from 'fs';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -121,10 +123,20 @@ app.use('/api/subscriptions', subscriptionsRouter);
 app.use('/api/subscriptions/pirc2', pirc2Router);
 app.use('/api/payments', paymentsRouter);
 
-// 404 handler
-app.use((_req, res) => {
-  res.status(404).json({ error: 'Route not found' });
-});
+// Serve built React client (production only — only when client/dist exists)
+const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  // SPA fallback — non-API routes serve index.html so React Router works
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
+} else {
+  // 404 handler (dev only — Vite handles client requests separately)
+  app.use((_req, res) => {
+    res.status(404).json({ error: 'Route not found' });
+  });
+}
 
 // Global error handler
 app.use(
