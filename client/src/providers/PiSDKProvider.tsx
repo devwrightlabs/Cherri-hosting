@@ -57,10 +57,14 @@ function loadPiSDKScript(): Promise<void> {
 async function initWithRetry(attempt = 0): Promise<void> {
   try {
     await loadPiSDKScript();
-    window.Pi!.init({
-      version: '2.0',
-      sandbox: import.meta.env.VITE_PI_SANDBOX !== 'false',
-    });
+    // Pi.init() may return a Promise — always await it so authentication
+    // never starts before initialisation fully completes.
+    await Promise.resolve(
+      window.Pi!.init({
+        version: '2.0',
+        sandbox: import.meta.env.VITE_PI_SANDBOX !== 'false',
+      }),
+    );
   } catch (err) {
     if (attempt < MAX_RETRIES) {
       const delay = Math.min(BASE_RETRY_DELAY_MS * Math.pow(2, attempt), MAX_RETRY_DELAY_MS);

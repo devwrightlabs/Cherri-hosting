@@ -80,11 +80,70 @@ process.on('uncaughtException', (err) => {
 const app = express();
 const PORT = parseInt(process.env.PORT ?? '4000', 10);
 
-// Security middleware
-app.use(helmet());
+// ---------------------------------------------------------------------------
+// Security headers — tuned for Pi Network embedding
+//
+// Pi Browser embeds apps in an iframe served from app-cdn.minepi.com and
+// communicates via postMessage. Helmet's defaults block all of this, so we
+// configure each directive explicitly:
+//   • frame-ancestors  — allow Pi Browser / App Studio to iframe us
+//   • script-src       — allow the Pi SDK script from sdk.minepi.com
+//   • connect-src      — allow XHR/fetch to api.minepi.com (token verify)
+//   • COEP/COOP off    — Pi SDK cross-origin postMessage breaks with these on
+// ---------------------------------------------------------------------------
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc:         ["'self'"],
+        scriptSrc:          ["'self'", "'unsafe-inline'", 'sdk.minepi.com', 'app-cdn.minepi.com'],
+        scriptSrcAttr:      ["'unsafe-inline'"],
+        styleSrc:           ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        fontSrc:            ["'self'", 'https://fonts.gstatic.com', 'data:'],
+        imgSrc:             ["'self'", 'data:', 'https:'],
+        connectSrc:         ["'self'", 'https://api.minepi.com', 'https:', 'wss:'],
+        frameSrc:           ["'self'", 'https://app-cdn.minepi.com'],
+        // Allow Pi Browser, App Studio, and Lockscreen to embed this app
+        frameAncestors:     ["'self'", 'https://app-cdn.minepi.com', 'https://app.minepi.com', 'https://minepi.com', '*.minepi.com'],
+        objectSrc:          ["'none'"],
+        baseUri:            ["'self'"],
+      },
+    },
+    // Pi SDK uses cross-origin iframes and postMessage — these must be off
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy:   { policy: 'same-origin-allow-popups' },
+    // CSP frame-ancestors above takes precedence; disable the legacy header
+    frameguard: false,
+  }),
+);
+
+// CORS — allow the deployed origin and localhost for development.
+// In production the client is served by this same Express process (same-origin),
+// so the browser never sends a CORS preflight for /api calls; this mainly helps
+// during local development where client (5000) and server (4000) differ.
+const allowedOrigins = (process.env.ALLOWED_ORIGIN ?? '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+if (!allowedOrigins.includes('http://localhost:5000')) {
+  allowedOrigins.push('http://localhost:5000');
+}
+if (!allowedOrigins.includes('http://localhost:5173')) {
+  allowedOrigins.push('http://localhost:5173');
+}
+
 app.use(
   cors({
-    origin: process.env.ALLOWED_ORIGIN ?? 'http://localhost:5173',
+    origin: (origin, cb) => {
+      // Allow same-origin requests (origin undefined) and listed origins
+      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      // Also allow any *.replit.app or *.minepi.com production domain
+      if (/\.replit\.app$/.test(origin) || /\.minepi\.com$/.test(origin)) {
+        return cb(null, true);
+      }
+      cb(new Error(`CORS: origin ${origin} not allowed`));
+    },
     credentials: true,
   }),
 );

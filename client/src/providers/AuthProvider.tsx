@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { User, PiAuthResult, PiPaymentDTO } from '../types';
 import { authApi, paymentsApi } from '../lib/api';
+import { usePiSDK } from './PiSDKProvider';
 
 interface AuthContextValue {
   user: User | null;
@@ -25,15 +26,18 @@ function handleIncompletePayment(payment: PiPaymentDTO) {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const { state: sdkState } = usePiSDK();
+
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(
     () => localStorage.getItem('pi_access_token'),
   );
   const [isLoading, setIsLoading] = useState(false);
 
-  // Re-hydrate user on mount using the token that was stored before this render.
-  // We intentionally run this only once on mount; the token value at mount time
-  // is captured via the lazy initialiser of useState above, so the closure is stable.
+  // Prevent the auto-sign-in from firing more than once per SDK ready event.
+  const autoSignInAttempted = useRef(false);
+
+  // Re-hydrate session from stored token on mount.
   useEffect(() => {
     if (!token) return;
     setIsLoading(true);
@@ -54,10 +58,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     let authResult: PiAuthResult | null = null;
 
+    // Retry up to 3 times with exponential back-off in case the Pi Browser
+    // dialog is momentarily unavailable.
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
+        // Only request the "username" scope — that is all that is needed to
+        // establish a verified Pi identity. Pi.init() is fully awaited before
+        // this point (see PiSDKProvider), so the call order is guaranteed.
         authResult = await window.Pi.authenticate(
-          ['username', 'payments', 'wallet_address'],
+          ['username'],
           handleIncompletePayment,
         );
         break;
@@ -70,10 +79,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!authResult) throw new Error('Pi authentication failed');
 
     const { accessToken, user: piUser } = authResult;
+
+    // Persist token so subsequent page loads skip re-auth.
     localStorage.setItem('pi_access_token', accessToken);
     setToken(accessToken);
 
     try {
+      // Backend validates the token by calling GET /v2/me on api.minepi.com
+      // with Authorization: Bearer <accessToken> before creating/updating the
+      // user record. No Pi server-side API key is required for this flow.
       const res = await authApi.signIn(accessToken, piUser.username);
       setUser((res.data as { user: User }).user);
     } finally {
@@ -81,10 +95,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Auto-trigger authentication the moment the SDK is ready and no session
+  // exists. Inside Pi Browser this immediately raises the native permission
+  // dialog (username scope). Outside Pi Browser the call fails silently and
+  // the user can sign in manually via the button.
+  useEffect(() => {
+    if (sdkState !== 'ready' || token || autoSignInAttempted.current) return;
+    autoSignInAttempted.current = true;
+    signIn().catch(() => {
+      // Failure is expected outside Pi Browser — reset so the button works.
+      autoSignInAttempted.current = false;
+    });
+  }, [sdkState, token, signIn]);
+
   const signOut = useCallback(() => {
     localStorage.removeItem('pi_access_token');
     setToken(null);
     setUser(null);
+    autoSignInAttempted.current = false;
   }, []);
 
   const refreshUser = useCallback(async () => {
@@ -93,7 +121,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const res = await authApi.me();
       setUser((res.data as { user: User }).user);
     } catch {
-      // If refresh fails, keep the existing user state
+      // Keep existing user state on transient refresh failure.
     }
   }, [token]);
 
