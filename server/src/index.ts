@@ -81,39 +81,29 @@ const app = express();
 const PORT = parseInt(process.env.PORT ?? '4000', 10);
 
 // ---------------------------------------------------------------------------
-// Security headers — tuned for Pi Network embedding
+// Security headers — Pi Network app requirements
 //
-// Pi Browser embeds apps in an iframe served from app-cdn.minepi.com and
-// communicates via postMessage. Helmet's defaults block all of this, so we
-// configure each directive explicitly:
-//   • frame-ancestors  — allow Pi Browser / App Studio to iframe us
-//   • script-src       — allow the Pi SDK script from sdk.minepi.com
-//   • connect-src      — allow XHR/fetch to api.minepi.com (token verify)
-//   • COEP/COOP off    — Pi SDK cross-origin postMessage breaks with these on
+// Pi Browser embeds apps via native WKWebView and communicates with the SDK
+// via cross-origin postMessage to app-cdn.minepi.com. Several of Helmet's
+// defaults break this integration:
+//
+//   • contentSecurityPolicy  — disabled entirely. CSP on module scripts in
+//     mobile WebKit (WKWebView) blocks execution even for same-origin bundles
+//     when the crossorigin attribute is present (Vite's default). Pi Browser
+//     enforces its own sandboxing, so we don't need server-level CSP.
+//   • crossOriginEmbedderPolicy — disabled. The Pi SDK loads resources from
+//     sdk.minepi.com which don't carry CORP headers; COEP would block them.
+//   • crossOriginOpenerPolicy  — relaxed to allow-popups. Pi payment flows
+//     open popup windows; same-origin strict mode closes them immediately.
+//   • frameguard (X-Frame-Options) — disabled. Pi App Studio embeds the app
+//     in a WebView; X-Frame-Options: SAMEORIGIN would block that embedding.
 // ---------------------------------------------------------------------------
 app.use(
   helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc:         ["'self'"],
-        scriptSrc:          ["'self'", "'unsafe-inline'", 'sdk.minepi.com', 'app-cdn.minepi.com'],
-        scriptSrcAttr:      ["'unsafe-inline'"],
-        styleSrc:           ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-        fontSrc:            ["'self'", 'https://fonts.gstatic.com', 'data:'],
-        imgSrc:             ["'self'", 'data:', 'https:'],
-        connectSrc:         ["'self'", 'https://api.minepi.com', 'https:', 'wss:'],
-        frameSrc:           ["'self'", 'https://app-cdn.minepi.com'],
-        // Allow Pi Browser, App Studio, and Lockscreen to embed this app
-        frameAncestors:     ["'self'", 'https://app-cdn.minepi.com', 'https://app.minepi.com', 'https://minepi.com', '*.minepi.com'],
-        objectSrc:          ["'none'"],
-        baseUri:            ["'self'"],
-      },
-    },
-    // Pi SDK uses cross-origin iframes and postMessage — these must be off
+    contentSecurityPolicy:     false,
     crossOriginEmbedderPolicy: false,
     crossOriginOpenerPolicy:   { policy: 'same-origin-allow-popups' },
-    // CSP frame-ancestors above takes precedence; disable the legacy header
-    frameguard: false,
+    frameguard:                false,
   }),
 );
 
