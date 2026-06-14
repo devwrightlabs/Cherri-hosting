@@ -62,11 +62,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // dialog is momentarily unavailable.
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        // Only request the "username" scope — that is all that is needed to
-        // establish a verified Pi identity. Pi.init() is fully awaited before
-        // this point (see PiSDKProvider), so the call order is guaranteed.
+        // Request "username" for identity and "payments" for Pi.createPayment().
+        // Pi.init() is fully awaited before this point (see PiSDKProvider),
+        // so the call order is guaranteed.
         authResult = await window.Pi.authenticate(
-          ['username'],
+          ['username', 'payments'],
           handleIncompletePayment,
         );
         break;

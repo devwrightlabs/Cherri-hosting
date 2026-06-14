@@ -4,14 +4,15 @@ import { piAuthMiddleware, AuthenticatedRequest } from '../middleware/piAuth';
 import { prisma } from '../utils/prismaClient';
 import {
   getPayment,
+  approvePayment,
   completePayment,
   verifyPayment,
 } from '../services/piPaymentService';
 import { logger } from '../utils/logger';
 import { IntegrationUnavailableError } from '../utils/integrations';
 import {
-  PREMIUM_PRICE_PI,
-  PREMIUM_STORAGE_LIMIT_BYTES,
+  TIER1_PRICE_PI,
+  resolveTierFromAmount,
 } from '../utils/constants';
 
 export const paymentsRouter = Router();
@@ -20,14 +21,21 @@ paymentsRouter.use(piAuthMiddleware);
 
 /**
  * POST /api/payments/verify
- * Verify an incomplete Pi Network payment found during SDK authentication.
- * This is called by the frontend `onIncompletePaymentFound` callback to recover
- * any payment whose transaction was submitted but not yet developer-completed.
+ * Recover an incomplete Pi payment found by the SDK during authenticate().
+ *
+ * Pi fires onIncompletePaymentFound when a payment was created in a previous
+ * session but never reached developer_completed. We must never silently ignore
+ * it — that would leave the user's Pi locked on-chain indefinitely.
+ *
+ * Recovery steps:
+ *   1. Fetch the payment from the Pi Platform API.
+ *   2. If not yet developer_approved  → approve it now.
+ *   3. If transaction is on-chain     → complete it and activate the subscription.
+ *   4. If no transaction yet          → return "pending" (Pi will retry later).
  */
 paymentsRouter.post('/verify', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const schema = z.object({ paymentId: z.string().min(1) });
   const parsed = schema.safeParse(req.body);
-
   if (!parsed.success) {
     res.status(400).json({ error: 'paymentId is required' });
     return;
@@ -38,28 +46,33 @@ paymentsRouter.post('/verify', async (req: AuthenticatedRequest, res: Response):
   try {
     const payment = await getPayment(paymentId);
 
-    // Cancelled or user-cancelled payments can be ignored
+    // Cancelled payments — nothing to do, acknowledge so Pi can clean up
     if (payment.status.cancelled || payment.status.user_cancelled) {
       res.json({ status: 'cancelled' });
       return;
     }
 
-    // Payment already fully completed — nothing to do
+    // Already fully processed — idempotent acknowledgement
     if (payment.status.developer_completed) {
       res.json({ status: 'already_completed' });
       return;
     }
 
-    // Payment has an on-chain transaction but was not yet completed on our side
+    // Validate amount maps to a known plan before touching anything
+    const tierInfo = resolveTierFromAmount(payment.amount);
+    if (!tierInfo || payment.amount < TIER1_PRICE_PI) {
+      res.status(400).json({ error: 'Payment amount does not match any subscription plan.' });
+      return;
+    }
+
+    // Step 1 — approve if the server hasn't done so yet
+    if (!payment.status.developer_approved) {
+      await approvePayment(paymentId);
+    }
+
+    // Step 2 — if the on-chain transaction exists, complete and activate
     if (payment.transaction?.txid) {
       const txid = payment.transaction.txid;
-
-      // Validate amount before completing, to avoid marking an insufficient
-      // payment as developer_completed with Pi Network.
-      if (payment.amount < PREMIUM_PRICE_PI) {
-        res.status(400).json({ error: 'Payment amount is insufficient' });
-        return;
-      }
 
       await completePayment(paymentId, txid);
 
@@ -69,11 +82,8 @@ paymentsRouter.post('/verify', async (req: AuthenticatedRequest, res: Response):
         return;
       }
 
-      // Check if a subscription record already exists for this txid to avoid duplicates
-      const existing = await prisma.subscription.findUnique({
-        where: { piTxId: txid },
-      });
-
+      // Upsert subscription — guard against duplicate recovery calls
+      const existing = await prisma.subscription.findUnique({ where: { piTxId: txid } });
       if (!existing) {
         const now = new Date();
         const periodEnd = new Date(now);
@@ -82,9 +92,9 @@ paymentsRouter.post('/verify', async (req: AuthenticatedRequest, res: Response):
         await prisma.subscription.create({
           data: {
             userId: req.user!.id,
-            tier: 'PREMIUM',
+            tier: tierInfo.tierName,
             piTxId: txid,
-            amount: PREMIUM_PRICE_PI,
+            amount: payment.amount,
             currency: 'Pi',
             status: 'active',
             periodStart: now,
@@ -93,33 +103,33 @@ paymentsRouter.post('/verify', async (req: AuthenticatedRequest, res: Response):
         });
       }
 
-      // Upgrade user tier if they are not already PREMIUM
+      // Upgrade the user only if the recovered tier is higher than their current one
       const user = await prisma.user.findUnique({
         where: { id: req.user!.id },
         select: { tier: true },
       });
-
-      if (user?.tier !== 'PREMIUM') {
+      if (user && user.tier !== tierInfo.tierName) {
         await prisma.user.update({
           where: { id: req.user!.id },
           data: {
-            tier: 'PREMIUM',
-            storageLimit: BigInt(PREMIUM_STORAGE_LIMIT_BYTES),
+            tier: tierInfo.tierName,
+            storageLimit: BigInt(tierInfo.storageLimit),
           },
         });
       }
 
-      logger.info('Incomplete payment recovered and user upgraded', {
+      logger.info('Incomplete payment recovered', {
         userId: req.user!.id,
         paymentId,
         txid,
+        tier: tierInfo.tierName,
       });
 
-      res.json({ status: 'completed' });
+      res.json({ status: 'completed', tier: tierInfo.tierName });
       return;
     }
 
-    // Payment exists but has no transaction yet — nothing to recover on the server
+    // Transaction not yet on-chain — Pi will call onIncompletePaymentFound again
     res.json({ status: 'pending' });
   } catch (err) {
     if (err instanceof IntegrationUnavailableError) {
