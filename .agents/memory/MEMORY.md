@@ -3,4 +3,5 @@
 - [Folder upload architecture](folder-upload-architecture.md) — FileSystemEntry API + webkitdirectory; server receives filePaths JSON alongside files; adm-zip handles ZIP extraction with common-root stripping.
 - [Multi-tier subscriptions](multi-tier-subscriptions.md) — entitlement derives from server-verified Pi amount + payer uid (client amount advisory only); resolveTierFromAmount maps amount→tier; displayed price == payment amount.
 - [Pi env toggle](pi-env-toggle.md) — testnet/mainnet is a standalone store, not in providers; mainnet honestly gated (no key→503, no fallback); env threaded + persisted on payment rows.
+- [Pi domain loop](pi-domain-loop.md) — .pi domain→site connection can't be auto-wired (Pi controls resolution/certs, no public API); guide user to point domain manually, never fake "connected".
 - [Multi-package repo layout](monorepo-package-layout.md) — 3 package.json (root/client/server), no workspaces; install client/server deps in their own dir, NOT via root-installing tools.
