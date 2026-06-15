@@ -37,7 +37,7 @@ export const TIER_STORAGE_LABELS: Record<string, string> = {
  * sends users to. Override it with VITE_PI_DOMAIN_PORTAL_URL when the exact
  * auction endpoint is known for your environment.
  */
-const DEFAULT_PI_DOMAIN_PORTAL_URL = 'https://minepi.com';
+const DEFAULT_PI_DOMAIN_PORTAL_URL = 'https://domains.pinet.com/auctions';
 
 /** Hosts we trust to be official Pi Network destinations. */
 const ALLOWED_PI_DOMAIN_HOSTS = ['minepi.com', 'pinet.com'];
