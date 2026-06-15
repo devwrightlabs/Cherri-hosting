@@ -67,6 +67,8 @@ model Subscription {
   currency    String
   /// 'active' or 'cancelled'
   status      String
+  /// Pi environment the payment was made against: 'testnet' or 'mainnet'.
+  env         String   @default("testnet")
   periodStart DateTime
   periodEnd   DateTime
   createdAt   DateTime @default(now())

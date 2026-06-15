@@ -7,12 +7,15 @@ import React, {
   useRef,
 } from 'react';
 import Spinner from '../components/ui/Spinner';
+import { getEnv, sandboxFor, type PiEnv } from '../lib/piEnv';
 
 type SDKState = 'idle' | 'loading' | 'ready' | 'error';
 
 interface PiSDKContextValue {
   state: SDKState;
   retry: () => void;
+  /** Re-run Pi.init() under a new env's sandbox flag (used by the TEST|LIVE switch). */
+  reinit: (env: PiEnv) => Promise<void>;
 }
 
 const PiSDKContext = createContext<PiSDKContextValue | null>(null);
@@ -62,7 +65,7 @@ async function initWithRetry(attempt = 0): Promise<void> {
     await Promise.resolve(
       window.Pi!.init({
         version: '2.0',
-        sandbox: import.meta.env.VITE_PI_SANDBOX !== 'false',
+        sandbox: sandboxFor(getEnv()),
       }),
     );
   } catch (err) {
@@ -97,6 +100,13 @@ export function PiSDKProvider({ children }: { children: React.ReactNode }) {
     initRef.current = false;
     void init();
   }, [init]);
+
+  const reinit = useCallback(async (env: PiEnv) => {
+    if (!window.Pi) throw new Error('Pi SDK not ready');
+    await Promise.resolve(
+      window.Pi.init({ version: '2.0', sandbox: sandboxFor(env) }),
+    );
+  }, []);
 
   useEffect(() => {
     void init();
@@ -134,7 +144,7 @@ export function PiSDKProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <PiSDKContext.Provider value={{ state, retry }}>
+    <PiSDKContext.Provider value={{ state, retry, reinit }}>
       {children}
     </PiSDKContext.Provider>
   );

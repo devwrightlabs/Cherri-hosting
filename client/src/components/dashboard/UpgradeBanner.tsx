@@ -4,6 +4,7 @@ import Card from '../ui/Card';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import { subscriptionsApi } from '../../lib/api';
+import { getEnv } from '../../lib/piEnv';
 import { useAuth } from '../../providers/AuthProvider';
 import { PREMIUM_PRICE_PI } from '../../lib/constants';
 
@@ -27,17 +28,18 @@ export default function UpgradeBanner({ onUpgradeSuccess }: UpgradeBannerProps) 
     }
     setIsPaying(true);
     setPayError('');
+    const env = getEnv();
 
     window.Pi.createPayment(
       {
         amount: PREMIUM_PRICE_PI,
         memo: 'Sherry Hosting Premium — 1 month',
-        metadata: { plan: 'premium', months: 1 },
+        metadata: { plan: 'premium', months: 1, env },
       },
       {
         onReadyForServerApproval: async (paymentId) => {
           try {
-            await subscriptionsApi.approvePayment(paymentId);
+            await subscriptionsApi.approvePayment(paymentId, env);
           } catch {
             setPayError('Failed to approve payment. Please try again.');
             setIsPaying(false);
@@ -45,7 +47,7 @@ export default function UpgradeBanner({ onUpgradeSuccess }: UpgradeBannerProps) 
         },
         onReadyForServerCompletion: async (paymentId, txid) => {
           try {
-            await subscriptionsApi.completePayment(paymentId, txid, PREMIUM_PRICE_PI);
+            await subscriptionsApi.completePayment(paymentId, txid, PREMIUM_PRICE_PI, env);
             setPaySuccess(true);
             onUpgradeSuccess?.();
           } catch {

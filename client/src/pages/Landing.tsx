@@ -1,69 +1,62 @@
 import { Link } from 'react-router-dom';
 import { usePiAuth } from '../hooks/usePiAuth';
+import LogoMark from '../components/ui/LogoMark';
 import Button from '../components/ui/Button';
 
+const valueRows = [
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2" />
+        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+      </svg>
+    ),
+    title: 'Permanent storage',
+    description: 'Every deploy is content-addressed on IPFS — it lives on the decentralised web.',
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M9 8h6M10 8v8M14 8v8" />
+      </svg>
+    ),
+    title: 'Pi-native payments',
+    description: 'Pay with Pi from your wallet. No credit cards, no KYC, no lock-in.',
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M5 12.5 10 17l9-10" />
+      </svg>
+    ),
+    title: 'One-tap deploy',
+    description: 'Drop a folder or ZIP. We upload, pin and give you a live URL in seconds.',
+  },
+];
+
 const features = [
-  {
-    icon: '🚀',
-    title: '1-Click Deploy',
-    description:
-      'Drag and drop your static site. We handle the IPFS upload, pinning, and CDN automatically.',
-  },
-  {
-    icon: '🌐',
-    title: 'IPFS-Native',
-    description:
-      'Every deployment is content-addressed. Your site lives on the decentralised web forever.',
-  },
-  {
-    icon: '💰',
-    title: 'Pi Payments',
-    description:
-      'Pay with Pi cryptocurrency. No credit cards, no KYC — just your Pi wallet.',
-  },
-  {
-    icon: '🔒',
-    title: 'Pi Auth',
-    description:
-      'Sign in with your Pi Network identity. One account across the entire Pi ecosystem.',
-  },
-  {
-    icon: '📊',
-    title: 'Real-time Dashboard',
-    description:
-      'Track deployments, storage usage, and bandwidth from a beautiful developer dashboard.',
-  },
-  {
-    icon: '⚡',
-    title: 'Instant Previews',
-    description:
-      'Every deployment gets a unique IPFS gateway URL you can share immediately.',
-  },
+  { title: '1-tap deploy', description: 'Drag a folder or ZIP. We handle the IPFS upload, pinning and gateway URL.' },
+  { title: 'IPFS-native', description: 'Every deployment is content-addressed and permanent on the decentralised web.' },
+  { title: 'Pi payments', description: 'Pay with Pi cryptocurrency — no credit cards, no KYC.' },
+  { title: 'Pi auth', description: 'Sign in with your Pi Network identity, one account across the ecosystem.' },
+  { title: 'Live dashboard', description: 'Track deployments, storage and plan from a mobile-native dashboard.' },
+  { title: 'Instant previews', description: 'Every deployment gets a shareable IPFS gateway URL immediately.' },
 ];
 
 const tiers = [
   {
     name: 'Free',
-    price: '0 Pi',
+    price: '0 π',
     period: 'forever',
-    storage: '500 MB',
-    features: ['Up to 500 MB storage', 'Unlimited deployments', 'IPFS gateway URLs', 'Pi authentication'],
-    cta: 'Get started free',
+    features: ['500 MB storage', 'Unlimited deployments', 'IPFS gateway URLs', 'Pi authentication'],
     highlight: false,
   },
   {
-    name: 'Premium',
-    price: '10 Pi',
+    name: 'Tier 2',
+    price: '35 π',
     period: '/ month',
-    storage: '10 GB',
-    features: [
-      '10 GB storage',
-      'Unlimited deployments',
-      'Pi domain mapping',
-      'Priority pinning',
-      'Priority support',
-    ],
-    cta: 'Upgrade to Premium',
+    features: ['10 GB storage', '5 Pi domains', 'Multi-domain mapping', 'Priority support'],
     highlight: true,
   },
 ];
@@ -72,119 +65,146 @@ export default function Landing() {
   const { isAuthenticated, isLoading, error, signIn } = usePiAuth();
 
   return (
-    <div className="min-h-screen bg-dark-gradient">
+    <div className="min-h-[100dvh] bg-dark-gradient overflow-x-hidden">
       {/* Nav */}
-      <header className="border-b border-surface-700/50 bg-surface-900/80 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <header className="safe-top sticky top-0 z-50 bg-surface-950/85 backdrop-blur-md border-b border-hairline">
+        <div className="h-14 px-4 flex items-center justify-between max-w-screen-sm mx-auto">
           <Link to="/" className="flex items-center gap-2">
-            <span className="text-2xl">🌐</span>
-            <span className="font-bold text-white text-xl">Sherry Hosting</span>
+            <LogoMark size={26} />
+            <span className="font-display font-bold text-ink text-[15px] tracking-tight">
+              Sherry Hosting
+            </span>
           </Link>
           <div className="flex items-center gap-3">
-            <Link to="/pricing" className="text-surface-400 hover:text-white text-sm transition-colors">
+            <Link to="/pricing" className="text-ink-mut hover:text-ink text-sm transition-colors">
               Pricing
             </Link>
-            {isAuthenticated ? (
+            {isAuthenticated && (
               <Link to="/dashboard">
                 <Button size="sm">Dashboard</Button>
               </Link>
-            ) : (
-              <Button size="sm" onClick={signIn} isLoading={isLoading}>
-                Sign in with Pi
-              </Button>
             )}
           </div>
         </div>
       </header>
 
-      {/* Hero */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-20 text-center">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cherry-500/10 border border-cherry-500/20 text-cherry-400 text-sm mb-8">
-          <span className="w-2 h-2 rounded-full bg-cherry-500 animate-pulse-slow" />
-          Decentralised web hosting on IPFS
-        </div>
+      <main className="max-w-screen-sm mx-auto px-4">
+        {/* Hero */}
+        <section className="pt-12 pb-10 text-center animate-fade-in">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gold/10 border border-gold/20 text-gold text-xs mb-6">
+            <span className="w-1.5 h-1.5 rounded-full bg-live animate-pulse-slow" />
+            Decentralised hosting on IPFS
+          </div>
 
-        <h1 className="text-5xl sm:text-7xl font-bold text-white mb-6 leading-tight">
-          Deploy sites to{' '}
-          <span className="cherry-text">the permanent web</span>
-        </h1>
+          <h1 className="text-4xl font-bold text-ink font-display leading-[1.1] tracking-tight">
+            Deploy to the{' '}
+            <span className="gold-text">permanent web</span>
+          </h1>
 
-        <p className="text-xl text-surface-400 max-w-2xl mx-auto mb-10">
-          Upload your static site, get an IPFS URL in seconds. Pay with Pi. No
-          credit cards. No servers. No lock-in.
-        </p>
+          <p className="text-ink-mut text-base mt-4 max-w-md mx-auto">
+            Upload your static site, get an IPFS URL in seconds. Pay with Pi. No
+            servers, no lock-in.
+          </p>
 
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          {isAuthenticated ? (
-            <Link to="/deploy">
-              <Button size="lg">🚀 Deploy now</Button>
+          <div className="mt-7 flex flex-col gap-3">
+            {isAuthenticated ? (
+              <Link to="/deploy">
+                <Button size="lg" className="w-full justify-center">
+                  Deploy now
+                </Button>
+              </Link>
+            ) : (
+              <Button
+                size="lg"
+                className="w-full justify-center"
+                onClick={signIn}
+                isLoading={isLoading}
+              >
+                Sign in with Pi
+              </Button>
+            )}
+            <Link to="/pricing">
+              <Button size="lg" variant="secondary" className="w-full justify-center">
+                View pricing
+              </Button>
             </Link>
-          ) : (
-            <Button size="lg" onClick={signIn} isLoading={isLoading}>
-              Sign in with Pi
-            </Button>
-          )}
-          <Link to="/pricing">
-            <Button size="lg" variant="secondary">
-              View pricing
-            </Button>
-          </Link>
-        </div>
+          </div>
 
-        {error && (
-          <p className="mt-4 text-red-400 text-sm">{error}</p>
-        )}
-      </section>
+          {error && <p className="mt-4 text-red-400 text-sm">{error}</p>}
 
-      {/* Features */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-        <h2 className="text-3xl font-bold text-white text-center mb-12">
-          Everything you need to ship
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {features.map((f) => (
+          <p className="mt-6 text-ink-mut text-xs">
+            Built for Pi Browser · IPFS · Pi Network
+          </p>
+        </section>
+
+        {/* Value rows */}
+        <section className="py-8 space-y-3">
+          {valueRows.map((row) => (
             <div
-              key={f.title}
-              className="glass rounded-xl p-6 hover:border-cherry-500/30 transition-colors"
+              key={row.title}
+              className="flex items-start gap-3 rounded-2xl bg-surface-900 border border-hairline p-4"
             >
-              <div className="text-3xl mb-4">{f.icon}</div>
-              <h3 className="font-semibold text-white mb-2">{f.title}</h3>
-              <p className="text-surface-400 text-sm leading-relaxed">{f.description}</p>
+              <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-surface-800 border border-hairline text-gold shrink-0">
+                {row.icon}
+              </span>
+              <div>
+                <h3 className="font-semibold text-ink text-sm">{row.title}</h3>
+                <p className="text-ink-mut text-sm mt-0.5">{row.description}</p>
+              </div>
             </div>
           ))}
-        </div>
-      </section>
+        </section>
 
-      {/* Pricing preview */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-        <h2 className="text-3xl font-bold text-white text-center mb-3">Simple pricing</h2>
-        <p className="text-surface-400 text-center mb-12">Pay with Pi. Cancel anytime.</p>
+        {/* Features */}
+        <section className="py-8">
+          <h2 className="text-xl font-bold text-ink font-display text-center mb-6">
+            Everything you need to ship
+          </h2>
+          <div className="space-y-3">
+            {features.map((f) => (
+              <div
+                key={f.title}
+                className="rounded-2xl bg-surface-900 border border-hairline p-4"
+              >
+                <h3 className="font-semibold text-ink text-sm mb-1">{f.title}</h3>
+                <p className="text-ink-mut text-sm leading-relaxed">{f.description}</p>
+              </div>
+            ))}
+          </div>
+        </section>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-3xl mx-auto">
-          {tiers.map((tier) => (
-            <div
-              key={tier.name}
-              className={`rounded-xl p-8 flex flex-col gap-5 ${
-                tier.highlight
-                  ? 'bg-cherry-gradient p-px'
-                  : 'glass'
-              }`}
-            >
-              {tier.highlight ? (
-                <div className="bg-surface-900 rounded-[11px] p-7 flex flex-col gap-5 h-full">
-                  <TierContent tier={tier} isAuthenticated={isAuthenticated} signIn={signIn} isLoading={isLoading} />
+        {/* Pricing preview */}
+        <section className="py-8">
+          <h2 className="text-xl font-bold text-ink font-display text-center mb-1">
+            Simple pricing
+          </h2>
+          <p className="text-ink-mut text-sm text-center mb-6">Pay with Pi. Cancel anytime.</p>
+
+          <div className="space-y-4">
+            {tiers.map((tier) =>
+              tier.highlight ? (
+                <div key={tier.name} className="bg-gold-gradient p-px rounded-2xl shadow-gold-sm">
+                  <div className="bg-surface-900 rounded-[15px] p-5">
+                    <TierContent tier={tier} signIn={signIn} isLoading={isLoading} isAuthenticated={isAuthenticated} />
+                  </div>
                 </div>
               ) : (
-                <TierContent tier={tier} isAuthenticated={isAuthenticated} signIn={signIn} isLoading={isLoading} />
-              )}
-            </div>
-          ))}
-        </div>
-      </section>
+                <div key={tier.name} className="rounded-2xl bg-surface-900 border border-hairline p-5">
+                  <TierContent tier={tier} signIn={signIn} isLoading={isLoading} isAuthenticated={isAuthenticated} />
+                </div>
+              ),
+            )}
+          </div>
+
+          <Link to="/pricing" className="block text-center mt-5 text-gold text-sm hover:underline">
+            See all plans →
+          </Link>
+        </section>
+      </main>
 
       {/* Footer */}
-      <footer className="border-t border-surface-700/50 py-8 text-center text-surface-500 text-sm">
-        <p>© {new Date().getFullYear()} Sherry Hosting. Built on IPFS & Pi Network.</p>
+      <footer className="safe-bottom border-t border-hairline py-6 text-center text-ink-mut text-xs">
+        © {new Date().getFullYear()} Sherry Hosting · Built on IPFS &amp; Pi Network
       </footer>
     </div>
   );
@@ -202,26 +222,30 @@ function TierContent({
   isLoading: boolean;
 }) {
   return (
-    <>
+    <div className="flex flex-col gap-4">
       <div>
-        <h3 className="text-lg font-bold text-white">{tier.name}</h3>
-        <div className="flex items-baseline gap-1 mt-2">
-          <span className="text-3xl font-bold text-white">{tier.price}</span>
-          <span className="text-surface-400 text-sm">{tier.period}</span>
+        <h3 className="text-lg font-bold text-ink font-display">{tier.name}</h3>
+        <div className="flex items-baseline gap-1.5 mt-1">
+          <span className="text-3xl font-bold text-ink font-mono">{tier.price}</span>
+          <span className="text-ink-mut text-sm">{tier.period}</span>
         </div>
       </div>
-      <ul className="space-y-2.5 flex-1">
+      <ul className="space-y-2">
         {tier.features.map((f) => (
-          <li key={f} className="flex items-center gap-2 text-sm text-surface-300">
-            <span className="text-cherry-400">✓</span>
+          <li key={f} className="flex items-center gap-2 text-sm text-ink">
+            <span className="text-live shrink-0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+            </span>
             {f}
           </li>
         ))}
       </ul>
       {isAuthenticated ? (
-        <Link to={tier.name === 'Free' ? '/dashboard' : '/pricing'}>
+        <Link to="/dashboard">
           <Button variant={tier.highlight ? 'primary' : 'secondary'} className="w-full justify-center">
-            {tier.cta}
+            Go to dashboard
           </Button>
         </Link>
       ) : (
@@ -234,6 +258,6 @@ function TierContent({
           Sign in with Pi
         </Button>
       )}
-    </>
+    </div>
   );
 }

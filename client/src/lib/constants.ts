@@ -11,11 +11,11 @@ export const TIER3_PRICE_PI = 88;
 export const TIER4_PRICE_PI = 125;
 
 export const TIER_LABELS: Record<string, string> = {
-  FREE: 'Free',
-  TIER1: 'Tier 1',
-  TIER2: 'Tier 2',
-  TIER3: 'Tier 3',
-  TIER4: 'Tier 4',
+  FREE: 'Starter',
+  TIER1: 'Builder',
+  TIER2: 'Pro',
+  TIER3: 'Business',
+  TIER4: 'Enterprise',
   PREMIUM: 'Premium',
 };
 

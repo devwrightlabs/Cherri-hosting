@@ -1,29 +1,18 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
-import Sidebar from '../components/Sidebar';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
+import AppShell from '../components/AppShell';
 import DropZone from '../components/deploy/DropZone';
+import DeployReveal from '../components/deploy/DeployReveal';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
-import Badge from '../components/ui/Badge';
-import Spinner from '../components/ui/Spinner';
-import { projectsApi, deploymentsApi } from '../lib/api';
+import { projectsApi } from '../lib/api';
+import {
+  deployFiles,
+  getDeployment,
+  extractDeployError,
+  DeployError,
+} from '../api/deployApi';
 import { Project, Deployment, DeploymentStatus } from '../types';
-
-const STATUS_LABELS: Record<DeploymentStatus, string> = {
-  PENDING: 'Preparing upload…',
-  UPLOADING: 'Uploading to IPFS…',
-  PINNING: 'Pinning on IPFS network…',
-  ACTIVE: 'Deployment live! 🎉',
-  FAILED: 'Deployment failed',
-};
-
-const STATUS_VARIANTS: Record<DeploymentStatus, 'default' | 'warning' | 'info' | 'success' | 'error'> = {
-  PENDING: 'warning',
-  UPLOADING: 'info',
-  PINNING: 'info',
-  ACTIVE: 'success',
-  FAILED: 'error',
-};
 
 export default function Deploy() {
   const [searchParams] = useSearchParams();
@@ -34,211 +23,178 @@ export default function Deploy() {
     searchParams.get('projectId') ?? '',
   );
   const [files, setFiles] = useState<File[]>([]);
+  const [filePaths, setFilePaths] = useState<string[]>([]);
   const [isDeploying, setIsDeploying] = useState(false);
-  const [deploymentId, setDeploymentId] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus | null>(null);
   const [liveDeployment, setLiveDeployment] = useState<Deployment | null>(null);
-  const [error, setError] = useState('');
+  const [deployError, setDeployError] = useState<DeployError | null>(null);
+  const [deployStartedAt, setDeployStartedAt] = useState<number | null>(null);
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load projects for the selector (run once on mount; selectedProjectId is only
-  // read to skip auto-selection when a ?projectId= param was already provided)
   useEffect(() => {
     projectsApi
       .list()
       .then((res) => {
         const p = (res.data as { projects: Project[] }).projects;
         setProjects(p);
-        setSelectedProjectId((prev) => (prev || (p.length > 0 ? p[0].id : '')));
+        setSelectedProjectId((prev) => prev || (p.length > 0 ? p[0].id : ''));
       })
       .catch(console.error);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Poll deployment status
   useEffect(() => {
-    if (!deploymentId || deploymentStatus === 'ACTIVE' || deploymentStatus === 'FAILED') return;
+    return () => {
+      if (pollTimeoutRef.current !== null) clearTimeout(pollTimeoutRef.current);
+    };
+  }, []);
 
-    const interval = setInterval(async () => {
+  const pollStatus = useCallback((id: string) => {
+    if (pollTimeoutRef.current !== null) clearTimeout(pollTimeoutRef.current);
+
+    const poll = async () => {
       try {
-        const res = await deploymentsApi.get(deploymentId);
-        const d = (res.data as { deployment: Deployment }).deployment;
+        const d = await getDeployment(id);
         setDeploymentStatus(d.status);
         if (d.status === 'ACTIVE' || d.status === 'FAILED') {
-          setLiveDeployment(d);
-          clearInterval(interval);
+          if (d.status === 'ACTIVE') setLiveDeployment(d);
+          if (pollTimeoutRef.current !== null) clearTimeout(pollTimeoutRef.current);
+          return;
         }
       } catch {
-        // ignore polling errors
+        // ignore transient polling errors
       }
-    }, 2000);
+      pollTimeoutRef.current = setTimeout(() => void poll(), 2000);
+    };
 
-    return () => clearInterval(interval);
-  }, [deploymentId, deploymentStatus]);
+    void poll();
+  }, []);
 
   const handleDeploy = useCallback(async () => {
-    if (!selectedProjectId || files.length === 0) return;
+    if (!selectedProjectId || files.length === 0 || filePaths.length === 0) return;
     setIsDeploying(true);
-    setError('');
+    setDeployError(null);
+    setUploadProgress(0);
     setDeploymentStatus('PENDING');
     setLiveDeployment(null);
-    setDeploymentId('');
+    setDeployStartedAt(Date.now());
 
     try {
-      const formData = new FormData();
-      formData.append('projectId', selectedProjectId);
-      files.forEach((f) => formData.append('files', f, f.name));
-
-      const res = await deploymentsApi.deploy(formData);
-      const d = (res.data as { deployment: { id: string; status: DeploymentStatus } }).deployment;
-      setDeploymentId(d.id);
-      setDeploymentStatus(d.status);
+      const d = await deployFiles(selectedProjectId, files, filePaths, setUploadProgress);
+      setDeploymentStatus(d.status as DeploymentStatus);
+      pollStatus(d.id);
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : 'Deployment failed. Please try again.';
-      setError(msg);
+      setDeployError(extractDeployError(err));
       setDeploymentStatus(null);
     } finally {
       setIsDeploying(false);
     }
-  }, [selectedProjectId, files]);
+  }, [selectedProjectId, files, filePaths, pollStatus]);
 
   const reset = () => {
     setFiles([]);
-    setDeploymentId('');
+    setFilePaths([]);
     setDeploymentStatus(null);
     setLiveDeployment(null);
-    setError('');
+    setDeployError(null);
+    setUploadProgress(0);
+    setDeployStartedAt(null);
   };
 
+  const canDeploy =
+    !!selectedProjectId && files.length > 0 && filePaths.length > 0 && !isDeploying;
+  const isUpgradeError = (kind: DeployError['kind']) =>
+    kind === 'storage_limit' || kind === 'upload_too_large';
+
   return (
-    <div className="flex h-screen overflow-hidden bg-surface-950">
-      <Sidebar />
+    <AppShell>
+      <div>
+        <h1 className="text-xl font-bold text-ink font-display tracking-tight">Deploy</h1>
+        <p className="text-ink-mut text-sm mt-0.5">Upload your static site to IPFS.</p>
+      </div>
 
-      <main className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
-          <div>
-            <h1 className="text-2xl font-bold text-white">Deploy</h1>
-            <p className="text-surface-400 text-sm mt-1">
-              Upload your static site files to IPFS.
-            </p>
-          </div>
+      {/* Project selector */}
+      <Card>
+        <h2 className="text-sm font-semibold text-ink mb-3">Project</h2>
+        {projects.length === 0 ? (
+          <p className="text-ink-mut text-sm">
+            You have no projects yet.{' '}
+            <button onClick={() => navigate('/projects')} className="text-gold underline">
+              Create one first.
+            </button>
+          </p>
+        ) : (
+          <select
+            value={selectedProjectId}
+            onChange={(e) => setSelectedProjectId(e.target.value)}
+            disabled={deploymentStatus !== null}
+            className="w-full bg-surface-800 border border-hairline rounded-lg px-3 py-2.5 text-ink text-sm focus:outline-none focus:border-gold disabled:opacity-50"
+          >
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        )}
+      </Card>
 
-          {/* Project selector */}
-          <Card>
-            <h2 className="text-sm font-medium text-white mb-3">Select Project</h2>
-            {projects.length === 0 ? (
-              <p className="text-surface-400 text-sm">
-                No projects found.{' '}
-                <button
-                  onClick={() => navigate('/projects')}
-                  className="text-cherry-400 hover:text-cherry-300 underline"
-                >
-                  Create one first.
-                </button>
-              </p>
-            ) : (
-              <select
-                value={selectedProjectId}
-                onChange={(e) => setSelectedProjectId(e.target.value)}
-                className="w-full bg-surface-700 border border-surface-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cherry-500"
-              >
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            )}
-          </Card>
+      {/* Drop zone */}
+      {deploymentStatus === null && (
+        <Card>
+          <h2 className="text-sm font-semibold text-ink mb-3">Files</h2>
+          <DropZone
+            onFilesAccepted={(acceptedFiles, acceptedPaths) => {
+              setFiles(acceptedFiles);
+              setFilePaths(acceptedPaths);
+            }}
+          />
+        </Card>
+      )}
 
-          {/* Drop zone */}
-          <Card>
-            <h2 className="text-sm font-medium text-white mb-4">Files</h2>
-            <DropZone onFilesAccepted={setFiles} />
-          </Card>
+      {/* Deploy button */}
+      {deploymentStatus === null && (
+        <Button
+          size="lg"
+          className="w-full justify-center"
+          disabled={!canDeploy}
+          isLoading={isDeploying}
+          onClick={() => void handleDeploy()}
+        >
+          Deploy to IPFS
+        </Button>
+      )}
 
-          {/* Deploy button */}
-          {deploymentStatus === null && (
-            <Button
-              size="lg"
-              className="w-full justify-center"
-              disabled={!selectedProjectId || files.length === 0}
-              isLoading={isDeploying}
-              onClick={handleDeploy}
-            >
-              🚀 Deploy to IPFS
-            </Button>
-          )}
+      {/* The reveal sequence */}
+      {deploymentStatus && (
+        <DeployReveal
+          status={deploymentStatus}
+          isUploading={isDeploying}
+          uploadProgress={uploadProgress}
+          deployment={liveDeployment}
+          startedAt={deployStartedAt}
+          onRetry={() => void handleDeploy()}
+          onReset={reset}
+        />
+      )}
 
-          {/* Progress */}
-          {deploymentStatus && (
-            <Card>
-              <div className="flex items-center gap-3">
-                {deploymentStatus !== 'ACTIVE' && deploymentStatus !== 'FAILED' ? (
-                  <Spinner size="sm" />
-                ) : deploymentStatus === 'ACTIVE' ? (
-                  <span className="text-xl">✅</span>
-                ) : (
-                  <span className="text-xl">❌</span>
-                )}
-                <div>
-                  <Badge variant={STATUS_VARIANTS[deploymentStatus]}>
-                    {deploymentStatus}
-                  </Badge>
-                  <p className="text-surface-400 text-sm mt-1">
-                    {STATUS_LABELS[deploymentStatus]}
-                  </p>
-                </div>
-              </div>
-
-              {liveDeployment?.status === 'ACTIVE' && (
-                <div className="mt-4 pt-4 border-t border-surface-700/50 space-y-2 font-mono text-xs">
-                  <p>
-                    <span className="text-surface-500">CID: </span>
-                    <span className="text-cherry-400">{liveDeployment.cid}</span>
-                  </p>
-                  <p>
-                    <span className="text-surface-500">URL: </span>
-                    <a
-                      href={liveDeployment.gateway}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-cherry-400 hover:text-cherry-300 underline"
-                    >
-                      {liveDeployment.gateway}
-                    </a>
-                  </p>
-                  <div className="flex gap-2 pt-2 font-sans">
-                    <a href={liveDeployment.gateway} target="_blank" rel="noopener noreferrer">
-                      <Button size="sm">Open site ↗</Button>
-                    </a>
-                    <Button size="sm" variant="secondary" onClick={reset}>
-                      Deploy another
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {deploymentStatus === 'FAILED' && (
-                <div className="mt-3 flex gap-2">
-                  <Button size="sm" onClick={handleDeploy} isLoading={isDeploying}>
-                    Retry
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={reset}>
-                    Reset
-                  </Button>
-                </div>
-              )}
-            </Card>
-          )}
-
-          {error && (
-            <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
-              {error}
-            </div>
+      {deployError && (
+        <div
+          className={`p-4 rounded-lg border text-sm ${
+            isUpgradeError(deployError.kind)
+              ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+              : 'bg-red-500/10 border-red-500/30 text-red-400'
+          }`}
+        >
+          <p>{deployError.message}</p>
+          {isUpgradeError(deployError.kind) && (
+            <Link to="/account" className="inline-block mt-2 text-xs font-medium underline">
+              See plans →
+            </Link>
           )}
         </div>
-      </main>
-    </div>
+      )}
+    </AppShell>
   );
 }

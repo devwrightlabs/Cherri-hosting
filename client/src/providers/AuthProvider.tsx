@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import { User, PiAuthResult, PiPaymentDTO } from '../types';
 import { authApi, paymentsApi } from '../lib/api';
 import { usePiSDK } from './PiSDKProvider';
+import { getEnv } from '../lib/piEnv';
 
 interface AuthContextValue {
   user: User | null;
@@ -16,7 +17,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 function handleIncompletePayment(payment: PiPaymentDTO) {
-  paymentsApi.verify(payment.identifier).catch((err: unknown) => {
+  paymentsApi.verify(payment.identifier, getEnv()).catch((err: unknown) => {
     console.warn(
       'Could not recover incomplete Pi payment:',
       payment.identifier,

@@ -1,9 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import Sidebar from '../components/Sidebar';
+import AppShell from '../components/AppShell';
 import Card from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
+import StatTile from '../components/ui/StatTile';
+import TierBadge from '../components/ui/TierBadge';
+import EmptyState from '../components/ui/EmptyState';
 import StorageBar from '../components/dashboard/StorageBar';
 import DeploymentCard from '../components/dashboard/DeploymentCard';
 import QuickDeploy from '../components/dashboard/QuickDeploy';
@@ -45,14 +48,11 @@ export default function Dashboard() {
     loadProjects();
   }, [loadProjects]);
 
-  // Refresh user data (e.g. after an upgrade) then reload projects so the
-  // UpgradeBanner reflects the updated subscription tier immediately.
   const handleUpgradeSuccess = useCallback(async () => {
     await refreshUser();
     loadProjects();
   }, [refreshUser, loadProjects]);
 
-  // Flatten and sort all deployments across every project, newest first
   const allDeployments: Deployment[] = projects
     .flatMap((p) => p.deployments ?? [])
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -62,261 +62,188 @@ export default function Dashboard() {
     0,
   );
 
-  // When a new deployment succeeds, refresh the project list so counts update
   const handleDeploySuccess = useCallback((_deployment: Deployment) => {
     loadProjects();
   }, [loadProjects]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-surface-950">
-      <Sidebar />
+    <AppShell>
+      <SystemStatusBanner />
 
-      <main className="flex-1 overflow-y-auto">
-        <div className="max-w-6xl mx-auto px-6 py-8 space-y-8">
+      {/* Greeting */}
+      <div>
+        <h1 className="text-xl font-bold text-ink tracking-tight">
+          Welcome back{user?.username ? `, ${user.username}` : ''}
+        </h1>
+        <p className="text-ink-mut text-sm mt-0.5">
+          Drop your build below for an instant deploy.
+        </p>
+      </div>
 
-          {/* ── Degraded-mode notice (only shows when an integration is down) ── */}
-          <SystemStatusBanner />
-
-          {/* ── Header ── */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-white">
-                Welcome back{user?.username ? `, ${user.username}` : ''}! 👋
-              </h1>
-              <p className="text-surface-400 text-sm mt-1">
-                Drop your build files below for an instant IPFS deployment.
-              </p>
-            </div>
-            <Link to="/projects">
-              <Button variant="secondary" size="sm">Manage projects →</Button>
-            </Link>
-          </div>
-
-          {/* ── Stats row ── */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <Card>
-              <p className="text-surface-400 text-xs uppercase tracking-wider mb-1">Projects</p>
-              <p className="text-3xl font-bold text-white">{projects.length}</p>
-            </Card>
-            <Card>
-              <p className="text-surface-400 text-xs uppercase tracking-wider mb-1">Deployments</p>
-              <p className="text-3xl font-bold text-white">{totalDeployments}</p>
-            </Card>
-            <Card>
-              <p className="text-surface-400 text-xs uppercase tracking-wider mb-1">Plan</p>
-              <div className="mt-1 flex items-center gap-2 flex-wrap">
-                <Badge variant={user?.tier === 'PREMIUM' ? 'premium' : 'default'}>
-                  {user?.tier ?? 'FREE'}
-                </Badge>
-                {user?.tier === 'FREE' && (
-                  <Link to="/pricing" className="text-xs text-cherry-400 hover:text-cherry-300">
-                    Upgrade →
-                  </Link>
-                )}
-              </div>
-            </Card>
-            <Card>
-              <p className="text-surface-400 text-xs uppercase tracking-wider mb-1">Storage</p>
-              {user ? (
-                <p className="text-white text-sm font-semibold mt-1">
-                  {formatBytes(user.storageUsed)}
-                  <span className="text-surface-500 font-normal text-xs ml-1">
-                    / {formatBytes(user.storageLimit)}
-                  </span>
-                </p>
-              ) : (
-                <p className="text-surface-500 text-sm">—</p>
-              )}
-            </Card>
-          </div>
-
-          {/* ── Main two-column layout ── */}
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-
-            {/* Left — 1-Click Deploy (centerpiece) */}
-            <div className="lg:col-span-3">
-              <Card className="h-full">
-                <div className="flex items-center gap-2 mb-5">
-                  <span className="text-lg">🚀</span>
-                  <h2 className="text-base font-semibold text-white">1-Click Deploy</h2>
-                  <span className="ml-auto text-xs text-surface-500">
-                    Drag a <span className="font-mono text-cherry-400" aria-label="zip file">.zip</span> or any build files
-                  </span>
-                </div>
-
-                {isLoading ? (
-                  <div className="flex justify-center py-16">
-                    <Spinner />
-                  </div>
-                ) : (
-                  <QuickDeploy
-                    projects={projects}
-                    onDeploySuccess={handleDeploySuccess}
-                  />
-                )}
-              </Card>
-            </div>
-
-            {/* Right — Subscription & Storage */}
-            <div className="lg:col-span-2 space-y-4">
-
-              {/* Subscription tier / upgrade card */}
-              <UpgradeBanner onUpgradeSuccess={handleUpgradeSuccess} />
-
-              {/* Recurring (PiRC2) subscription card */}
-              <Pirc2Subscription onChange={handleUpgradeSuccess} />
-
-              {/* Domain redirection gateway — domains are acquired via Pi Network */}
-              <DomainGateway projects={projects} />
-
-              {/* Storage bar */}
-              {user && (
-                <Card>
-                  <h2 className="text-sm font-semibold text-white mb-4">Storage Usage</h2>
-                  <StorageBar used={user.storageUsed} limit={user.storageLimit} />
-                  {user.tier === 'FREE' && user.storageLimit > 0 && user.storageUsed / user.storageLimit > 0.7 && (
-                    <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-400">
-                      You're approaching your free storage limit.{' '}
-                      <Link to="/pricing" className="underline">Upgrade to Premium</Link> for 10 GB.
-                    </div>
-                  )}
-                </Card>
-              )}
-
-              {/* Quick links */}
-              <Card>
-                <h2 className="text-sm font-semibold text-white mb-3">Quick Links</h2>
-                <div className="space-y-1.5">
-                  <Link
-                    to="/projects"
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-surface-400 hover:text-white hover:bg-surface-700 transition-colors"
-                  >
-                    <span>📦</span> All Projects
-                  </Link>
-                  <Link
-                    to="/deploy"
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-surface-400 hover:text-white hover:bg-surface-700 transition-colors"
-                  >
-                    <span>🚀</span> Full Deploy Page
-                  </Link>
-                  <Link
-                    to="/pricing"
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-surface-400 hover:text-white hover:bg-surface-700 transition-colors"
-                  >
-                    <span>💎</span> Pricing & Plans
-                  </Link>
-                </div>
-              </Card>
-            </div>
-          </div>
-
-          {/* ── Recent Projects ── */}
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-white">Projects</h2>
-              <Link
-                to="/projects"
-                className="text-cherry-400 hover:text-cherry-300 text-sm transition-colors"
-              >
-                View all →
+      {/* Stat grid */}
+      <div className="grid grid-cols-2 gap-3">
+        <StatTile
+          label="Projects"
+          value={projects.length}
+          isLoading={isLoading}
+        />
+        <StatTile
+          label="Deployments"
+          value={totalDeployments}
+          isLoading={isLoading}
+        />
+        <StatTile
+          label="Plan"
+          value={<TierBadge tier={user?.tier ?? 'FREE'} />}
+          sub={
+            user?.tier === 'FREE' ? (
+              <Link to="/account" className="text-ink underline">
+                Upgrade →
               </Link>
-            </div>
+            ) : undefined
+          }
+        />
+        <StatTile
+          label="Storage"
+          mono
+          value={user ? formatBytes(user.storageUsed) : undefined}
+          sub={user ? `of ${formatBytes(user.storageLimit)}` : undefined}
+        />
+      </div>
 
-            {isLoading ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Card key={i} className="h-full">
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <Skeleton className="h-5 w-32" />
-                      <Skeleton className="h-5 w-16" />
-                    </div>
-                    <Skeleton className="h-3 w-40 mb-2" />
-                    <Skeleton className="h-3 w-24" />
-                  </Card>
-                ))}
-              </div>
-            ) : projects.length === 0 ? (
-              <Card className="text-center py-10">
-                <p className="text-4xl mb-3">📦</p>
-                <p className="text-white font-medium mb-2">No projects yet</p>
-                <p className="text-surface-400 text-sm mb-5">
-                  Create a project, then drop your files in the deploy zone above.
-                </p>
-                <Link to="/projects">
-                  <Button>Create a project</Button>
-                </Link>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {projects.slice(0, 6).map((project) => {
-                  const latestDeploy = project.deployments?.[0];
-                  return (
-                    <Link key={project.id} to={`/projects/${project.id}`}>
-                      <Card className="h-full hover:border-cherry-500/40 transition-colors">
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <h3 className="font-medium text-white truncate">{project.name}</h3>
-                          {latestDeploy && (
-                            <Badge
-                              variant={
-                                latestDeploy.status === 'ACTIVE'
-                                  ? 'success'
-                                  : latestDeploy.status === 'FAILED'
-                                  ? 'error'
-                                  : 'warning'
-                              }
-                            >
-                              {latestDeploy.status}
-                            </Badge>
-                          )}
-                        </div>
-                        {project.description && (
-                          <p className="text-surface-400 text-xs truncate mb-2">
-                            {project.description}
-                          </p>
-                        )}
-                        <p className="text-surface-500 text-xs">
-                          {project._count?.deployments ?? project.deployments?.length ?? 0} deployment
-                          {(project._count?.deployments ?? project.deployments?.length ?? 0) !== 1
-                            ? 's'
-                            : ''}
-                        </p>
-                      </Card>
-                    </Link>
-                  );
-                })}
+      {/* Quick deploy — primary action */}
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold text-ink font-display">Quick deploy</h2>
+          <span className="text-xs text-ink-mut">
+            Drop a <span className="font-mono text-ink">.zip</span> or files
+          </span>
+        </div>
+        {isLoading ? (
+          <div className="flex justify-center py-12">
+            <Spinner />
+          </div>
+        ) : (
+          <QuickDeploy projects={projects} onDeploySuccess={handleDeploySuccess} />
+        )}
+      </Card>
+
+      {/* Subscription + storage stack */}
+      <UpgradeBanner onUpgradeSuccess={handleUpgradeSuccess} />
+      <Pirc2Subscription onChange={handleUpgradeSuccess} />
+      <DomainGateway projects={projects} />
+
+      {user && (
+        <Card>
+          <h2 className="text-sm font-semibold text-ink mb-4">Storage usage</h2>
+          <StorageBar used={user.storageUsed} limit={user.storageLimit} />
+          {user.tier === 'FREE' &&
+            user.storageLimit > 0 &&
+            user.storageUsed / user.storageLimit > 0.7 && (
+              <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-400">
+                You're approaching your free storage limit.{' '}
+                <Link to="/account" className="underline">
+                  Upgrade
+                </Link>{' '}
+                for more space.
               </div>
             )}
-          </div>
+        </Card>
+      )}
 
-          {/* ── Deployments History ── */}
-          {allDeployments.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white">
-                  Deployment History
-                  <Badge variant="default" className="ml-2">{allDeployments.length}</Badge>
-                </h2>
-              </div>
-
-              <div className="space-y-3">
-                {allDeployments.slice(0, 10).map((d) => (
-                  <DeploymentCard key={d.id} deployment={d} />
-                ))}
-              </div>
-
-              {allDeployments.length > 10 && (
-                <p className="mt-4 text-center text-surface-500 text-sm">
-                  Showing 10 of {allDeployments.length} deployments.{' '}
-                  <Link to="/projects" className="text-cherry-400 hover:text-cherry-300">
-                    Browse projects →
-                  </Link>
-                </p>
-              )}
-            </div>
-          )}
-
+      {/* Recent projects */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-semibold text-ink font-display">Projects</h2>
+          <Link to="/projects" className="text-ink-mut text-sm hover:text-ink transition-colors">
+            View all →
+          </Link>
         </div>
-      </main>
-    </div>
+
+        {isLoading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <Card key={i}>
+                <Skeleton className="h-5 w-32 mb-2" />
+                <Skeleton className="h-3 w-40" />
+              </Card>
+            ))}
+          </div>
+        ) : projects.length === 0 ? (
+          <EmptyState
+            icon={
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4" />
+              </svg>
+            }
+            title="No projects yet"
+            description="Create a project, then drop your files into the deploy zone above."
+            action={
+              <Link to="/projects">
+                <Button>Create a project</Button>
+              </Link>
+            }
+          />
+        ) : (
+          <div className="space-y-3">
+            {projects.slice(0, 6).map((project) => {
+              const latestDeploy = project.deployments?.[0];
+              const count = project._count?.deployments ?? project.deployments?.length ?? 0;
+              return (
+                <Link key={project.id} to={`/projects/${project.id}`}>
+                  <Card className="hover:border-gold/40 transition-colors">
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <h3 className="font-medium text-ink truncate">{project.name}</h3>
+                      {latestDeploy && (
+                        <Badge
+                          variant={
+                            latestDeploy.status === 'ACTIVE'
+                              ? 'success'
+                              : latestDeploy.status === 'FAILED'
+                                ? 'error'
+                                : 'warning'
+                          }
+                        >
+                          {latestDeploy.status}
+                        </Badge>
+                      )}
+                    </div>
+                    {project.description && (
+                      <p className="text-ink-mut text-xs truncate mb-1">{project.description}</p>
+                    )}
+                    <p className="text-ink-mut text-xs font-mono">
+                      {count} deployment{count !== 1 ? 's' : ''}
+                    </p>
+                  </Card>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Deployment history */}
+      {allDeployments.length > 0 && (
+        <div>
+          <h2 className="text-base font-semibold text-ink font-display mb-3 flex items-center gap-2">
+            Deployment history
+            <Badge variant="default">{allDeployments.length}</Badge>
+          </h2>
+          <div className="space-y-3">
+            {allDeployments.slice(0, 10).map((d) => (
+              <DeploymentCard key={d.id} deployment={d} />
+            ))}
+          </div>
+          {allDeployments.length > 10 && (
+            <p className="mt-4 text-center text-ink-mut text-sm">
+              Showing 10 of {allDeployments.length}.{' '}
+              <Link to="/projects" className="text-ink underline">
+                Browse projects →
+              </Link>
+            </p>
+          )}
+        </div>
+      )}
+    </AppShell>
   );
 }

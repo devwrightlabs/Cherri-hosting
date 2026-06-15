@@ -3,6 +3,8 @@ interface ProgressBarProps {
   value?: number;
   /** When true the bar pulses to indicate unknown progress. */
   indeterminate?: boolean;
+  /** Fill colour. `brand` (gold) is reserved for primary moments; `live` for in-progress work. */
+  tone?: 'brand' | 'live';
   className?: string;
 }
 
@@ -16,8 +18,11 @@ interface ProgressBarProps {
 export default function ProgressBar({
   value = 0,
   indeterminate = false,
+  tone = 'brand',
   className = '',
 }: ProgressBarProps) {
+  const fill = tone === 'live' ? 'bg-live' : 'bg-cherry-500';
+  const fillPulse = tone === 'live' ? 'bg-live/70' : 'bg-cherry-500/70';
   return (
     <div
       className={`h-1.5 w-full bg-surface-700 rounded-full overflow-hidden ${className}`}
@@ -27,10 +32,10 @@ export default function ProgressBar({
       aria-valuemax={100}
     >
       {indeterminate ? (
-        <div className="h-full w-full bg-cherry-500/70 animate-pulse rounded-full" />
+        <div className={`h-full w-full ${fillPulse} animate-pulse rounded-full`} />
       ) : (
         <div
-          className="h-full bg-cherry-500 rounded-full transition-all duration-500 ease-out"
+          className={`h-full ${fill} rounded-full transition-all duration-500 ease-out`}
           style={{ width: `${Math.min(100, Math.max(0, value))}%` }}
         />
       )}

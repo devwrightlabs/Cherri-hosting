@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { piAuthMiddleware, AuthenticatedRequest } from '../middleware/piAuth';
 import { prisma } from '../utils/prismaClient';
 import {
+  getPayment,
   approvePayment,
   completePayment,
   verifyPayment,
@@ -14,6 +15,7 @@ import {
   TIER1_PRICE_PI,
   resolveTierFromAmount,
 } from '../utils/constants';
+import { normalizePiEnv } from '../utils/piEnv';
 
 export const subscriptionsRouter = Router();
 subscriptionsRouter.use(piAuthMiddleware);
@@ -45,20 +47,35 @@ subscriptionsRouter.get('/current', async (req: AuthenticatedRequest, res: Respo
 subscriptionsRouter.post(
   '/payments/approve',
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    const schema = z.object({ paymentId: z.string().min(1) });
+    const schema = z.object({
+      paymentId: z.string().min(1),
+      env: z.enum(['testnet', 'mainnet']).optional(),
+    });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'paymentId is required' });
       return;
     }
     try {
-      const payment = await approvePayment(parsed.data.paymentId);
-      if ((payment as { amount?: number }).amount !== undefined &&
-          (payment as { amount: number }).amount < TIER1_PRICE_PI) {
+      const env = normalizePiEnv(parsed.data.env);
+
+      // Ownership — only the payer may approve their own payment.
+      const payment = await getPayment(parsed.data.paymentId, env);
+      if (payment.user_uid !== req.user!.piUserId) {
+        logger.warn('Payment ownership mismatch', {
+          paymentId: parsed.data.paymentId,
+          payer: payment.user_uid,
+        });
+        res.status(403).json({ error: 'This payment belongs to a different account.' });
+        return;
+      }
+      if (payment.amount < TIER1_PRICE_PI) {
         res.status(400).json({ error: 'Payment amount does not match any subscription plan.' });
         return;
       }
-      res.json({ success: true, payment });
+
+      const approved = await approvePayment(parsed.data.paymentId, env);
+      res.json({ success: true, payment: approved });
     } catch (err) {
       if (err instanceof IntegrationUnavailableError) {
         res.status(503).json({ error: err.message, integration: err.integration });
@@ -83,26 +100,74 @@ subscriptionsRouter.post(
     const schema = z.object({
       paymentId: z.string().min(1),
       txid: z.string().min(1),
-      amount: z.number().positive(),
+      // Advisory only — the entitlement is derived from the server-verified
+      // payment amount, never from this client-supplied value.
+      amount: z.number().positive().optional(),
+      env: z.enum(['testnet', 'mainnet']).optional(),
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'paymentId, txid, and amount are required' });
+      res.status(400).json({ error: 'paymentId and txid are required' });
       return;
     }
     try {
-      const { paymentId, txid, amount } = parsed.data;
+      const { paymentId, txid, amount: clientAmount } = parsed.data;
+      const env = normalizePiEnv(parsed.data.env);
 
-      await completePayment(paymentId, txid);
-      const isVerified = await verifyPayment(paymentId);
+      // Inspect the payment BEFORE completing it so we never developer-complete a
+      // payment we won't honour. Enforce up front:
+      //  1. Ownership — the payer (user_uid) must be the authenticated user.
+      //  2. Env — the env stamped in metadata at createPayment must match.
+      const pre = await getPayment(paymentId, env);
+      if (pre.user_uid !== req.user!.piUserId) {
+        logger.warn('Payment ownership mismatch', { paymentId, payer: pre.user_uid });
+        res.status(403).json({ error: 'This payment belongs to a different account.' });
+        return;
+      }
+      const preMetaEnv = pre.metadata?.env;
+      if (typeof preMetaEnv === 'string' && preMetaEnv !== env) {
+        logger.warn('Payment env mismatch', { paymentId, requestEnv: env, metaEnv: preMetaEnv });
+        res.status(400).json({ error: 'Payment environment mismatch.' });
+        return;
+      }
+
+      // Step 2 — complete on the Pi Platform. The returned payment is the
+      // authoritative record: its amount/payer come from Pi, not the client.
+      const completed = await completePayment(paymentId, txid, env);
+      const isVerified = await verifyPayment(paymentId, env);
       if (!isVerified) {
         res.status(400).json({ error: 'Payment could not be verified on-chain' });
         return;
       }
 
-      const tierInfo = resolveTierFromAmount(amount);
+      // Re-assert ownership on the completed object (defense in depth).
+      if (completed.user_uid !== req.user!.piUserId) {
+        logger.warn('Completed payment ownership mismatch', { paymentId, payer: completed.user_uid });
+        res.status(403).json({ error: 'This payment belongs to a different account.' });
+        return;
+      }
+
+      // HARD RULE: derive the entitlement from the server-verified amount, never
+      // from the client. A tampered client amount must never grant a tier.
+      const tierInfo = resolveTierFromAmount(completed.amount);
       if (!tierInfo) {
         res.status(400).json({ error: 'Payment amount does not match any subscription plan.' });
+        return;
+      }
+      if (clientAmount !== undefined && clientAmount !== completed.amount) {
+        logger.warn('Client/server payment amount mismatch', {
+          paymentId,
+          clientAmount,
+          serverAmount: completed.amount,
+        });
+      }
+
+      // Idempotency — Pi may retry the completion callback. If a subscription
+      // already exists for this txid, return it instead of hitting the unique
+      // piTxId constraint with a 500.
+      const existing = await prisma.subscription.findUnique({ where: { piTxId: txid } });
+      if (existing) {
+        res.json({ success: true, subscription: existing, tier: existing.tier });
         return;
       }
 
@@ -115,9 +180,10 @@ subscriptionsRouter.post(
           userId: req.user!.id,
           tier: tierInfo.tierName,
           piTxId: txid,
-          amount,
+          amount: completed.amount,
           currency: 'Pi',
           status: 'active',
+          env,
           periodStart: now,
           periodEnd,
         },

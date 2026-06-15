@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { PiEnv } from './piEnv';
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -51,17 +52,17 @@ export const deploymentsApi = {
 // Subscriptions
 export const subscriptionsApi = {
   current: () => apiClient.get('/subscriptions/current'),
-  approvePayment: (paymentId: string) =>
-    apiClient.post('/subscriptions/payments/approve', { paymentId }),
-  completePayment: (paymentId: string, txid: string, amount: number) =>
-    apiClient.post('/subscriptions/payments/complete', { paymentId, txid, amount }),
+  approvePayment: (paymentId: string, env: PiEnv) =>
+    apiClient.post('/subscriptions/payments/approve', { paymentId, env }),
+  completePayment: (paymentId: string, txid: string, amount: number, env: PiEnv) =>
+    apiClient.post('/subscriptions/payments/complete', { paymentId, txid, amount, env }),
   cancel: () => apiClient.post('/subscriptions/cancel'),
 };
 
 // Payments (incomplete payment recovery)
 export const paymentsApi = {
-  verify: (paymentId: string) =>
-    apiClient.post('/payments/verify', { paymentId }),
+  verify: (paymentId: string, env: PiEnv) =>
+    apiClient.post('/payments/verify', { paymentId, env }),
 };
 
 // PiRC2 recurring subscriptions

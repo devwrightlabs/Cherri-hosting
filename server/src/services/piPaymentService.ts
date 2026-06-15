@@ -1,17 +1,26 @@
 import axios from 'axios';
 import { logger } from '../utils/logger';
-import { isPiConfigured, IntegrationUnavailableError } from '../utils/integrations';
+import { IntegrationUnavailableError } from '../utils/integrations';
+import { PiEnv, serverKeyFor } from '../utils/piEnv';
 
 const PI_API_BASE = 'https://api.minepi.com/v2';
 
-/** Guard every outbound Pi API call so missing config fails fast and clearly. */
-function assertPiConfigured(): void {
-  if (!isPiConfigured()) {
-    throw new IntegrationUnavailableError(
-      'pi',
-      'Pi Network is not configured on the server (PI_API_KEY missing). Payment features are unavailable.',
-    );
+/**
+ * Guard every outbound Pi API call so a missing key for the requested
+ * environment fails fast and honestly. Mainnet has no testnet fallback, so a
+ * mainnet call without `PI_API_KEY_MAINNET` is refused rather than silently
+ * processing real Pi with a sandbox key.
+ */
+function assertPiConfigured(env: PiEnv): string {
+  const key = serverKeyFor(env);
+  if (!key) {
+    const detail =
+      env === 'mainnet'
+        ? 'Mainnet payments are not enabled on the server (PI_API_KEY_MAINNET missing).'
+        : 'Pi Network is not configured on the server (PI_API_KEY missing). Payment features are unavailable.';
+    throw new IntegrationUnavailableError('pi', detail);
   }
+  return key;
 }
 
 interface PiPayment {
@@ -34,9 +43,9 @@ interface PiPayment {
   } | null;
 }
 
-function getPiApiHeaders(): Record<string, string> {
+function getPiApiHeaders(apiKey: string): Record<string, string> {
   return {
-    Authorization: `Key ${process.env.PI_API_KEY ?? ''}`,
+    Authorization: `Key ${apiKey}`,
     'Content-Type': 'application/json',
   };
 }
@@ -44,12 +53,15 @@ function getPiApiHeaders(): Record<string, string> {
 /**
  * Fetch a Pi payment by its identifier.
  */
-export async function getPayment(paymentId: string): Promise<PiPayment> {
-  assertPiConfigured();
+export async function getPayment(
+  paymentId: string,
+  env: PiEnv = 'testnet',
+): Promise<PiPayment> {
+  const apiKey = assertPiConfigured(env);
   const response = await axios.get<PiPayment>(
     `${PI_API_BASE}/payments/${paymentId}`,
     {
-      headers: getPiApiHeaders(),
+      headers: getPiApiHeaders(apiKey),
       timeout: 10000,
     },
   );
@@ -59,17 +71,20 @@ export async function getPayment(paymentId: string): Promise<PiPayment> {
 /**
  * Approve a payment on the server side (step 1 of payment flow).
  */
-export async function approvePayment(paymentId: string): Promise<PiPayment> {
-  assertPiConfigured();
+export async function approvePayment(
+  paymentId: string,
+  env: PiEnv = 'testnet',
+): Promise<PiPayment> {
+  const apiKey = assertPiConfigured(env);
   const response = await axios.post<PiPayment>(
     `${PI_API_BASE}/payments/${paymentId}/approve`,
     {},
     {
-      headers: getPiApiHeaders(),
+      headers: getPiApiHeaders(apiKey),
       timeout: 10000,
     },
   );
-  logger.info('Pi payment approved', { paymentId });
+  logger.info('Pi payment approved', { paymentId, env });
   return response.data;
 }
 
@@ -79,26 +94,30 @@ export async function approvePayment(paymentId: string): Promise<PiPayment> {
 export async function completePayment(
   paymentId: string,
   txid: string,
+  env: PiEnv = 'testnet',
 ): Promise<PiPayment> {
-  assertPiConfigured();
+  const apiKey = assertPiConfigured(env);
   const response = await axios.post<PiPayment>(
     `${PI_API_BASE}/payments/${paymentId}/complete`,
     { txid },
     {
-      headers: getPiApiHeaders(),
+      headers: getPiApiHeaders(apiKey),
       timeout: 10000,
     },
   );
-  logger.info('Pi payment completed', { paymentId, txid });
+  logger.info('Pi payment completed', { paymentId, txid, env });
   return response.data;
 }
 
 /**
  * Verify that a payment's transaction has been confirmed on chain.
  */
-export async function verifyPayment(paymentId: string): Promise<boolean> {
+export async function verifyPayment(
+  paymentId: string,
+  env: PiEnv = 'testnet',
+): Promise<boolean> {
   try {
-    const payment = await getPayment(paymentId);
+    const payment = await getPayment(paymentId, env);
     return (
       payment.status.developer_approved &&
       payment.status.transaction_verified &&
@@ -106,7 +125,7 @@ export async function verifyPayment(paymentId: string): Promise<boolean> {
       !payment.status.user_cancelled
     );
   } catch (err) {
-    logger.error('Failed to verify Pi payment', { paymentId, error: err });
+    logger.error('Failed to verify Pi payment', { paymentId, env, error: err });
     return false;
   }
 }

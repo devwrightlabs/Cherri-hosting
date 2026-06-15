@@ -14,6 +14,7 @@ import {
   TIER1_PRICE_PI,
   resolveTierFromAmount,
 } from '../utils/constants';
+import { normalizePiEnv } from '../utils/piEnv';
 
 export const paymentsRouter = Router();
 
@@ -34,7 +35,10 @@ paymentsRouter.use(piAuthMiddleware);
  *   4. If no transaction yet          → return "pending" (Pi will retry later).
  */
 paymentsRouter.post('/verify', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  const schema = z.object({ paymentId: z.string().min(1) });
+  const schema = z.object({
+    paymentId: z.string().min(1),
+    env: z.enum(['testnet', 'mainnet']).optional(),
+  });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'paymentId is required' });
@@ -42,9 +46,24 @@ paymentsRouter.post('/verify', async (req: AuthenticatedRequest, res: Response):
   }
 
   const { paymentId } = parsed.data;
+  const env = normalizePiEnv(parsed.data.env);
 
   try {
-    const payment = await getPayment(paymentId);
+    const payment = await getPayment(paymentId, env);
+
+    // Ownership — only the payer may recover/activate their own payment.
+    if (payment.user_uid !== req.user!.piUserId) {
+      logger.warn('Payment ownership mismatch', { paymentId, payer: payment.user_uid });
+      res.status(403).json({ error: 'This payment belongs to a different account.' });
+      return;
+    }
+    // Env — the env stamped in metadata at createPayment must match the request.
+    const metaEnv = payment.metadata?.env;
+    if (typeof metaEnv === 'string' && metaEnv !== env) {
+      logger.warn('Payment env mismatch', { paymentId, requestEnv: env, metaEnv });
+      res.status(400).json({ error: 'Payment environment mismatch.' });
+      return;
+    }
 
     // Cancelled payments — nothing to do, acknowledge so Pi can clean up
     if (payment.status.cancelled || payment.status.user_cancelled) {
@@ -67,16 +86,16 @@ paymentsRouter.post('/verify', async (req: AuthenticatedRequest, res: Response):
 
     // Step 1 — approve if the server hasn't done so yet
     if (!payment.status.developer_approved) {
-      await approvePayment(paymentId);
+      await approvePayment(paymentId, env);
     }
 
     // Step 2 — if the on-chain transaction exists, complete and activate
     if (payment.transaction?.txid) {
       const txid = payment.transaction.txid;
 
-      await completePayment(paymentId, txid);
+      await completePayment(paymentId, txid, env);
 
-      const isVerified = await verifyPayment(paymentId);
+      const isVerified = await verifyPayment(paymentId, env);
       if (!isVerified) {
         res.status(400).json({ error: 'Payment could not be verified on-chain' });
         return;
@@ -97,6 +116,7 @@ paymentsRouter.post('/verify', async (req: AuthenticatedRequest, res: Response):
             amount: payment.amount,
             currency: 'Pi',
             status: 'active',
+            env,
             periodStart: now,
             periodEnd,
           },

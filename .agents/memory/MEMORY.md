@@ -1,4 +1,6 @@
 - [Prisma client generation](prisma-client-generation.md) — schema lives at root/prisma; `prisma generate` outputs to root node_modules, but the server imports its own copy — must sync.
 - [PiRC2 subscriptions](pirc2-subscriptions.md) — on-chain recurring subscription system; honest 503 degradation, never fakes a charge; adapter seam for chain wiring.
 - [Folder upload architecture](folder-upload-architecture.md) — FileSystemEntry API + webkitdirectory; server receives filePaths JSON alongside files; adm-zip handles ZIP extraction with common-root stripping.
-- [Multi-tier subscriptions](multi-tier-subscriptions.md) — amount passed from client in complete request; resolveTierFromAmount() maps Pi amount → tier; TIER1/2/3/4 extend FREE/PREMIUM.
+- [Multi-tier subscriptions](multi-tier-subscriptions.md) — entitlement derives from server-verified Pi amount + payer uid (client amount advisory only); resolveTierFromAmount maps amount→tier; displayed price == payment amount.
+- [Pi env toggle](pi-env-toggle.md) — testnet/mainnet is a standalone store, not in providers; mainnet honestly gated (no key→503, no fallback); env threaded + persisted on payment rows.
+- [Multi-package repo layout](monorepo-package-layout.md) — 3 package.json (root/client/server), no workspaces; install client/server deps in their own dir, NOT via root-installing tools.

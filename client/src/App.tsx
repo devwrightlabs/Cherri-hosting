@@ -1,6 +1,7 @@
 import { RouterProvider, createBrowserRouter } from 'react-router-dom';
 import { PiSDKProvider } from './providers/PiSDKProvider';
 import { AuthProvider } from './providers/AuthProvider';
+import { ToastProvider } from './components/ui/Toast';
 import Landing from './pages/Landing';
 import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
@@ -12,6 +13,14 @@ import ProtectedRoute from './components/ProtectedRoute';
 const router = createBrowserRouter([
   { path: '/', element: <Landing /> },
   { path: '/pricing', element: <Pricing /> },
+  {
+    path: '/account',
+    element: (
+      <ProtectedRoute>
+        <Pricing />
+      </ProtectedRoute>
+    ),
+  },
   {
     path: '/dashboard',
     element: (
@@ -50,7 +59,9 @@ export default function App() {
   return (
     <PiSDKProvider>
       <AuthProvider>
-        <RouterProvider router={router} />
+        <ToastProvider>
+          <RouterProvider router={router} />
+        </ToastProvider>
       </AuthProvider>
     </PiSDKProvider>
   );
