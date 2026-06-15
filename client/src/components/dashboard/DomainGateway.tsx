@@ -90,16 +90,14 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
           Domains are purchased through Pi Network's official auction — Sherry doesn't sell domains.
           Win a domain there, then map it to your deployment here.
         </p>
-        <a
-          href={PI_DOMAIN_PORTAL_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block w-full"
+        <Button
+          variant="secondary"
+          size="sm"
+          className="w-full justify-center"
+          onClick={() => { window.location.href = PI_DOMAIN_PORTAL_URL; }}
         >
-          <Button variant="secondary" size="sm" className="w-full justify-center">
-            Browse domain auctions on Pi →
-          </Button>
-        </a>
+          Browse domain auctions on Pi →
+        </Button>
       </div>
 
       <div className="border-t border-surface-700/40 pt-4 mb-4">
