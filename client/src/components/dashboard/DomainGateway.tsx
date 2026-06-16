@@ -124,7 +124,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
           variant="secondary"
           size="sm"
           className="w-full justify-center"
-          onClick={() => { window.location.href = PI_DOMAIN_PORTAL_URL; }}
+          onClick={() => { window.open(PI_DOMAIN_PORTAL_URL, '_blank'); }}
         >
           Browse domain auctions on Pi →
         </Button>
@@ -226,7 +226,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
           variant="secondary"
           size="sm"
           className="w-full justify-center"
-          onClick={() => { window.location.href = PI_DOMAIN_PORTAL_URL; }}
+          onClick={() => { window.open(PI_DOMAIN_PORTAL_URL, '_blank'); }}
         >
           Open Pi domain portal →
         </Button>
