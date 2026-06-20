@@ -1,0 +1,964 @@
+# SHERRY HOSTING — FINAL MASTER PROMPT
+### Full decentralized Pi Network hosting platform · Single source of truth · Paste into Replit AI
+
+---
+
+> **HOW TO USE THIS PROMPT**
+> Paste the entire document into Replit AI as your project directive.
+> The app already has a working codebase — **do not refactor logic, do not rename existing files, do not "fix" code that works.**
+> This prompt covers: **(0) four critical production fixes (domain-nav auth error, the TEST/LIVE toggle refresh bug, the crooked bottom nav, auto-SSL)** — do these first; then (1) redesign the UI to be premium and mobile-native, (2) the tier/value/monetization system with the project-based quota model, (3) the Pi domain loop with the redirect button, (4) the exact Pi SDK payment lifecycle, (5) the TEST|LIVE environment toggle, (6) high-performance infrastructure (auto-SSL, edge functions, Git CI/CD with preview deployments), (7) the Pi-native collaboration layer (RBAC, join-with-Pi invites, activity log, A2U revenue splits), and (8) the revenue engine that makes it a money machine. Build in the order given. Flag every major decision as `NEEDS APPROVAL: [x]` before building it. Mark completed work `✅ SHIPPED: [x]`.
+
+---
+
+## ⚠️ CRITICAL FIXES — DO THESE FIRST (they are breaking the app in production right now)
+
+These bugs are visible in the current live build and must be fixed before any new feature work. Each has a real cause and a real fix — implement exactly as written.
+
+### FIX 0 — Storage shows "NaN undefined / 2 GB" on the dashboard, account, and storage cards
+**Cause:** a storage value is read as `undefined` (the API field is missing or named differently) and then formatted, producing `NaN undefined`. It currently appears on every screen that shows storage.
+
+**Fix:** never format a raw storage value without guarding it. Compute used/total safely and show a skeleton or `0 MB` until real data arrives — never `NaN`.
+```ts
+// Safe storage formatter — use everywhere storage is displayed
+function formatStorage(usedBytes?: number, totalBytes?: number) {
+  const used = Number.isFinite(usedBytes) ? (usedBytes as number) : 0;
+  const total = Number.isFinite(totalBytes) ? (totalBytes as number) : 0;
+  const fmt = (b: number) =>
+    b >= 1e9 ? `${(b / 1e9).toFixed(2)} GB`
+    : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB`
+    : `${(b / 1e3).toFixed(0)} KB`;
+  const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
+  return { usedLabel: fmt(used), totalLabel: total ? fmt(total) : "—", pct };
+}
+```
+- Audit the storage API response and map the correct fields. If a value genuinely isn't loaded yet, render a `<Skeleton>` — never a computed string.
+- The cap shown is "2 GB" but the Builder tier is 1 GB (Part 4). Pull the displayed cap from the user's actual plan, not a hardcoded number.
+
+### FIX 1 — Pi Domains navigation shows "An unexpected error occurred while authenticating"
+**What the screenshot actually shows:** the error appears on **Pi's own Domains page** after the hand-off from the app — not inside Sherry. Part of this is Pi-side (Pi's Domains service authenticating the user), which your code cannot fix. Your job is a clean hand-off. **Verify the split:** open the same Pi Domains URL **directly from the Pi Browser** (not from Sherry). If it errors there too, it is a Pi-side/transient issue — not your bug, and not worth burning hours "refactoring."
+
+**Cause (the part you control):** the "Get a .pi domain" / "Open Pi domain portal" action is being routed through the app's internal router and/or is triggering a Pi SDK auth call (re-running `Pi.authenticate` / re-init) as part of opening the link. External navigation must never touch Pi auth or the SPA router.
+
+**Fix:** open the Pi Domains URL as a **plain external navigation, fully decoupled from auth and routing.** The Pi Browser authenticates natively on the destination — the app only hands off the URL.
+```ts
+// lib/openExternal.ts
+// Opens an external URL (e.g. the Pi Domains portal) WITHOUT touching Pi auth or the router.
+export function openExternal(url: string) {
+  // Do NOT call Pi.authenticate(), Pi.init(), or any Next router here.
+  // Hand the URL straight to the Pi Browser and let it authenticate natively.
+  const win = window.open(url, "_blank", "noopener,noreferrer");
+  if (!win) window.location.assign(url); // fallback if the webview blocks window.open
+}
+```
+- The domain buttons call `onClick={() => openExternal(PI_DOMAIN_PORTAL_URL)}`.
+- **Never** use Next.js `<Link>` for this URL — use a plain handler or `<a href rel="noopener noreferrer" target="_blank">`.
+- **Never** gate this navigation behind an auth check, and **never** re-authenticate on the click or on return.
+- On return to the app, **reuse the existing session** — check for an existing access token first; only call `Pi.authenticate` if there is none. Don't blindly re-auth on mount.
+- **If the error persists after a clean hand-off, it is on Pi's Domains page, not Sherry.** Surface a friendly note ("Pi's domain portal is having trouble — try again shortly") so a Pi-side failure never looks like a Sherry bug.
+
+### FIX 1b — Remove the leftover old subscription widget
+The Deploy/Home screen still shows an **old** subscription card ("Subscription · TIER1", "Upgrade with Pi (10 Pi/mo)", "Pi domain mapping ✗ / Priority pinning ✗") that predates the new tier system (Part 4) and contradicts it. **Delete this old widget entirely.** Subscriptions/plans live only in the Account view with the four-tier model. One source of truth for pricing — no stale duplicates anywhere.
+
+### FIX 2 — TEST/LIVE toggle: make it ONE seamless button, never a full-screen "Cancel" modal that hides the header
+**What the screenshots show (two separate problems):**
+- **(a) The switch opens a takeover screen.** When you tap LIVE, the app pushes a full-screen view with only a **"Cancel"** at the top-left — the header (the "Sherry" name, the TESTNET/MAINNET badge, and the **TEST/LIVE toggle itself**) and the normal layout disappear. You can only get back by pressing Cancel. So the toggle isn't a toggle — it's a one-way door you have to back out of.
+- **(b) It also forces a refresh / won't switch back cleanly** (the original bug).
+
+**The toggle must be a single segmented control that lives in the top bar permanently and flips in place.** Tapping LIVE switches to live; tapping TEST switches back — same control, always visible, no takeover screen, no Cancel, the header and bottom nav never disappear.
+
+**Fix the takeover (problem a):**
+- **Remove the full-screen "Cancel" view from the env switch entirely.** Switching environments must not navigate, push a route, or open a full-screen modal.
+- The header (app name + network badge + **the toggle**) and the bottom nav stay mounted and visible in **both** TEST and LIVE at all times. The only things that change on switch are the badge label (TESTNET ↔ MAINNET) and which side of the toggle is highlighted.
+- Going to LIVE (real Pi) still deserves one confirmation, but as a **compact bottom sheet that slides up over the lower part of the screen — the header and toggle stay visible above it.** Buttons: "Switch to LIVE" / "Stay on TEST". This is not a new screen and has no top-left Cancel.
+- Going back to **TEST needs no confirmation** — tapping TEST flips straight back instantly (you're returning to the safe environment).
+
+**Fix the refresh / one-way bug (problem b):**
+```ts
+function persistEnv(env: PiEnv) {
+  document.cookie = `pi_env=${env};path=/;max-age=31536000;samesite=lax`;
+}
+
+export async function handleEnvSwitch(newEnv: PiEnv) {
+  if (newEnv === getEnv()) return;                       // idempotent
+  // LIVE confirm is a bottom sheet (header stays visible); TEST needs no confirm.
+  if (newEnv === "mainnet" && !(await confirmMainnetBottomSheet())) return;
+  setEnv(newEnv);
+  persistEnv(newEnv);
+  try {
+    initPi(newEnv);            // re-init the SDK in place — NO page reload, NO navigation
+    await refreshAuth(newEnv); // silently refresh auth context for the new env
+    updateUIForEnv(newEnv);    // flip ONLY the badge label + toggle highlight
+  } catch {
+    // ONLY if the SDK genuinely cannot re-init in place: reload programmatically.
+    // The cookie guarantees it boots into newEnv, so the user never sees a manual refresh prompt.
+    window.location.reload();
+  }
+}
+```
+- **Never** show a "please refresh the page" message.
+- Switching **back to TEST works the same way** — instant, in place, no refresh, no dead-end.
+- On app boot, read the `pi_env` cookie and init that environment automatically.
+- The toggle is the same control both directions and is **never hidden, replaced, disabled, or covered** by a full-screen view after a switch.
+
+### FIX 3 — Bottom navigation bar is crooked, cramped, and hard to tap
+**Fix:** rebuild the tab bar with equal-width flex columns so nothing skews, proper spacing, and large touch targets.
+```css
+.tabbar {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  padding: 8px 10px calc(env(safe-area-inset-bottom) + 8px);
+  background: rgba(10,10,15,.92);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid #22222E;
+}
+.tab {
+  flex: 1 1 0;                 /* every tab is an equal column — nothing goes crooked */
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 4px;
+  min-height: 52px;            /* comfortably above the 44px minimum */
+  padding: 6px 4px;
+}
+.tab.center { flex: 1 1 0; }   /* the raised Deploy tab keeps an equal column */
+.tab.center .cbtn {
+  margin-top: -20px;           /* lift ONLY the button, not the column, so siblings stay aligned */
+}
+```
+- Every tab is an equal-width column (`flex:1 1 0`) so the row can never look lopsided.
+- The raised center button lifts via its own negative margin — the column stays put, so the other tabs don't shift or tilt.
+- Icon + label are centered in each tab; touch target ≥ 52px tall.
+
+### FIX 4 — Enterprise-grade auto-SSL + publish-to-Pi-Browser pipeline
+The platform must be **enterprise-grade**: when a user deploys, the system automatically provisions an **SSL/TLS certificate** (the "DSNS/SSL cert") and wires the DNS so the site is reachable over HTTPS, then publishes it to the Pi Browser end to end with no manual steps. Build this as one continuous pipeline (full spec in Parts 5 and 6):
+`deploy → pin to IPFS → auto-provision SSL (e.g. Let's Encrypt / CDN-managed) → configure DNS / DNSLink → connect the .pi or .pinet domain → publish live in the Pi Browser`
+- SSL is automatic and invisible on **every** deployment and every connected domain — the user never configures certificates.
+- The app itself is publishable on its Pi Browser domain through this same pipeline — deploy and it goes live, fully wired, no manual DNS or cert work.
+
+---
+
+## 0. VISION — WHAT THIS APP IS
+
+**Sherry Hosting is the deploy platform for the Pi Network.**
+
+A Pi developer uploads a site or app, gets a permanent IPFS URL in seconds, connects their own `.pi` domain (bought on Pi's official domain portal), can charge their visitors in Pi, and can never be locked in or taken down. Everything runs inside the **Pi Browser — a mobile webview — so the entire product is mobile-only.** Desktop is a secondary concern.
+
+**Four pillars:** premium mobile UI · real tier/value ladder · true Pi-domain loop with redirect button · exact Pi SDK payments with TEST|LIVE toggle.
+
+**The moat in one sentence:** Sherry is the fastest way to launch a permanent, Pi-native, earning app on the Pi Network — and it's the only platform where the content truly can't be taken down.
+
+---
+
+## 1. MAKE IT FIT THE PHONE FRAME (do this first — nothing else matters until this is done)
+
+The current app renders like a desktop website squeezed onto a phone. Every screen must be rebuilt as a native mobile experience running in the Pi Browser.
+
+### Shell rules
+- Viewport meta tag — required on every page:
+  ```html
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  ```
+- Use `100dvh` everywhere. Never `100vh` — mobile browser chrome clips it.
+- Respect device safe areas on every screen: `padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)`. Nothing hides under the notch or home indicator.
+- **Single column only.** No multi-column card grids on main views. Everything is `width: 100%` inside a fluid container. Nothing is ever wider than the screen. Add `overflow-x: hidden` on the root as a guard.
+- **Bottom tab bar** (fixed, safe-area padded at the bottom): four tabs — Home · Projects · Deploy · Account. Deploy is the center tab with a raised gold pill button. This replaces the sidebar-over-content pattern completely.
+- **Sticky top bar** (~56px tall): app name/logo left, TEST|LIVE environment toggle right. Safe-area padded at the top.
+- Touch targets minimum 44×44px on every interactive element.
+- Body text minimum 16px — smaller triggers iOS auto-zoom which breaks layouts.
+- Generous vertical spacing between sections (24–32px). Dense ≠ premium.
+- **Kill every desktop pattern.** If any sidebar, fixed-width container, or multi-column dashboard grid exists in the current build, it must collapse on mobile: the sidebar becomes the bottom tab bar, every dashboard card reflows to a single full-width column, and nothing keeps a desktop pixel width. The end state is a native mobile app, not a shrunk website. This is the #1 recurring failure — do not ship until it's gone.
+
+### Acceptance bar for Part 1
+Open every screen at **390px wide**. Zero horizontal scroll. Zero clipped text. Nothing hidden under the notch or home bar. Every tap target reachable by a thumb. Every dashboard card and nav element resizes gracefully — no element wider than the viewport at any width from 320px to 430px. Pass this before touching any visual work.
+
+### Fully responsive — every screen size, no exceptions
+The app must look and work perfectly on every device that opens the Pi Browser: smallest phones (320px), standard phones (360–414px), large phones (430px+), tablets, landscape, and the desktop Pi Browser. "Responsive" means the layout *adapts* — never a fixed design that overflows or leaves dead space. Implement all of the following.
+
+**Layout & breakpoints**
+1. Build mobile-first; layer enhancements up at 360 / 414 / 768 / 1024px breakpoints.
+2. Use relative units everywhere — `%`, `rem`, `vw`, `dvh`, `fr`, `min()`, `max()`, `clamp()`. Never fixed `px` widths on containers.
+3. On screens wider than a phone, center the whole app in a max-width frame (~480px) on a muted backdrop — keep the phone-shaped experience instead of stretching edge to edge.
+4. Stat cards (Projects / Deployments / Plan / Storage) use `grid-template-columns: repeat(auto-fit, minmax(150px, 1fr))` — 2-up on phones, never overflowing.
+5. Every container is `width: 100%; max-width: 100%`. Guard the root with `overflow-x: hidden`, but fix the real overflow source — don't just hide it.
+6. Use `100dvh`, never `100vh`, for full-height screens.
+7. Respect safe-area insets on every fixed element (already in the shell rules).
+8. Landscape: content scrolls, top bar and bottom nav stay reachable, nothing is cut off.
+
+**Typography**
+9. Fluid type with `clamp()` (e.g. headings `clamp(1.5rem, 6vw, 2.25rem)`) so text scales with the screen.
+10. Body text never below 16px (smaller triggers iOS auto-zoom and breaks layout).
+11. Cap line length (~70 characters) so paragraphs stay readable on wide screens.
+12. Long unbreakable strings (CIDs, URLs, Pi addresses) wrap or truncate with ellipsis + a copy button — they must never push the layout wide.
+
+**Touch & interaction**
+13. Every interactive element is ≥ 44×44px (toggle, nav tabs, buttons, list rows, close buttons).
+14. Enough spacing between tappable items that thumbs don't mis-tap.
+15. No hover-only behavior — touch has no hover; every action works on tap with a visible pressed state.
+16. Inputs use the right mobile keyboard (`type` / `inputmode`) and scroll into view on focus so the keyboard never covers them.
+
+**Components that must reflow**
+17. Tier cards stack vertically on phones (no horizontal carousel — it clips); side-by-side only on tablet/desktop.
+18. The deploy drop zone scales; "Select folder" / "ZIP or files" wrap to stacked on narrow phones instead of crowding.
+19. Modals and bottom sheets: full-width on phones, max-width centered on larger screens, scroll internally if tall, respect the safe area.
+20. The TEST/LIVE toggle and app name never overflow the top bar at 320px — shrink padding/labels before they collide.
+21. Tables / multi-column data (e.g. the activity log) collapse to stacked cards on mobile.
+22. QR codes and images are `max-width: 100%; height: auto` — never fixed sizes that overflow.
+
+**Spacing & density**
+23. One spacing scale (8pt grid); scale padding down slightly on the smallest phones via `clamp()`.
+24. Generous section spacing (24–32px) on phones; expand on larger screens.
+
+**States & edge cases**
+25. Long usernames/project names truncate with ellipsis ("Welcome back, beejayy223" must not wrap awkwardly or overflow).
+26. Empty states ("No projects yet") stay centered and balanced at every width.
+27. Loading skeletons match the final layout's size so nothing shifts when data arrives.
+28. Toasts and error banners are responsive and never run off-screen.
+29. Storage meter and progress bars are full-width and never overflow their card.
+
+**Media & performance (responsive also means it feels fast)**
+30. Lazy-load offscreen images; use `srcset` where it matters.
+31. Animate only `transform` and `opacity` so motion stays smooth on low-end phones.
+32. Debounce resize/scroll handlers.
+33. Avoid layout thrash — batch DOM reads/writes.
+
+**Cross-device & cross-browser**
+34. Test the smallest target (iPhone SE / ~320–375px) and the largest (Pro Max, foldables, tablets).
+35. Verify on both iOS and Android Pi Browser webviews — they differ in safe-area and scroll behavior.
+36. Desktop Pi Browser opens the app centered in its phone-width frame and stays fully usable.
+37. Check portrait and landscape on each.
+
+**Accessibility (inclusive = responsive)**
+38. Color contrast meets WCAG AA — verify muted `#8A8A99` and gold on `#0A0A0F`.
+39. Visible focus states for keyboard/switch navigation.
+40. Layout survives system font size bumped to 200% — text scales, nothing clips or overlaps.
+41. Respect `prefers-reduced-motion` — drop the big animations for users who ask for less.
+42. Meaningful icons have accessible labels.
+
+**The responsive acceptance gate — must pass before shipping**
+43. Test at widths 320, 360, 390, 414, 430, 768, 1024, 1280px.
+44. Test portrait and landscape at each.
+45. At every size: zero horizontal scroll, zero clipped or overlapping text, zero element wider than the viewport.
+46. Every tap target reachable and ≥ 44px at every size.
+47. Top bar (name + toggle) and bottom nav stay intact and usable at every size.
+48. The keyboard never covers a focused input on any screen.
+49. No layout shift when content/skeletons load.
+50. Rotate the device on every screen — nothing breaks, nothing is lost.
+
+---
+
+## 2. DESIGN SYSTEM (derive every visual from this — do not deviate)
+
+**Direction: "The permanent web console."** Precise, engineered, calm, and confident. Gold is a *signal*, not decoration. Restraint is the point — anyone can do dark+gold badly; this must be done with discipline.
+
+### Color tokens — use these exact hex values, nothing else
+```
+Background:      #0A0A0F   (--bg)         ← app background
+Surface:         #101018   (--surface)    ← cards and panels
+Surface-2:       #16161F   (--surface-2)  ← nested cards, inputs
+Border:          #22222E   (--border)     ← 1px hairline borders only
+Text primary:    #ECECF2   (--text)
+Text muted:      #8A8A99   (--text-mut)
+Gold:            #F0C040   (--gold)       ← ONE primary action per screen ONLY
+Gold pressed:    #B8923A   (--gold-dim)
+Live/success:    #3DDC84   (--live)       ← status dots, success states, LIVE env
+```
+
+**The gold rule:** gold appears on the single primary action per screen, the highlighted tier card, and the environment LIVE badge. If two elements on one screen are gold, one is wrong. Remove it.
+
+### Typography — three fonts, three jobs
+- **`Space Grotesk`** — display headings and large numbers only. Geometric, characterful, tight tracking. Import weight 500/600/700.
+- **`Inter`** — all body text, labels, UI copy. Import weight 400/500/600.
+- **`JetBrains Mono`** — every IPFS CID, hash, deployed URL, `.pi` domain name, and Pi amount (π). This is the signature of the app — it tells the user they're looking at engineered, content-addressed artifacts, not plain web text. Import weight 400/500.
+
+```html
+<!-- paste into <head> -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+```
+
+Type scale: Display 32–26px · H2 20px · H3 18px · Body 16px · Caption 13px · Label 11px.
+
+### Surface and shape
+- Cards: background `--surface`, border 1px `--border`, border-radius 16px, subtle box-shadow.
+- Inputs and nested elements: background `--surface-2`, border-radius 12px.
+- Buttons: primary gold button uses a linear gradient (`#F4CB55` → `#E0B43C`), text `#1a1505`, no border, border-radius 14px, box-shadow with gold glow. Secondary buttons use `--surface-2` + `--border`.
+- Dividers: 1px `--border` only. No heavy rules. Negative space is doing most of the work.
+
+### Replace the 🌐 emoji with a real logo mark
+A simple geometric node/globe icon in gold. Even a gold circle with an orbit ring beats an emoji — the emoji communicates "prototype."
+
+### Motion rules
+- All transitions: 150–200ms ease. Press states scale to 0.98. No bouncy springs.
+- One orchestrated animation only: the deploy → live reveal sequence (see Part 3).
+- Respect `prefers-reduced-motion`: wrap all animations in a check and cut duration to near-zero if enabled.
+
+---
+
+## 3. SCREEN-BY-SCREEN BUILD GUIDE
+
+### 3.1 Landing page (logged-out state)
+- **Hero:** full-height, single column. Large display heading: "Deploy to the permanent web." Subline in body text: "Upload your site. Get an IPFS URL in seconds. Pay with Pi. No credit cards, no servers, no lock-in."
+- **Primary CTA:** one gold "Sign in with Pi" button. Secondary: "View pricing" in text link.
+- **Three value rows** below the fold (icon + one-line pitch each):
+  - 🔒 Permanent — "Your content is stored on IPFS and Filecoin. It can't be taken down."
+  - 🥧 Pay in Pi — "No credit cards. No banks. Pure Pi."
+  - 🔓 No lock-in — "Your CID is yours. Export anytime."
+- Nothing else. No marketing fluff. Clean and confident.
+
+### 3.2 Home / Dashboard (logged-in)
+- Personal greeting: eyebrow "Welcome back" + display-size "Hi, [username] 👋"
+- **Stat tiles** (2×2 grid of full-width cards that never clip):
+  - Projects (count) · Deployments (count) · Storage (GB used / GB total with a meter bar) · Plan (tier name, renewal date)
+- Storage must render a real number or a skeleton — **never `NaN undefined`**.
+- **Primary action:** gold "New deploy" button below the tiles.
+- **In-context upsell strip** (sits between the button and recent projects): shows the user exactly what their next tier unlocks — e.g. for a Builder user: "🔓 Unlock analytics & Pi earnings — See who visits and charge them in Pi. Keep more on Pro." Tapping goes to Account → Pricing.
+- **Recent projects** section (last 3): each is a card with project name, live URL in mono, green status dot, time since last deploy, and a "Redeploy" quick action.
+
+### 3.3 Projects view
+- **Connect-a-Pi-domain card** at the top (see full spec in Part 5) — this is the centerpiece feature.
+- List of all projects below. Each card: project name, live URL in mono, status dot, deploy history count, quick actions (Open · Redeploy · History · Delete).
+- Rollback available from the history view — one tap repoints the domain and subdomain to an older CID. Show a clear "Restoring…" state and confirm on success.
+
+### 3.4 Empty states — invitations, not walls
+Every empty state has three elements: one sentence of context, one gold primary action, and (where relevant) a "deploy a demo site" shortcut.
+- Empty projects: "No sites yet. Your first deploy takes about 30 seconds." + gold "Deploy a demo site" button. The demo button pins a real sample static page to IPFS so the user gets a live URL before spending Pi.
+- Deploy with no project: "Create a project first." + gold "New project" — not a dead-end wall.
+- No domain connected: see Part 5.
+
+### 3.5 Deploy view
+- Friendly drop zone card: dashed border, folder icon, "Drop your project folder" heading, subtext "Folder structure preserved · node_modules and .git are ignored."
+- Two large tap cards below: "📁 Select folder" and "📦 ZIP or files."
+- Gold "Deploy" button.
+- **On submit: the signature animated progress sequence:**
+  1. Progress bar fills from 0% with a status label: "Preparing…" → "Uploading files…" → "Pinning to IPFS…" → "Sealing…" → "Live"
+  2. Three step indicators animate in sequence: Step 1 Uploading (spinner) → done (✓) → Step 2 Pinning → done → Step 3 Sealing → done.
+  3. **The reveal:** this is the emotional peak of the product. Animate in a gold shield stamp (scale up from 0.3 with a ring pulse), heading "Sealed to the permanent web", subtext "Live in X.Xs · can't be taken down." Below: the live URL in a mono copy field with a big Copy button, the IPFS CID in muted mono, a QR code, and a "View live site" gold button. Then a "Done" secondary button. This 4-second sequence is where users decide if they love the product — spend the motion budget here.
+
+### 3.6 Account / Pricing view
+- User card: avatar with initial, username, plan badge.
+- Usage meters: storage bar (real number, never NaN), PiRC2 subscription status in mono showing next renewal date and a "Manage / Cancel" link.
+- Tier cards below (full spec in Part 4). Stack all four vertically. No horizontal scrolling carousel — those get cut off on mobile.
+
+---
+
+## 4. TIER & VALUE MODEL — implement exactly as written
+
+### The logic behind the pricing structure
+**Two revenue streams doing two different jobs:**
+1. **Subscriptions** cover infrastructure costs (storage, pinning, bandwidth). Each paying user covers their own footprint plus margin.
+2. **Pi payment fees** are the profit engine — near-pure margin, because the platform is already intermediating payments. This stream scales with the entire Pi economy flowing through hosted sites, not just with user count.
+
+**Numerology pricing — every price reduces to 8.** Each paid tier's monthly Pi price has digits that add up to 8: **Builder 17 → 1+7 = 8 · Pro 35 → 3+5 = 8 · Business 134 → 1+3+4 = 8.** Annual prices keep the pattern automatically, because ×10 just adds a zero: **170 · 350 · 1,340 — still 8.** This is a deliberate, memorable structure for the brand. The absolute Pi numbers are still tunable (Pi's fiat value is volatile) — **if you rescale them, keep each one reducing to 8.**
+
+**Why the structure matters more than the exact number:** Pi's fiat value is volatile. The *structure* (each tier ≈ 2–4× the value of the one below) stays correct no matter what Pi does. Tune the absolute Pi numbers against real cost and real Pi value; keep the digit-sum-8 pattern. Do not hardcode them as permanent.
+
+**The fee ladder that drives upgrades:** every hosted site can accept Pi payments from its visitors (tip buttons, paywalls, gated content). The platform takes a small fee on that Pi, and **the fee drops every tier — 5% → 3% → 1.5% → 0.5%.** Once a user is earning Pi through their site, upgrading pays for itself in lower fees. Someone earning 200 π/month saves more than the Pro subscription costs, just in fees — the upgrade is an investment, not a splurge.
+
+### The 4 ways Sherry makes Pi (one platform, four income streams)
+This is the real "money machine" — not gimmicks bolted into the app, but **four genuine revenue streams the platform runs on.** Build the tiers so all four are switched on:
+1. **Subscriptions** — developers upgrade to Builder / Pro / Business, paid in Pi, monthly or annual.
+2. **Payment fees** — a small slice of the Pi that hosted sites earn through the built-in Pi payments (5% → 0.5% by tier). This scales with the *entire Pi economy* flowing through Sherry, not just signups.
+3. **Pi domain connections** — premium `.pi` domain slots and connection features on paid tiers.
+4. **Marketplace** — featured listings, premium templates, and boosted placement; creators sell, Sherry takes a cut.
+
+The tiers below are the **consumer-facing packaging**; these four streams are how that packaging turns into Pi. Write every tier in plain language a normal Pioneer instantly understands — lead each feature with the benefit, not the jargon (say "permanent storage — your site literally can't be deleted," not "Filecoin deals").
+
+**The quota model (structure limits exactly this way):** **deployments are unlimited on every tier** — never cap how often a user can deploy, redeploy, or generate previews. Tiers and resource limits are defined by only three metrics: **(1) number of projects, (2) storage, (3) monthly bandwidth.** Every deployment on every tier also gets **automatic SSL** (HTTPS on by default, no user action) and a free `.pinet` subdomain. Do not gate on deploy frequency anywhere.
+
+### The four tiers
+
+**Tier 1 — Starter (Free) · Identity: "Go live"**
+- Headline copy: "A real site on the permanent web — free, in seconds."
+- 1 project · unlimited deployments · 100 MB storage · 10 GB/mo bandwidth · auto-SSL · free random `.pinet` subdomain · best-effort pinning
+- Rollback: last 1 version · Marketplace: not listed · Support: community
+- Pi payment fee: **5%** on what the site earns
+- CTA button: "Get started free"
+- This tier must deliver the magic moment (live URL in 30s) or the funnel doesn't work.
+
+**Tier 2 — Builder (17 π/mo · 1+7=8) · Identity: "Make it yours"**
+- Headline copy: "Your own Pi domain, and your site stays online — guaranteed."
+- 3 projects · unlimited deployments · 1 GB storage · 100 GB/mo bandwidth · 1 custom `.pi` domain · auto-SSL · guaranteed pinning + uptime
+- Rollback: full history + 1-tap restore · Git CI/CD auto-deploy on push · Analytics: basic · Marketplace: listed · Support: community
+- Pi payment fee: **3%** — keep more of what you earn
+- CTA button: "Upgrade with Pi"
+- Fee line: "Accept Pi payments — 3% fee, more in your pocket"
+
+**Tier 3 — Pro (35 π/mo · 3+5=8) ⭐ Most popular · Identity: "Make it permanent"**
+- Headline copy: "Permanent storage, real analytics, faster — your work can't disappear."
+- Unlimited projects · unlimited deployments · 10 GB storage · 1 TB/mo bandwidth · 5 custom `.pi` domains
+- **Filecoin permanence** (sites sealed on Filecoin — genuinely cannot be deleted)
+- Priority pinning + edge speed · full analytics dashboard · Git CI/CD with **preview deployments** per branch/push · **edge functions** for dynamic logic
+- Paywall and tip-button tools for monetizing hosted sites
+- Rollback: full history + previews · Marketplace: listed · Support: priority
+- Pi payment fee: **1.5%** + access to paywall tools
+- CTA button: "Upgrade with Pi" (gold, most prominent)
+- Mark with "MOST POPULAR" badge in gold
+
+**Tier 4 — Business (134 π/mo · 1+3+4=8) · Identity: "Make money & scale"**
+- Headline copy: "Team, API, lowest Pi fees, and a featured spot in the marketplace."
+- Unlimited projects · unlimited deployments · 50 GB+ storage · 5 TB+/mo bandwidth · unlimited `.pi` domains
+- Filecoin permanence · **team members with RBAC roles (Owner / Admin / Member) + email invites** · API access + CLI (`sherry deploy`) · higher edge-function limits + dynamic server functions
+- **Featured marketplace listing** (boosted visibility) · Rollback: full + previews · Support: priority + SLA
+- Pi payment fee: **0.5% — lowest** (render in green `--live`, not gold, to differentiate)
+- CTA button: "Upgrade with Pi"
+- Fee line styled with green: "Accept Pi payments — best rate, 0.5%"
+
+### How to render tiers in the UI
+Each tier card has: eyebrow label (Go live / Make it yours / Make it permanent / Make money & scale) · tier name · price (Space Grotesk, large) + "/mo" + π in mono · headline pitch · bullet list of key features with ✓ checkmarks · a **fee line** showing the Pi payment rate (this is the upgrade driver — always show it) · CTA button. Pro gets a gold `MOST POPULAR` badge at the top right. Business fee line is green.
+
+---
+
+## 5. PI DOMAIN INTEGRATION — the centerpiece feature (build the full loop)
+
+This is what makes Sherry native to Pi instead of generic IPFS hosting. The whole loop runs inside the Pi Browser.
+
+### The user flow — must feel seamless
+1. Every project shows a **"Connect a Pi domain"** card in the Projects view.
+2. If the user doesn't have a `.pi` domain yet, show a **"Get a .pi domain"** button that opens the **official Pi Network domain registration and auction portal** directly in the Pi Browser.
+   - **Open via a standard `<a href="{PI_DOMAIN_PORTAL_URL}" target="_blank">` or `window.open(url)`** — the Pi Browser handles navigation natively.
+   - **Do NOT use an iframe.** The Pi domain portal handles its own auth and payment flow.
+   - **IMPORTANT:** `{PI_DOMAIN_PORTAL_URL}` is a placeholder. The developer (Brenden) must fill in the exact official Pi domain portal URL from the previous build. Do not guess or use a third-party URL.
+3. User buys or claims their `.pi` domain on Pi, then navigates back to the app.
+4. Back in the app, they **paste their domain** (e.g. `beejayy.pi`) into the domain input field and tap **"Connect domain."**
+5. The app **verifies they own the domain** (see backend spec below), maps the domain to the project's current IPFS CID, and shows the connected state.
+6. **From that point forward: every redeploy automatically updates the domain to the newest CID.** The user never has to re-link. They just click Deploy — the domain serves the latest version in the background. This is the magic of the loop.
+7. Rollbacks also respect connected domains — restoring an older deploy repoints the domain to that CID.
+
+### Backend to build
+- **Supabase `domains` table:** `{ id, domain, project_id, owner_uid, current_cid, status: "verifying" | "active" | "error", verified_at, created_at }`
+- **Ownership verification:** issue a DNS TXT record challenge (e.g. `_sherry-verify.yourdomain.pi = [one-time-token]`) the user adds, then check it server-side. Confirm the exact verification method against current Pi domain docs — **do not improvise the verification flow**.
+- **Resolution:** map the `.pi` domain to the platform gateway via DNSLink (`_dnslink TXT → /ipfs/{CID}`) OR route by host header on the gateway. Verify which method Pi's domain system supports in current Pi docs before implementing.
+- **Auto-update function:** called at the end of every successful deploy pipeline. Updates `current_cid` in the `domains` table for every domain attached to that project, then refreshes the DNSLink/host-header record. This one function is what makes "redeploy and it just works" true.
+- **Rollback function:** when a user restores a previous deploy, run the same auto-update function against the restored CID.
+
+### UI states for the domain card
+| State | What to show |
+|---|---|
+| Not connected | "Connect a Pi domain" card · "Get a .pi domain" button (opens Pi portal) · Paste field with placeholder `yourname.pi` · "Connect domain" gold button |
+| Verifying | Spinner · "Verifying ownership… this takes about 30s" |
+| Connected | Green status dot · domain name in mono · "Every redeploy updates this automatically." · [Open] and [Remove] buttons |
+| Error | Clear error message (e.g. "Couldn't verify — check the TXT record and try again") + retry button |
+
+### Tier gating for domains
+- Starter: no custom domain — only random `.pinet` subdomain. "Get a .pi domain" button shows as an upgrade prompt.
+- Builder: 1 custom domain. Connecting a second one prompts upgrade.
+- Pro: up to 5 domains.
+- Business: unlimited.
+- For a free user tapping "Get a .pi domain", open the Pi portal anyway (they can buy a domain) but prompt an upgrade when they return to connect it.
+
+---
+
+## 6. PLATFORM ARCHITECTURE (build as independent, incrementally-shippable services)
+
+**1. Content + permanence layer**
+Static builds → IPFS, addressed by CID. Run the platform's own IPFS pinning node plus a fallback pinning service (e.g. Pinata or web3.storage as backup). On Pro and Business tiers, make **Filecoin storage deals** — this is what makes the "permanent, can't be deleted" promise technically true and justifies premium Pi pricing.
+
+**2. Naming and resolver layer**
+The `.pi` domain resolver from Part 5 handles custom domains. The platform also mints random `.pinet` subdomains for all users. Both map human name → latest CID. Every deploy updates the mapping.
+
+**3. Deploy pipeline + CI/CD (the critical path)**
+`upload → pin to IPFS → receive CID → provision SSL → update domain mappings → update project record → show reveal`
+- Every deploy produces an immutable CID. **Instant rollback = repoint name to a previous CID** — one tap, zero re-upload, zero risk. IPFS gives you this almost for free. Ship rollbacks early — they are a killer feature.
+- **Automatic SSL:** every deployment and every connected `.pi`/`.pinet` domain gets an SSL certificate provisioned automatically at the gateway/CDN layer (e.g. via Let's Encrypt / the CDN's managed certs). HTTPS is on by default — the user never configures it.
+- **Git CI/CD:** offer a Git-connected path. When the developer pushes to a connected repo (branch), automatically build, deploy a new immutable CID, and generate an **instant preview deployment** with its own unique URL (one per branch/push) before promoting to production. **Deployments are unlimited and never frequency-capped** — quota is projects + storage + bandwidth only (Part 4).
+
+**4. Edge functions (global, low-latency dynamic execution)**
+Static assets live on IPFS; **dynamic logic runs on edge functions** executed close to the user for low latency (form handlers, lightweight APIs, server-side logic, redirects). Wire these so a hosted site can run server-side code without the developer standing up infrastructure. Gate richer edge usage by tier (Pro = standard, Business = higher limits/concurrency). This is what lets Sherry host real apps, not just static sites.
+
+**5. Pi SDK baked into every hosted site**
+Every site deployed on Sherry gets Pi auth + Pi payment widgets pre-wired via a platform JavaScript snippet. A developer deploys a site and can immediately charge visitors in Pi — without writing any payment code. **The platform takes its tier-based fee on every Pi transaction.** This is the moat: Sherry is the fastest way to launch a Pi-earning app.
+
+**6. Marketplace / discovery layer**
+A directory of live Pi apps deployed on the platform. All Builder+ tiers are listed. Business tier is featured (boosted placement). Submit, browse, search. Every site deployed advertises the platform to the next developer.
+
+### Decentralization — the honest position (do not overclaim this)
+**Genuinely decentralized and permanent:** content (IPFS/Filecoin CIDs), the domain mapping registry, rollback history. Sites cannot be taken down. Content cannot be altered. Users can always access their CID independently of Sherry. **This is real and must be literally true.**
+
+**Practically centralized for now:** dynamic compute, Supabase database, Pi auth intermediation. This is fine — state it plainly.
+
+**Positioning copy:** *"Decentralized and permanent where it counts. Your content is yours and can't be locked in — with a managed convenience layer you can leave anytime."* Build the "no lock-in" promise to be literally true. Never break it.
+
+---
+
+## 7. PI SDK + PAYMENTS + TEST|LIVE TOGGLE (exact implementation — do not improvise any of this)
+
+> Every snippet below is based on the real Pi JavaScript SDK and Platform API v2. Implement it exactly as written. Do not invent method names, callback names, or API endpoints.
+
+### 7.0 Why the app is "Testnet only" today — and what the toggle actually does
+Testnet/Sandbox and Mainnet are **two completely separate app registrations** in the Pi Developer Portal (`pi://develop.pinet.com`), each with its own API key and its own registered URL. **The TEST|LIVE toggle does not flip a magic switch that makes fake Pi real** — real Pi transactions only happen when the app runs against the Mainnet API key, the app is Mainnet-approved, and the user has completed KYC and Mainnet migration. Build the toggle now so you can test both environments. Do not enable Mainnet until the Mainnet app registration exists and is approved. → Flag `NEEDS APPROVAL: activate Mainnet (real Pi)` before shipping the LIVE side to real users.
+
+### 7.1 Environment config — single source of truth
+All environment logic flows from one config file. Never hardcode the environment in any other file.
+
+```ts
+// lib/piEnv.ts  — safe to import in client code
+export type PiEnv = "testnet" | "mainnet";
+export const DEFAULT_PI_ENV =
+  (process.env.NEXT_PUBLIC_PI_ENV as PiEnv) ?? "testnet";
+export const sandboxFor = (env: PiEnv): boolean => env !== "mainnet";
+```
+
+Two server-side API keys, never sent to the browser:
+```
+# .env.local  (never commit this file)
+PI_API_KEY_TESTNET=your_testnet_key_from_dev_portal
+PI_API_KEY_MAINNET=your_mainnet_key_from_dev_portal
+NEXT_PUBLIC_PI_ENV=testnet
+NEXT_PUBLIC_ALLOW_ENV_TOGGLE=true
+```
+
+```ts
+// lib/piServer.ts  — server only, never import in client code
+import type { PiEnv } from "./piEnv";
+export const serverKeyFor = (env: PiEnv): string =>
+  env === "mainnet"
+    ? process.env.PI_API_KEY_MAINNET!
+    : process.env.PI_API_KEY_TESTNET!;
+```
+
+### 7.2 Client-side store for the active environment
+```ts
+// lib/piEnvStore.ts
+import { DEFAULT_PI_ENV, type PiEnv } from "./piEnv";
+let _env: PiEnv = DEFAULT_PI_ENV;
+export const getEnv = (): PiEnv => _env;
+export const setEnv = (env: PiEnv): void => { _env = env; };
+```
+
+### 7.3 Load the SDK and initialize
+Load in `<head>` — do not load it dynamically or lazily:
+```html
+<script src="https://sdk.minepi.com/pi-sdk.js"></script>
+```
+
+```ts
+// lib/piSDK.ts
+import { sandboxFor, type PiEnv } from "./piEnv";
+
+// Call this on app boot, and again whenever the toggle changes environment
+export function initPi(env: PiEnv): void {
+  (window as any).Pi.init({ version: "2.0", sandbox: sandboxFor(env) });
+}
+
+// Call after initPi — authenticates the user and gets the access token
+export async function signInWithPi(env: PiEnv) {
+  const scopes = ["username", "payments", "wallet_address"];
+
+  // Handles payments that were started but never completed in a previous session
+  const onIncompletePaymentFound = (payment: any) => {
+    fetch("/api/pi/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        paymentId: payment.identifier,
+        txid: payment.transaction?.txid ?? null,
+        env,
+      }),
+    });
+  };
+
+  const auth = await (window as any).Pi.authenticate(
+    scopes,
+    onIncompletePaymentFound
+  );
+  // auth = { accessToken: string, user: { uid: string, username: string } }
+  return auth;
+}
+```
+
+### 7.4 Create a payment (User-to-App flow)
+This is how subscriptions and tier upgrades are charged. Call this from the client.
+
+```ts
+// lib/piPayment.ts
+import { type PiEnv } from "./piEnv";
+
+export function payWithPi(
+  env: PiEnv,
+  amountPi: number,
+  memo: string,
+  metadata: Record<string, unknown>
+): void {
+  (window as any).Pi.createPayment(
+    {
+      amount: amountPi,      // the Pi amount, e.g. 17 for Builder tier
+      memo,                  // shown to the user, e.g. "Sherry Hosting — Builder plan"
+      metadata: { ...metadata, env }, // attach env so the server knows which key to use
+    },
+    {
+      // Step 1: Pi gives us a paymentId — pass to our server to approve
+      onReadyForServerApproval: (paymentId: string) => {
+        fetch("/api/pi/approve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paymentId, env }),
+        });
+      },
+
+      // Step 2: User signed the blockchain tx — pass paymentId + txid to complete
+      onReadyForServerCompletion: (paymentId: string, txid: string) => {
+        fetch("/api/pi/complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paymentId, txid, env }),
+        });
+      },
+
+      // Payment was cancelled by the user
+      onCancel: (paymentId: string) => {
+        fetch("/api/pi/cancel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paymentId, env }),
+        });
+      },
+
+      onError: (error: any, payment?: any) => {
+        console.error("Pi payment error:", error, payment);
+        // Show a user-facing error toast, never a raw error string
+      },
+    }
+  );
+}
+```
+
+### 7.5 Server-side payment routes (Next.js App Router)
+All three routes use `Authorization: Key {API_KEY}` against `https://api.minepi.com/v2`.
+
+```ts
+// app/api/pi/approve/route.ts
+import { serverKeyFor } from "@/lib/piServer";
+
+export async function POST(req: Request) {
+  const { paymentId, env } = await req.json();
+  const response = await fetch(
+    `https://api.minepi.com/v2/payments/${paymentId}/approve`,
+    {
+      method: "POST",
+      headers: { Authorization: `Key ${serverKeyFor(env)}` },
+    }
+  );
+  return new Response(await response.text(), { status: response.status });
+}
+```
+
+```ts
+// app/api/pi/complete/route.ts
+import { serverKeyFor } from "@/lib/piServer";
+import { createClient } from "@supabase/supabase-js";
+
+export async function POST(req: Request) {
+  const { paymentId, txid, env } = await req.json();
+
+  const response = await fetch(
+    `https://api.minepi.com/v2/payments/${paymentId}/complete`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Key ${serverKeyFor(env)}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ txid }),
+    }
+  );
+
+  if (response.ok) {
+    const payment = await response.json();
+    // ✅ PAYMENT IS REAL AND COMPLETE — NOW and only now activate the entitlement
+    // Read payment.metadata to know which tier/domain/feature to unlock
+    // Write the entitlement to Supabase keyed by payment.user_uid
+    // Examples:
+    //   - Tier upgrade: update users.tier = payment.metadata.tier
+    //   - Fee record: insert into fees { payment_id, amount, env, user_uid }
+    //   - Domain unlock: update domains.status = "active" where id = payment.metadata.domain_id
+    const supabase = createClient(
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_KEY!
+    );
+    // ... your Supabase writes here ...
+    return new Response(JSON.stringify(payment), { status: 200 });
+  }
+
+  return new Response(await response.text(), { status: response.status });
+}
+```
+
+```ts
+// app/api/pi/cancel/route.ts
+import { serverKeyFor } from "@/lib/piServer";
+
+export async function POST(req: Request) {
+  const { paymentId, env } = await req.json();
+  const response = await fetch(
+    `https://api.minepi.com/v2/payments/${paymentId}/cancel`,
+    {
+      method: "POST",
+      headers: { Authorization: `Key ${serverKeyFor(env)}` },
+    }
+  );
+  return new Response(await response.text(), { status: response.status });
+}
+```
+
+**HARD RULE — never break this:** Do not grant any subscription, tier activation, domain unlock, or fee credit on the client, or in `onReadyForServerApproval`. **Grant the entitlement only after `/complete` returns 200 OK.** That is the only moment the Pi is real.
+
+Before granting, optionally verify the user identity:
+```ts
+const meResponse = await fetch("https://api.minepi.com/v2/me", {
+  headers: { Authorization: `Bearer ${accessToken}` }, // user's access token from signInWithPi
+});
+const user = await meResponse.json(); // { uid, username, ... }
+```
+
+### 7.6 The TEST | LIVE toggle — full UI and wiring spec
+
+**Visual spec:**
+- A compact segmented control in the top bar, right side, next to the logo.
+- Two segments: `TEST` and `LIVE`.
+- When TEST is active: segment highlighted in gold, a persistent yellow `TESTNET` badge renders beside the logo or below the top bar — unmistakably visible so no one confuses fake Pi for real.
+- When LIVE is active: segment highlighted in `--live` green, the `TESTNET` badge is completely hidden.
+- The badge text is `TESTNET` in monospace, small caps.
+
+**Behavior on toggle:**
+```ts
+// When the user taps a segment:
+async function handleEnvSwitch(newEnv: PiEnv) {
+  if (newEnv === getEnv()) return; // already on this env, do nothing
+
+  if (newEnv === "mainnet") {
+    // Confirm as a COMPACT BOTTOM SHEET that slides up over the lower screen —
+    // the header (app name + badge + toggle) stays visible above it. NOT a full-screen view.
+    // Sheet text: "Switch to Mainnet? Real Pi will be used."
+    // Two buttons: "Switch to LIVE" (gold) and "Stay on TEST". No top-left Cancel, no navigation.
+    const confirmed = await showMainnetConfirmBottomSheet();
+    if (!confirmed) return;
+  }
+  // Going back to TEST takes no confirmation — tapping TEST flips straight back.
+
+  // Perform the switch — see CRITICAL FIX 2. One tap, in place, reversible. NO navigation, NO full-screen takeover.
+  setEnv(newEnv);              // update the client store
+  persistEnv(newEnv);          // cookie, so any reload boots straight into newEnv
+  try {
+    initPi(newEnv);            // re-init Pi SDK in place — NO page reload
+    await refreshAuth(newEnv); // silently refresh auth context for the new env
+    updateUIForEnv(newEnv);    // flip ONLY the badge label + toggle highlight
+  } catch {
+    window.location.reload();  // ONLY if in-place re-init truly fails; cookie makes it seamless, never a manual prompt
+  }
+}
+```
+**Never show a "please refresh the page" message, and never replace the screen with a full-screen "Cancel" view on switch.** The header (app name + network badge + toggle) and bottom nav stay mounted and visible in both TEST and LIVE — only the badge label and the highlighted toggle side change. The switch works the same both directions (TEST↔LIVE), is idempotent, and never hides, disables, or covers the toggle. Do not `clearUserSession()` and force a full re-login on every flip — refresh the auth context for the new env quietly.
+
+**Gate visibility in production:**
+```tsx
+// Only render the toggle when the env flag is true
+{process.env.NEXT_PUBLIC_ALLOW_ENV_TOGGLE === "true" && (
+  <EnvToggle />
+)}
+```
+Set `NEXT_PUBLIC_ALLOW_ENV_TOGGLE=false` in the production Mainnet build before going public. Normal end users should never see or need the toggle — they are always on Mainnet. → `NEEDS APPROVAL` before deciding whether to expose this to all users.
+
+**Mainnet eligibility handling:**
+If the user switches to LIVE but has not completed KYC or Mainnet migration, the Pi SDK or auth call will indicate this. Show a clear, helpful message ("You need to complete KYC in the Pi app to use Mainnet") and switch back to TEST — never dead-end or silently fail.
+
+---
+
+## 8. COLLABORATION, ROLES & ACTIVITY (Pi-native team layer)
+
+Sherry is multi-user from day one — and collaboration is **Pi-native**: every collaborator is a KYC-verified Pi human, invited by Pi identity rather than email. That makes the team layer sybil-resistant and trustworthy in a way no generic host can match. Build these so projects can be shared, managed, and even monetized together safely.
+
+### 8.1 Role-based access control (RBAC)
+Three roles per project:
+- **Owner** — full control: billing/subscription, delete project, manage members and roles, deploy, configure domains. One owner; ownership can be transferred.
+- **Admin** — everything except billing and deleting the project: deploy, manage domains, invite/remove Members, view activity.
+- **Member** — deploy and view only; cannot manage members, billing, or destructive settings.
+
+Enforce permissions on the **server**, not just by hiding UI — every mutating API route checks the caller's role before acting. Store roles in a Supabase `memberships` table: `{ project_id, user_uid, role: "owner" | "admin" | "member", invited_by, joined_at }`.
+
+### 8.2 Pi-native collaboration (invite by Pi identity, not email — this is the differentiator)
+Because the Pi Network is KYC-gated, **every collaborator is a verified, unique human** — no fake emails, no bots, no sybils. Lean into this fully: collaboration uses Pi identities, not email/passwords.
+
+**How it actually works (respecting how the Pi SDK behaves):** the Pi SDK is a *client-side* library that runs inside the Pi Browser, and it only ever exposes the **current authenticated user** — there is no public directory to look up or "reach out" to a Pi user who hasn't opened the app. So you don't invite outward; you let verified Pi users come *in*:
+1. An Owner/Admin taps "Add collaborator" → the app generates a **tokenized project invite link**, optionally with a pre-set role (Admin/Member). Store it: `invites { project_id, token, role, status, expires_at }`.
+2. The Owner shares the link (e.g. via Pi Chat). The invitee opens it **in the Pi Browser**.
+3. The invitee taps **"Join with Pi"** → client-side `Pi.authenticate(["username"], ...)` runs → the app receives their verified `{ uid, username }` and an `accessToken`.
+4. The client sends the `accessToken` + invite token to an **edge function / server route**, which validates the user by calling `GET https://api.minepi.com/v2/me` with `Authorization: Bearer {accessToken}`, confirms the invite token, then creates the membership keyed by the Pi **uid** with the invite's role.
+5. Done — the collaborator is on the project, identified by their KYC'd Pi identity. No email, no password.
+
+> Note: this is exactly where edge functions belong — the server-side **validation** of the joiner's Pi token (`/v2/me`) and, later, the payouts in 8.5. The *authentication* itself must happen client-side via `window.Pi` in the Pi Browser; an edge function cannot run the Pi SDK. If a future Pi platform API adds a username-lookup or direct-invite primitive, reach-out invites can be added then — **confirm against current Pi docs.**
+
+### 8.2b Open collaboration via the marketplace (optional, powerful)
+A project can be flagged "open to collaborators." Any Pi user browsing the marketplace (Part 6) can tap **"Request to collaborate"** → authenticates with Pi → an Owner/Admin approves the request, creating the membership. This turns the KYC'd Pi user base into a trusted collaborator pool — discovery and verified-identity trust in one.
+
+### 8.2c Tier gating
+Team/RBAC is a **Business-tier** capability (Part 4) — gate accordingly, but build the RBAC model for all tiers (every project has an Owner by default).
+
+### 8.3 Activity log (real-time audit trail)
+- Log every meaningful event: deploys, rollbacks, domain connect/remove, member invited/removed/role-changed, subscription/tier changes, settings edits.
+- Supabase `activity` table: `{ project_id, actor_uid, action, detail (jsonb), created_at }`. Surface it as a reverse-chronological feed that updates in real time (Supabase Realtime).
+- Each entry reads in plain language: "beejayy223 deployed to `merchanthub.pinet` · 2m ago", "Admin removed member alice · 1h ago".
+
+### 8.4 Consolidated project dashboard
+Tapping a project opens its dashboard — one screen with: live URL + status, latest deploy + deploy history (with rollback), connected domain(s), storage/bandwidth usage for that project, members + roles, and the activity feed. This is the per-project command center. Single-column and mobile-first like everything else.
+
+### 8.5 Pi-native revenue sharing (the unique payoff — A2U payouts to collaborators)
+Because every collaborator joined via Pi, you hold their verified Pi **uid**. That unlocks something no generic host can do: **split a site's Pi earnings among its collaborators automatically.**
+- An Owner sets a split per project (e.g. 70% owner / 30% contributor), stored alongside memberships.
+- When the site earns Pi (paywalls/tips from Part 4), the platform pays each collaborator their share via **App-to-User (A2U) payments**: server-side `POST https://api.minepi.com/v2/payments` with `{ amount, memo, metadata, uid }` for the recipient, then submit the blockchain transaction and complete it. A2U does **not** require the user-approval step (the app initiates it), but you must look up the recipient's account before each transaction. Follow Pi's A2U integration guide exactly — do not improvise the payout flow.
+- Result: a hosting platform where a KYC'd team builds a Pi app together and the Pi revenue auto-splits to verified humans. This is the innovative, defensible feature — collaboration + monetization + Pi identity in one loop.
+- Gate revenue-splitting to Business tier (or Pro+), since it depends on the team/RBAC layer.
+
+---
+
+## 9. THE GOLD STANDARD — make the entire Pi developer network adopt Sherry
+
+The business model is already set (Part 4: subscriptions + a small Pi fee on what hosted sites earn). **Sherry does not make money by extracting from users — it makes money by becoming the obvious, default place every Pi developer hosts.** Adoption *is* the revenue. The more of the Pi network that builds on Sherry, the more Pi flows through it. These 20 hardcore moves make Sherry the gold standard of Pi hosting — build them to win the whole network.
+
+**Speed & reliability — devs choose what's fast and never breaks**
+1. ⭐ Deploy-to-live in **seconds**, every time; show the elapsed time on every deploy so the speed is felt.
+2. ⭐ Global **edge gateway / CDN** so every hosted site loads fast worldwide, not just near one node.
+3. Guaranteed pinning + a **public status page** + a 99.9% uptime target. Trust is the product.
+4. **Real permanence** (Filecoin on paid tiers) — "your site can't be taken down" must be literally true, not marketing.
+
+**Zero-friction developer experience — the easiest host wins**
+5. ⭐ **Zero-config everything**: auto-SSL, auto-DNS, auto-domain wiring. The dev does nothing but deploy.
+6. ⭐ Deploy **four ways**: drag-drop, ZIP, Git push (CI/CD), and CLI (`sherry deploy`). Meet devs where they already work.
+7. **Instant rollbacks** (one tap, immutable CID) + **deploy previews** per branch/push.
+8. ⭐ **One-click Pi-app templates/starters** so a dev goes from zero to a live Pi app in under a minute. Lowest barrier wins adoption.
+9. **World-class docs + in-app onboarding.** A dev who succeeds in five minutes never leaves.
+
+**Pi-native advantages no one else has — the moat**
+10. ⭐ The **smoothest `.pi` domain connection** in the ecosystem — the loop from Part 5, flawless and seamless.
+11. ⭐ **Pi SDK baked into every hosted site**: Pi auth + Pi payments pre-wired, so devs ship monetizable Pi apps with zero payment code. This is *developer value* — it pulls the whole network in.
+12. **Pi-native, KYC'd collaboration** (Part 8): real teams, sybil-proof, with automatic Pi revenue-splitting — impossible on any generic host.
+13. ⭐ A **generous free tier that actually delivers the magic** — get every Pi dev in the door first; monetize through adoption later.
+
+**Network effects — devs bring devs**
+14. A **marketplace / showcase** of live Pi apps hosted on Sherry — discovery brings users to devs, and devs to Sherry.
+15. ⭐ A **"Built on Sherry" badge** on hosted sites — every deployed site advertises the platform. Free, compounding growth.
+16. A **referral / ambassador program** — Pi devs invite Pi devs.
+17. A **deploy analytics + earnings dashboard** so devs see their reach and the Pi their site earned.
+
+**Trust & transparency — remove every reason not to adopt**
+18. ⭐ **No lock-in** — the dev's CID is theirs, exportable anytime. Say it loudly; it removes the #1 adoption risk.
+19. **Transparent Pi pricing** — pay in Pi, no hidden fees, cancel anytime (already reflected in the tiers).
+20. **Responsive support + a community channel.** Devs adopt platforms that have their back.
+
+> Build the ⭐ foundational moves with the MVP (speed, zero-config, templates, the domain loop, the free tier, the Built-on-Sherry badge, no lock-in). Layer the rest as you grow. Revenue (Part 4) follows adoption — your job is to make Sherry the default, and the Pi flows from there.
+
+---
+
+## 10. COPY AND POLISH RULES
+
+- **Sentence case everywhere.** No ALL CAPS in body copy. Buttons, labels, and toasts all use sentence case.
+- **Plain verbs.** A button says exactly what it does: "Deploy," "Connect domain," "Copy URL," "Restore this version," "Upgrade with Pi." Not "Submit," not "Proceed."
+- **Word consistency.** The word on the button matches the resulting toast. "Deploy" → toast says "Deployed." "Connect domain" → toast says "Domain connected."
+- **Name by what the user controls, not how the system works.** Say "Your Pi domain" not "DNSLink record." Say "Permanent storage" not "Filecoin deal."
+- **Empty states give direction.** Never "Nothing here yet." Always: one sentence of context + one action.
+- **Error states give next steps.** Never a raw error string. Always: a human sentence + a retry/help action.
+- **Loading states use skeletons.** Never a blank screen, never raw `undefined`, never `NaN`.
+- **Every Pi amount is in `JetBrains Mono` with the π symbol.** Example: `10 π` not "10 Pi".
+- **Every URL, CID, and `.pi` domain is in `JetBrains Mono`.** No exceptions.
+
+---
+
+## 11. FULL ACCEPTANCE CRITERIA
+
+Before considering the build complete, every item below must pass.
+
+**Mobile and layout**
+1. Every screen is perfect at 390px wide: zero horizontal scroll, zero clipped text, nothing hidden under the notch or home bar, every tap target reachable by a thumb.
+2. `100dvh` used everywhere. Safe-area insets applied to the top bar and bottom tab bar.
+3. The bottom tab bar is the sole navigation. The sidebar is gone.
+
+**Design system**
+4. Only the defined color tokens are used — no inline hex colors outside the token set.
+5. Gold appears on at most one primary action per screen.
+6. Every URL, CID, domain, and Pi amount is in JetBrains Mono.
+7. The logo is a geometric mark, not an emoji.
+
+**Screens and flows**
+8. The deploy reveal sequence (Uploading → Pinning → Sealing → Live → shield stamp → URL + QR) plays on every deploy. It feels like a moment.
+9. No screen ever shows `NaN`, `undefined`, a raw error string, or a blank mid-fetch state.
+10. All four tier cards render in the Account view with eyebrow identity labels, outcome headlines, feature lists, descending Pi payment fee lines, and the correct CTA buttons. Pro is marked Most Popular.
+
+**Pi domain loop**
+11. Every project shows the "Connect a Pi domain" card.
+12. "Get a .pi domain" opens the official Pi domain portal via `window.open` (not an iframe).
+13. Pasting a domain and tapping "Connect domain" runs the ownership verification flow and shows the four UI states (not connected / verifying / connected / error).
+14. After a subsequent redeploy, the connected domain auto-updates to the new CID with no user action.
+15. Rollback repoints the connected domain to the restored CID.
+16. Tier gating is enforced: free users see the upsell; Builder gets 1; Pro gets 5; Business unlimited.
+
+**Pi payments and environment toggle**
+17. `lib/piEnv.ts` is the single source of truth for environment. No environment logic exists anywhere else.
+18. API keys are in server-side env vars only. They never appear in client code or console output.
+19. Entitlements (tier activation, domain unlock) are granted only in `/api/pi/complete` after a 200 OK. Never on the client.
+20. The TEST|LIVE segmented control is in the top bar. TEST active = gold highlight + `TESTNET` badge. LIVE active = green highlight + badge hidden.
+21. Switching to LIVE shows a confirm sheet. Switching to TEST is immediate.
+22. On environment switch: the Pi SDK re-initializes in place (no page reload, no full-screen takeover) and the auth context refreshes quietly — the user is not forced to log in again, and the header/toggle stay visible.
+23. The toggle is hidden when `NEXT_PUBLIC_ALLOW_ENV_TOGGLE` is `false`.
+24. Full payment lifecycle (createPayment → approve → user signs → complete → entitlement) is tested end-to-end on Testnet before any Mainnet exposure.
+
+**Infrastructure & capabilities**
+25. Every deployment and connected domain serves over HTTPS with an auto-provisioned SSL cert — no manual setup.
+26. Deployments are unlimited and never frequency-capped; quota is enforced on projects + storage + bandwidth only.
+27. A Git push to a connected repo triggers an auto-deploy and generates a preview deployment with its own URL.
+28. Edge functions execute dynamic server-side logic for hosted sites.
+
+**Collaboration**
+29. RBAC is enforced server-side: Owner / Admin / Member permissions are checked on every mutating route, not just hidden in the UI.
+30. Collaboration is Pi-native: an invite link opens in the Pi Browser, the invitee joins by authenticating with Pi (server-validated via `/v2/me`), and becomes a Member keyed by their Pi uid — no email or password.
+31. The activity log records deploys, rollbacks, domain changes, and member changes in a real-time, plain-language feed inside each project dashboard.
+32. Revenue-splitting works: an Owner can set a split, and a site's Pi earnings pay out to collaborators' Pi uids via A2U payments.
+
+**Critical fixes (the four bugs)**
+33. Tapping "Get a .pi domain" navigates to the Pi Domains auction with **no auth error** — it uses `openExternal` (plain external nav), never the router, never a Pi auth call; returning to the app reuses the existing session.
+34. The TEST/LIVE toggle is one persistent control in the top bar that flips **in place both directions in one tap** — no page-refresh prompt, and **no full-screen "Cancel" takeover**. The header (app name + network badge + toggle) and bottom nav stay visible in both modes; only the badge label and highlighted side change. Going LIVE confirms via a bottom sheet (header stays visible); going back to TEST is instant. Env persists across reloads; switching never disables one side or forces a re-login.
+35. The bottom nav bar has equal-width tabs (`flex:1 1 0`), is not crooked, has ≥52px touch targets, and the raised center button doesn't shift the other tabs.
+36. Every deployment and connected domain serves over HTTPS via an auto-provisioned SSL cert, published to the Pi Browser end to end with no manual cert/DNS steps.
+
+**Revenue engine**
+37. One-tap site monetization (paywall / tip / pay-to-unlock) is available to hosted sites, with the platform fee applied per tier.
+38. The pricing page / upsell shows the live "Pro saves you X π/mo in fees" calculation, and upgrade prompts trigger at the moment of value (hitting a limit or earning Pi).
+
+**Responsive**
+39. The app passes the full responsive gate (Part 1): at widths 320–1280px, portrait and landscape, there is zero horizontal scroll, zero clipped/overlapping content, every tap target ≥ 44px, the top bar and bottom nav stay intact, the keyboard never covers an input, and rotating the device breaks nothing.
+
+**Overall**
+40. A stranger opening this app in the Pi Browser on a phone, with no instructions, would believe it is a funded, premium product — and would understand what it does within 10 seconds.
+
+---
+
+## 12. AGENT OPERATING CONTRACT AND BUILD ORDER
+
+### How to operate
+- Ship in small, independently deployable increments. Never one massive commit.
+- Flag every meaningful architectural decision before building: **`NEEDS APPROVAL: [description]`**
+- Mark every completed, tested unit of work: **`✅ SHIPPED: [feature name]`**
+- All Pi SDK method names, payment callback names, and API endpoints are specified exactly in Part 7. Do not improvise or invent alternatives.
+- For anything in the Pi domain integration (ownership verification method, DNS record type, resolution mechanism) — confirm against the current Pi domain documentation before implementing. That spec changes and this prompt cannot guarantee it.
+- Build and test every payment flow on Testnet. **Never switch to Mainnet without an explicit `NEEDS APPROVAL: activate Mainnet` sign-off from the developer.**
+
+### Build order — follow this sequence
+0. **⚠️ CRITICAL FIXES (first, before anything).** Fix the **`NaN undefined` storage display** (Fix 0), the Pi Domains hand-off (Fix 1, and confirm whether the auth error is Pi-side), **remove the leftover old TIER1 subscription widget** (Fix 1b), the TEST/LIVE toggle refresh/one-way bug (Fix 2, seamless bidirectional), the bottom nav alignment (Fix 3), and auto-SSL on deploy (Fix 4). These are visible in the current live build.
+1. **Part 1 — mobile shell.** Fix the viewport, safe areas, overflow, and bottom tab bar. Acceptance: 390px pass.
+2. **Part 2 — design tokens.** Install fonts, apply color tokens, build the component library (Card, Button, StatTile, TierBadge, EmptyState, Toast, Skeleton). Apply to all screens.
+3. **Part 3 — screens.** Landing, Dashboard, Projects (without domain card yet), Deploy view, empty states.
+4. **Part 3 deploy reveal.** The animated progress + sealed stamp + URL + QR reveal sequence.
+5. **Part 7.1–7.3 — Pi SDK init and auth.** piEnv.ts, piSDK.ts, signInWithPi wired to the login button.
+6. **Part 7.6 — TEST|LIVE toggle.** Visible in the top bar, seamless bidirectional switch (per Fix 2), confirm sheet for Mainnet.
+7. **Part 5 — Pi domain card.** The full loop: Get-domain button, paste field, ownership verification, connected state, auto-update on redeploy, rollback support.
+8. **Part 4 — tier cards.** All four tiers with fee lines rendered in Account view.
+9. **Part 7.4–7.5 — payment routes.** payWithPi on the client, /api/pi/approve + /complete + /cancel on the server. Tier upgrades wired to the CTA buttons.
+10. **Part 9 — ⭐ core revenue levers.** One-tap site monetization, the fee-savings prompt, value-moment upgrade triggers, premium template marketplace, and the "Built on Sherry" badge.
+11. **Part 6 — platform services.** Auto-SSL on every deploy, Git CI/CD + preview deployments, edge functions, rollback history UI, Filecoin pinning on Pro+, marketplace listing, analytics dashboard.
+12. **Part 8 — collaboration.** RBAC (Owner/Admin/Member) enforced server-side, **Pi-native invites** (join with Pi, validated via `/v2/me`, keyed by Pi uid), real-time activity log, the consolidated per-project dashboard, and **A2U revenue-splitting** to collaborators' Pi uids.
+
+Lead with the critical fixes and the cheap high-trust wins (mobile shell, deploy reveal, toggle, Pi domain connect, one-tap monetization). Save Filecoin deals, edge functions, CI/CD, the marketplace, and the team/collaboration layer for once the core feels like a real product.
+
+---
+
+*Built for DevWright Labs · Sherry Hosting · Brenden (@beejayy223) · Nassau, Bahamas*
+*Stack: Next.js 15 · TypeScript · Tailwind CSS · Supabase · IPFS · Pi SDK · Vercel*

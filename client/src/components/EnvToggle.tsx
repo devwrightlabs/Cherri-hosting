@@ -4,10 +4,14 @@ import { ALLOW_ENV_TOGGLE, type PiEnv } from '../lib/piEnv';
 import Button from './ui/Button';
 
 /**
- * Segmented TEST|LIVE control for the top bar. TEST active = gold, LIVE active
- * = live-green (matching the testnet badge / live-deploy colour language).
- * Switching to LIVE first raises a confirm sheet; the actual switch is gated
- * honestly inside usePiEnvSwitch.
+ * Segmented TEST|LIVE control for the top bar.
+ *
+ * Rules (per master prompt FIX 2):
+ * - Switching TO testnet is instant — no confirmation, no sheet.
+ * - Switching TO mainnet raises a compact bottom sheet. The header + this
+ *   toggle stay visible above the sheet at all times (overlay is z-40,
+ *   TopBar is z-50).
+ * - The sheet never takes over the full screen. No "Cancel" only. No navigation.
  */
 export default function EnvToggle() {
   const { env, switching, switchEnv } = usePiEnvSwitch();
@@ -21,6 +25,7 @@ export default function EnvToggle() {
       setConfirmOpen(true);
       return;
     }
+    // Switching back to TEST is always instant — safe environment, no confirm.
     void switchEnv('testnet');
   };
 
@@ -60,31 +65,46 @@ export default function EnvToggle() {
         </button>
       </div>
 
+      {/* Compact bottom sheet — z-40 so the TopBar (z-50) stays above it */}
       {confirmOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm"
-          onClick={() => setConfirmOpen(false)}
-        >
+        <>
+          {/* Backdrop — covers content below the header but not the header itself */}
+          <div
+            className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+            onClick={() => setConfirmOpen(false)}
+            aria-hidden="true"
+          />
           <div
             role="dialog"
             aria-modal="true"
-            className="w-full max-w-screen-sm rounded-t-2xl border-t border-hairline bg-surface-900 px-5 pt-5 pb-8 safe-bottom"
+            aria-labelledby="env-confirm-title"
+            className="fixed inset-x-0 bottom-0 z-40 w-full max-w-screen-sm mx-auto rounded-t-2xl border-t border-hairline bg-surface-900 px-5 pt-5 pb-8 safe-bottom"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="font-display text-lg font-bold text-ink">Switch to mainnet?</h3>
-            <p className="mt-2 text-sm text-ink-mut">
-              Mainnet uses real Pi. You’ll be asked to sign in again under the new environment.
+            <h3
+              id="env-confirm-title"
+              className="font-display text-lg font-bold text-ink"
+            >
+              Switch to mainnet?
+            </h3>
+            <p className="mt-2 text-sm text-ink-mut leading-relaxed">
+              Mainnet uses real Pi. You'll be signed in again under the new
+              environment. Tap TEST at any time to switch back instantly.
             </p>
             <div className="mt-5 flex flex-col gap-2">
               <Button variant="primary" className="w-full" onClick={confirmMainnet}>
-                Switch to mainnet
+                Switch to LIVE
               </Button>
-              <Button variant="ghost" className="w-full" onClick={() => setConfirmOpen(false)}>
-                Cancel
+              <Button
+                variant="ghost"
+                className="w-full"
+                onClick={() => setConfirmOpen(false)}
+              >
+                Stay on TEST
               </Button>
             </div>
           </div>
-        </div>
+        </>
       )}
     </>
   );

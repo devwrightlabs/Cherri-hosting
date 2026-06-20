@@ -5,21 +5,18 @@ import EnvToggle from './EnvToggle';
 import { usePiEnv } from '../lib/piEnv';
 
 interface TopBarProps {
-  /** Right-aligned slot for page-specific actions, left of the env toggle. */
   right?: React.ReactNode;
-  /** Optional screen title shown under nothing — kept minimal/mobile. */
   title?: string;
 }
 
 /**
- * Sticky top bar: brand mark + a monospace TESTNET badge on the left, the
- * TEST|LIVE env toggle (plus any page action slot) on the right.
- * Safe-area aware so nothing hides under the notch.
+ * Sticky top bar: brand mark + TESTNET badge left, TEST|LIVE toggle right.
+ * z-50 + relative ensures it stays above the env-switch confirm sheet (z-40).
  */
 export default function TopBar({ right, title }: TopBarProps) {
   const env = usePiEnv();
   return (
-    <header className="safe-top shrink-0 bg-surface-950/90 backdrop-blur-md border-b border-hairline">
+    <header className="safe-top shrink-0 relative z-50 bg-surface-950/90 backdrop-blur-md border-b border-hairline">
       <div className="h-14 px-4 flex items-center gap-2 max-w-screen-sm mx-auto w-full">
         <Link to="/dashboard" className="flex items-center gap-2 min-w-0">
           <LogoMark size={26} />

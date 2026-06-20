@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Card from '../ui/Card';
 import Button from '../ui/Button';
 import { PI_DOMAIN_PORTAL_URL } from '../../lib/constants';
+import { openExternal } from '../../lib/openExternal';
 import { projectsApi } from '../../lib/api';
 import { Project } from '../../types';
 import { useAuth } from '../../providers/AuthProvider';
@@ -124,7 +125,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
           variant="secondary"
           size="sm"
           className="w-full justify-center"
-          onClick={() => { window.open(PI_DOMAIN_PORTAL_URL, '_blank'); }}
+          onClick={() => openExternal(PI_DOMAIN_PORTAL_URL)}
         >
           Browse domain auctions on Pi →
         </Button>
@@ -226,7 +227,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
           variant="secondary"
           size="sm"
           className="w-full justify-center"
-          onClick={() => { window.open(PI_DOMAIN_PORTAL_URL, '_blank'); }}
+          onClick={() => openExternal(PI_DOMAIN_PORTAL_URL)}
         >
           Open Pi domain portal →
         </Button>

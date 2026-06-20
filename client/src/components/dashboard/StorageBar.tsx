@@ -1,18 +1,14 @@
-interface StorageBarProps {
-  used: number;
-  limit: number;
-}
+import { formatBytes } from '../../lib/format';
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+interface StorageBarProps {
+  used?: number | null;
+  limit?: number | null;
 }
 
 export default function StorageBar({ used, limit }: StorageBarProps) {
-  const percent = limit > 0 ? Math.min((used / limit) * 100, 100) : 0;
+  const u = Number.isFinite(used) ? (used as number) : 0;
+  const l = Number.isFinite(limit) ? (limit as number) : 0;
+  const percent = l > 0 ? Math.min((u / l) * 100, 100) : 0;
   const isWarning = percent > 80;
   const isDanger = percent > 95;
 
@@ -27,7 +23,7 @@ export default function StorageBar({ used, limit }: StorageBarProps) {
       <div className="flex justify-between text-xs text-surface-400">
         <span>Storage used</span>
         <span>
-          {formatBytes(used)} / {formatBytes(limit)}
+          {formatBytes(u)} / {l > 0 ? formatBytes(l) : '—'}
         </span>
       </div>
       <div className="h-2 rounded-full bg-surface-700 overflow-hidden">

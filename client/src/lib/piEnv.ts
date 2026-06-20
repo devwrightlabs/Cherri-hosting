@@ -9,21 +9,44 @@ import { useSyncExternalStore } from 'react';
 export type PiEnv = 'testnet' | 'mainnet';
 
 const STORAGE_KEY = 'pi_env';
+const COOKIE_NAME = 'pi_env';
 
 /**
  * Mainnet is only real once a Pi *mainnet* app registration + server key exist.
  * Until then this stays false so LIVE is honestly gated — the toggle refuses to
  * switch AND the app refuses to boot into mainnet even if a stale value is left
- * in localStorage / VITE_PI_ENV. Flip via `VITE_PI_MAINNET_ENABLED=true` only
- * after mainnet is genuinely wired.
+ * in localStorage / cookie / VITE_PI_ENV. Flip via VITE_PI_MAINNET_ENABLED=true
+ * only after mainnet is genuinely wired.
  */
 export const MAINNET_ENABLED: boolean =
   import.meta.env.VITE_PI_MAINNET_ENABLED === 'true';
+
+function readCookie(): PiEnv | null {
+  try {
+    const match = document.cookie.match(/(?:^|;\s*)pi_env=([^;]*)/);
+    const val = match?.[1];
+    if (val === 'testnet' || val === 'mainnet') return val;
+  } catch {
+    /* cookies unavailable */
+  }
+  return null;
+}
+
+function writeCookie(env: PiEnv): void {
+  try {
+    document.cookie = `${COOKIE_NAME}=${env};path=/;max-age=31536000;samesite=lax`;
+  } catch {
+    /* ignore */
+  }
+}
 
 function readInitial(): PiEnv {
   // Honesty guard: never boot into mainnet while it is not genuinely enabled,
   // regardless of any persisted or build-time preference.
   if (!MAINNET_ENABLED) return 'testnet';
+  // Cookie takes priority over localStorage (reload-safe after cookie-first switch).
+  const fromCookie = readCookie();
+  if (fromCookie) return fromCookie;
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === 'testnet' || stored === 'mainnet') return stored;
@@ -33,7 +56,7 @@ function readInitial(): PiEnv {
   return import.meta.env.VITE_PI_ENV === 'mainnet' ? 'mainnet' : 'testnet';
 }
 
-/** Default env at boot (MAINNET_ENABLED gate → localStorage → VITE_PI_ENV → testnet). */
+/** Default env at boot (MAINNET_ENABLED gate → cookie → localStorage → VITE_PI_ENV → testnet). */
 export const DEFAULT_PI_ENV: PiEnv = readInitial();
 
 /** Whether to render the TEST|LIVE control at all (hide via VITE_ALLOW_ENV_TOGGLE=false). */
@@ -51,7 +74,7 @@ export function getEnv(): PiEnv {
   return current;
 }
 
-/** Update the env, persist it, and notify subscribers. No-op if unchanged. */
+/** Update the env, persist it (localStorage + cookie), and notify subscribers. No-op if unchanged. */
 export function setEnv(next: PiEnv): void {
   // Honesty guard: refuse to enter mainnet unless it is genuinely enabled.
   if (next === 'mainnet' && !MAINNET_ENABLED) return;
@@ -62,6 +85,7 @@ export function setEnv(next: PiEnv): void {
   } catch {
     /* ignore persistence failures */
   }
+  writeCookie(next);
   listeners.forEach((l) => l());
 }
 

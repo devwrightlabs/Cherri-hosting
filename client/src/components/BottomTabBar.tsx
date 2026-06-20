@@ -1,6 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom';
 
-/** Inline stroke icons (no emoji) sized for a 24px tab glyph. */
 function HomeIcon({ active }: { active: boolean }) {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -55,57 +54,61 @@ const tabs: Tab[] = [
     icon: ProjectsIcon,
     match: (p) => p.startsWith('/projects'),
   },
-  { to: '/account', label: 'Account', icon: AccountIcon, match: (p) => p === '/account' || p === '/pricing' },
+  {
+    to: '/account',
+    label: 'Account',
+    icon: AccountIcon,
+    match: (p) => p === '/account' || p === '/pricing',
+  },
 ];
 
 /**
- * Sole bottom navigation (the sidebar is gone). Four destinations with a
- * raised gold Deploy action in the centre. Safe-area aware.
+ * Bottom navigation bar. Each tab is an equal-width flex column (flex:1 1 0)
+ * so nothing shifts or tilts. The raised Deploy button lifts only its button
+ * element via negative margin — its column stays aligned with the rest.
+ * Touch targets are ≥52px tall on every tab.
  */
 export default function BottomTabBar() {
   const { pathname } = useLocation();
   const deployActive = pathname === '/deploy';
 
-  // Insert the raised Deploy button between Projects and Account.
   const left = tabs.slice(0, 2);
   const right = tabs.slice(2);
 
   return (
     <nav className="safe-bottom shrink-0 bg-surface-950/95 backdrop-blur-md border-t border-hairline">
-      <div className="max-w-screen-sm mx-auto w-full px-2">
-        <div className="h-16 grid grid-cols-5 items-center">
-          {left.map((t) => (
-            <TabButton key={t.to} tab={t} active={t.match(pathname)} />
-          ))}
+      <div className="max-w-screen-sm mx-auto w-full flex items-stretch justify-between px-2.5">
+        {left.map((t) => (
+          <TabButton key={t.to} tab={t} active={t.match(pathname)} />
+        ))}
 
-          {/* Centre raised Deploy button */}
-          <div className="flex justify-center">
-            <NavLink
-              to="/deploy"
-              aria-label="Deploy"
-              className="tap-target -mt-7 flex flex-col items-center"
+        {/* Centre column — equal flex width; button lifts via -mt-5, column stays put */}
+        <div className="flex-1 flex flex-col items-center justify-center min-h-[52px] py-1.5 px-1">
+          <NavLink
+            to="/deploy"
+            aria-label="Deploy"
+            className="flex flex-col items-center"
+          >
+            <span
+              className={`-mt-5 flex items-center justify-center w-14 h-14 rounded-full bg-gold-gradient text-surface-950 transition-transform active:scale-95 ${
+                deployActive ? 'shadow-gold ring-2 ring-gold/60' : 'shadow-gold-sm'
+              }`}
             >
-              <span
-                className={`flex items-center justify-center w-14 h-14 rounded-full bg-gold-gradient text-surface-950 transition-transform active:scale-95 ${
-                  deployActive ? 'shadow-gold ring-2 ring-gold/60' : 'shadow-gold-sm'
-                }`}
-              >
-                <DeployIcon />
-              </span>
-              <span
-                className={`mt-1 text-[10px] font-medium ${
-                  deployActive ? 'text-gold' : 'text-ink-mut'
-                }`}
-              >
-                Deploy
-              </span>
-            </NavLink>
-          </div>
-
-          {right.map((t) => (
-            <TabButton key={t.to} tab={t} active={t.match(pathname)} />
-          ))}
+              <DeployIcon />
+            </span>
+            <span
+              className={`text-[10px] font-medium ${
+                deployActive ? 'text-gold' : 'text-ink-mut'
+              }`}
+            >
+              Deploy
+            </span>
+          </NavLink>
         </div>
+
+        {right.map((t) => (
+          <TabButton key={t.to} tab={t} active={t.match(pathname)} />
+        ))}
       </div>
     </nav>
   );
@@ -116,7 +119,7 @@ function TabButton({ tab, active }: { tab: Tab; active: boolean }) {
   return (
     <NavLink
       to={tab.to}
-      className="tap-target flex flex-col items-center justify-center gap-1 h-full"
+      className="flex-1 flex flex-col items-center justify-center gap-1 min-h-[52px] py-1.5 px-1"
     >
       <span className={active ? 'text-gold' : 'text-ink-mut'}>
         <Icon active={active} />

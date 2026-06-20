@@ -10,7 +10,6 @@ import EmptyState from '../components/ui/EmptyState';
 import StorageBar from '../components/dashboard/StorageBar';
 import DeploymentCard from '../components/dashboard/DeploymentCard';
 import QuickDeploy from '../components/dashboard/QuickDeploy';
-import UpgradeBanner from '../components/dashboard/UpgradeBanner';
 import Pirc2Subscription from '../components/dashboard/Pirc2Subscription';
 import DomainGateway from '../components/dashboard/DomainGateway';
 import Spinner from '../components/ui/Spinner';
@@ -19,17 +18,7 @@ import SystemStatusBanner from '../components/SystemStatusBanner';
 import { useAuth } from '../providers/AuthProvider';
 import { projectsApi } from '../lib/api';
 import { Deployment, Project } from '../types';
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-  const i = Math.min(
-    Math.floor(Math.log(bytes) / Math.log(k)),
-    sizes.length - 1,
-  );
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-}
+import { formatBytes } from '../lib/format';
 
 export default function Dashboard() {
   const { user, refreshUser } = useAuth();
@@ -108,6 +97,7 @@ export default function Dashboard() {
           mono
           value={user ? formatBytes(user.storageUsed) : undefined}
           sub={user ? `of ${formatBytes(user.storageLimit)}` : undefined}
+          isLoading={isLoading}
         />
       </div>
 
@@ -129,7 +119,6 @@ export default function Dashboard() {
       </Card>
 
       {/* Subscription + storage stack */}
-      <UpgradeBanner onUpgradeSuccess={handleUpgradeSuccess} />
       <Pirc2Subscription onChange={handleUpgradeSuccess} />
       <DomainGateway projects={projects} />
 
