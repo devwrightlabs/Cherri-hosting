@@ -21,7 +21,7 @@ export default function TopBar({ right, title }: TopBarProps) {
         <Link to="/dashboard" className="flex items-center gap-2 min-w-0">
           <LogoMark size={26} />
           <span className="font-display font-bold text-ink text-[15px] tracking-tight truncate">
-            {title ?? 'Sherry'}
+            {title ?? 'Cherri'}
           </span>
         </Link>
         {env === 'testnet' && (

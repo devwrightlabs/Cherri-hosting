@@ -97,8 +97,11 @@ export async function pinDirectory(
   const form = new FormData();
 
   for (const file of files) {
+    // Use the file's relative path as the filename. When `wrapWithDirectory: true`
+    // Pinata wraps all files in an outer directory — prefixing each file with
+    // dirName would create double-nesting (dirName/dirName/file) and causes a 400.
     form.append('file', file.buffer, {
-      filename: `${dirName}/${file.path}`,
+      filename: file.path,
       contentType: file.mimeType,
     });
   }
@@ -109,15 +112,29 @@ export async function pinDirectory(
     JSON.stringify({ cidVersion: IPFS_CID_VERSION, wrapWithDirectory: true }),
   );
 
-  const response = await axios.post<{ IpfsHash: string; PinSize: number }>(
-    `${PINATA_BASE}/pinning/pinFileToIPFS`,
-    form,
-    {
-      headers: { ...buildAuthHeaders(), ...form.getHeaders() },
-      maxBodyLength: Infinity,
-      timeout: 120_000,
-    },
-  );
+  let response: Awaited<ReturnType<typeof axios.post<{ IpfsHash: string; PinSize: number }>>>;
+  try {
+    response = await axios.post<{ IpfsHash: string; PinSize: number }>(
+      `${PINATA_BASE}/pinning/pinFileToIPFS`,
+      form,
+      {
+        headers: { ...buildAuthHeaders(), ...form.getHeaders() },
+        maxBodyLength: Infinity,
+        timeout: 120_000,
+      },
+    );
+  } catch (err) {
+    // Re-throw with Pinata's actual response body so it appears in the logs.
+    if (axios.isAxiosError(err) && err.response) {
+      logger.error('Pinata directory pin failed', {
+        status: err.response.status,
+        body: err.response.data,
+        dirName,
+        fileCount: files.length,
+      });
+    }
+    throw err;
+  }
 
   const cid = response.data.IpfsHash;
   const size = response.data.PinSize;

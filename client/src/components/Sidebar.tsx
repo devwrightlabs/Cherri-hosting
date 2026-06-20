@@ -25,7 +25,7 @@ export default function Sidebar() {
       <div className="px-5 py-5 border-b border-surface-700/50">
         <Link to="/" className="flex items-center gap-2">
           <span className="text-2xl">🌐</span>
-          <span className="font-bold text-white text-lg">Sherry</span>
+          <span className="font-bold text-white text-lg">Cherri</span>
         </Link>
       </div>
 

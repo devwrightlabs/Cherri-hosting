@@ -83,7 +83,7 @@ export default function Pirc2Subscription({ onChange }: Pirc2SubscriptionProps) 
         amount: PREMIUM_PRICE_PI,
         interval: { days: BILLING_INTERVAL_DAYS },
         cycles: DEFAULT_CYCLES,
-        memo: 'Sherry Hosting Premium — recurring',
+        memo: 'Cherri Hosting Premium — recurring',
         metadata: { plan: 'premium' },
       });
       const { data } = await pirc2Api.subscribe({

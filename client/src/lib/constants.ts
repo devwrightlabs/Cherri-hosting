@@ -31,7 +31,7 @@ export const TIER_STORAGE_LABELS: Record<string, string> = {
 /**
  * Official Pi Network domain auction / billing destination.
  *
- * Sherry Hosting is an infrastructure utility — it does NOT sell domains or
+ * Cherri Hosting is an infrastructure utility — it does NOT sell domains or
  * process domain bids. All domain acquisition and billing happens on Pi
  * Network's official systems, and this URL is the redirection target the app
  * sends users to. Override it with VITE_PI_DOMAIN_PORTAL_URL when the exact

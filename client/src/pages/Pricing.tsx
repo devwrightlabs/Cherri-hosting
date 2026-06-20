@@ -150,7 +150,7 @@ const FAQ = [
   },
   {
     q: 'Can I use a custom domain?',
-    a: "Domains are acquired through Pi Network's official domain auction — Sherry does not sell domains. Once you own a Pi domain, any paid tier lets you map it to your deployment.",
+    a: "Domains are acquired through Pi Network's official domain auction — Cherri does not sell domains. Once you own a Pi domain, any paid tier lets you map it to your deployment.",
   },
   {
     q: 'What if I exceed my storage?',
@@ -192,7 +192,7 @@ export default function Pricing() {
     window.Pi.createPayment(
       {
         amount,
-        memo: `Sherry Hosting ${tierLabel} — 1 month`,
+        memo: `Cherri Hosting ${tierLabel} — 1 month`,
         metadata: { plan: tierKey.toLowerCase(), tier: tierKey, months: 1, env },
       },
       {
@@ -368,7 +368,7 @@ export default function Pricing() {
           <Link to="/" className="flex items-center gap-2">
             <LogoMark size={26} />
             <span className="font-display font-bold text-ink text-[15px] tracking-tight">
-              Sherry Hosting
+              Cherri Hosting
             </span>
           </Link>
         </div>

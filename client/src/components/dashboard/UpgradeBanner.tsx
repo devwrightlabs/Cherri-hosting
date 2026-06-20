@@ -33,7 +33,7 @@ export default function UpgradeBanner({ onUpgradeSuccess }: UpgradeBannerProps) 
     window.Pi.createPayment(
       {
         amount: PREMIUM_PRICE_PI,
-        memo: 'Sherry Hosting Premium — 1 month',
+        memo: 'Cherri Hosting Premium — 1 month',
         metadata: { plan: 'premium', months: 1, env },
       },
       {

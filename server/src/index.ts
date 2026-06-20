@@ -212,7 +212,7 @@ app.use(
 );
 
 app.listen(PORT, () => {
-  logger.info(`Sherry Hosting API running on port ${PORT}`);
+  logger.info(`Cherri Hosting API running on port ${PORT}`);
   // Start the PiRC2 recurring-billing loop. It self-skips when PiRC2 is not
   // configured, so it is always safe to start.
   startBillingScheduler();

@@ -119,7 +119,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
           Step 1 — Win your domain
         </p>
         <p className="text-surface-400 text-xs leading-relaxed mb-3">
-          Domains are bought at Pi Network's official auction — Sherry doesn't sell them.
+          Domains are bought at Pi Network's official auction — Cherri doesn't sell them.
         </p>
         <Button
           variant="secondary"
@@ -218,10 +218,10 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
         </p>
         <p className="text-surface-400 text-xs leading-relaxed mb-3">
           Open your domain in Pi's portal and use the address from step 2 as its target,
-          following Pi's instructions there. Sherry serves your site over HTTPS at that
+          following Pi's instructions there. Cherri serves your site over HTTPS at that
           address; how a <span className="font-mono">.pi</span> domain resolves to it — and any{' '}
           <span className="font-mono">.pi</span> certificate — is controlled by Pi Network, not
-          Sherry.
+          Cherri.
         </p>
         <Button
           variant="secondary"

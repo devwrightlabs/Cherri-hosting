@@ -5,7 +5,7 @@ interface LogoMarkProps {
 }
 
 /**
- * Sherry Hosting logo mark — a geometric "permanent node" glyph: a gold node
+ * Cherri Hosting logo mark — a geometric "permanent node" glyph: a gold node
  * pinned inside an orbit ring, evoking content pinned to the decentralized web.
  * No emoji (acceptance criterion #7).
  */

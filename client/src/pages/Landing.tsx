@@ -72,7 +72,7 @@ export default function Landing() {
           <Link to="/" className="flex items-center gap-2">
             <LogoMark size={26} />
             <span className="font-display font-bold text-ink text-[15px] tracking-tight">
-              Sherry Hosting
+              Cherri Hosting
             </span>
           </Link>
           <div className="flex items-center gap-3">
@@ -204,7 +204,7 @@ export default function Landing() {
 
       {/* Footer */}
       <footer className="safe-bottom border-t border-hairline py-6 text-center text-ink-mut text-xs">
-        © {new Date().getFullYear()} Sherry Hosting · Built on IPFS &amp; Pi Network
+        © {new Date().getFullYear()} Cherri Hosting · Built on IPFS &amp; Pi Network
       </footer>
     </div>
   );
