@@ -3,14 +3,18 @@ import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import AppShell from '../components/AppShell';
 import DropZone from '../components/deploy/DropZone';
 import DeployReveal from '../components/deploy/DeployReveal';
+import StagePanel from '../components/deploy/StagePanel';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import { projectsApi } from '../lib/api';
 import {
-  deployFiles,
+  stageDeploy,
+  pinStaged,
+  previewUrl,
   getDeployment,
   extractDeployError,
   DeployError,
+  StageResult,
 } from '../api/deployApi';
 import { Project, Deployment, DeploymentStatus } from '../types';
 
@@ -24,12 +28,19 @@ export default function Deploy() {
   );
   const [files, setFiles] = useState<File[]>([]);
   const [filePaths, setFilePaths] = useState<string[]>([]);
-  const [isDeploying, setIsDeploying] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+
+  // Phase 1 — staging (upload + validate + preview, no pin yet)
+  const [isStaging, setIsStaging] = useState(false);
+  const [stageProgress, setStageProgress] = useState(0);
+  const [stageResult, setStageResult] = useState<StageResult | null>(null);
+
+  // Phase 2 — pinning (the reveal sequence)
+  const [isPinning, setIsPinning] = useState(false);
   const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus | null>(null);
   const [liveDeployment, setLiveDeployment] = useState<Deployment | null>(null);
-  const [deployError, setDeployError] = useState<DeployError | null>(null);
   const [deployStartedAt, setDeployStartedAt] = useState<number | null>(null);
+
+  const [deployError, setDeployError] = useState<DeployError | null>(null);
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -58,7 +69,9 @@ export default function Deploy() {
         const d = await getDeployment(id);
         setDeploymentStatus(d.status);
         if (d.status === 'ACTIVE' || d.status === 'FAILED') {
-          if (d.status === 'ACTIVE') setLiveDeployment(d);
+          // Keep the deployment on FAILED too so the reveal can show the real
+          // failure reason, not a generic message.
+          setLiveDeployment(d);
           if (pollTimeoutRef.current !== null) clearTimeout(pollTimeoutRef.current);
           return;
         }
@@ -71,39 +84,68 @@ export default function Deploy() {
     void poll();
   }, []);
 
-  const handleDeploy = useCallback(async () => {
+  // Phase 1 — upload + validate, then show a sandboxed preview (no pin yet).
+  const handleStage = useCallback(async () => {
     if (!selectedProjectId || files.length === 0 || filePaths.length === 0) return;
-    setIsDeploying(true);
+    setIsStaging(true);
     setDeployError(null);
-    setUploadProgress(0);
+    setStageProgress(0);
+    setStageResult(null);
+
+    try {
+      const result = await stageDeploy(selectedProjectId, files, filePaths, setStageProgress);
+      setStageResult(result);
+    } catch (err: unknown) {
+      setDeployError(extractDeployError(err));
+    } finally {
+      setIsStaging(false);
+    }
+  }, [selectedProjectId, files, filePaths]);
+
+  // Phase 2 — pin the staged upload to IPFS and run the reveal.
+  const handlePin = useCallback(async () => {
+    if (!stageResult?.stageId) return;
+    setIsPinning(true);
+    setDeployError(null);
     setDeploymentStatus('PENDING');
     setLiveDeployment(null);
     setDeployStartedAt(Date.now());
 
     try {
-      const d = await deployFiles(selectedProjectId, files, filePaths, setUploadProgress);
+      const d = await pinStaged(stageResult.stageId);
       setDeploymentStatus(d.status as DeploymentStatus);
       pollStatus(d.id);
     } catch (err: unknown) {
       setDeployError(extractDeployError(err));
       setDeploymentStatus(null);
     } finally {
-      setIsDeploying(false);
+      setIsPinning(false);
     }
-  }, [selectedProjectId, files, filePaths, pollStatus]);
+  }, [stageResult, pollStatus]);
 
+  // Discard the staged upload and return to the drop zone (keeps selection).
+  const resetStage = () => {
+    setStageResult(null);
+    setStageProgress(0);
+    setDeployError(null);
+  };
+
+  // Full reset — clear files and start over.
   const reset = () => {
     setFiles([]);
     setFilePaths([]);
+    setStageResult(null);
+    setStageProgress(0);
     setDeploymentStatus(null);
     setLiveDeployment(null);
     setDeployError(null);
-    setUploadProgress(0);
     setDeployStartedAt(null);
   };
 
-  const canDeploy =
-    !!selectedProjectId && files.length > 0 && filePaths.length > 0 && !isDeploying;
+  const showUpload = deploymentStatus === null && stageResult === null;
+  const showStage = deploymentStatus === null && stageResult !== null;
+  const canStage =
+    !!selectedProjectId && files.length > 0 && filePaths.length > 0 && !isStaging;
   const isUpgradeError = (kind: DeployError['kind']) =>
     kind === 'storage_limit' || kind === 'upload_too_large';
 
@@ -128,7 +170,7 @@ export default function Deploy() {
           <select
             value={selectedProjectId}
             onChange={(e) => setSelectedProjectId(e.target.value)}
-            disabled={deploymentStatus !== null}
+            disabled={!showUpload}
             className="w-full bg-surface-800 border border-hairline rounded-lg px-3 py-2.5 text-ink text-sm focus:outline-none focus:border-gold disabled:opacity-50"
           >
             {projects.map((p) => (
@@ -141,7 +183,7 @@ export default function Deploy() {
       </Card>
 
       {/* Drop zone */}
-      {deploymentStatus === null && (
+      {showUpload && (
         <Card>
           <h2 className="text-sm font-semibold text-ink mb-3">Files</h2>
           <DropZone
@@ -153,28 +195,41 @@ export default function Deploy() {
         </Card>
       )}
 
-      {/* Deploy button */}
-      {deploymentStatus === null && (
+      {/* Validate & preview button */}
+      {showUpload && (
         <Button
           size="lg"
           className="w-full justify-center"
-          disabled={!canDeploy}
-          isLoading={isDeploying}
-          onClick={() => void handleDeploy()}
+          disabled={!canStage}
+          isLoading={isStaging}
+          onClick={() => void handleStage()}
         >
-          Deploy to IPFS
+          {isStaging && stageProgress > 0
+            ? `Uploading… ${stageProgress}%`
+            : 'Validate & preview'}
         </Button>
+      )}
+
+      {/* Staged preview / halt-with-guidance */}
+      {showStage && stageResult && (
+        <StagePanel
+          result={stageResult}
+          previewSrc={stageResult.previewPath ? previewUrl(stageResult.previewPath) : null}
+          isPinning={isPinning}
+          onPin={() => void handlePin()}
+          onCancel={resetStage}
+        />
       )}
 
       {/* The reveal sequence */}
       {deploymentStatus && (
         <DeployReveal
           status={deploymentStatus}
-          isUploading={isDeploying}
-          uploadProgress={uploadProgress}
+          isUploading={false}
+          uploadProgress={100}
           deployment={liveDeployment}
           startedAt={deployStartedAt}
-          onRetry={() => void handleDeploy()}
+          onRetry={() => void handlePin()}
           onReset={reset}
         />
       )}

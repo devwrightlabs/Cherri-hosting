@@ -50,6 +50,8 @@ model Deployment {
   size      BigInt   @default(0)
   /// PENDING | UPLOADING | PINNING | ACTIVE | FAILED
   status    String   @default("PENDING")
+  /// Human-readable failure detail (e.g. the real Pinata error) when status=FAILED.
+  failureReason String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   projectId String

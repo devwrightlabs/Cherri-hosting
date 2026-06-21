@@ -8,6 +8,7 @@ import { rateLimit } from 'express-rate-limit';
 import { authRouter } from './routes/auth';
 import { projectsRouter } from './routes/projects';
 import { deploymentsRouter } from './routes/deployments';
+import { previewRouter } from './routes/preview';
 import { deployRouter } from './routes/deploy';
 import { subscriptionsRouter } from './routes/subscriptions';
 import { pirc2Router } from './routes/pirc2';
@@ -182,6 +183,11 @@ app.use('/api/deploy', deployRouter);
 app.use('/api/subscriptions', subscriptionsRouter);
 app.use('/api/subscriptions/pirc2', pirc2Router);
 app.use('/api/payments', paymentsRouter);
+
+// Sandboxed staging previews (public, guarded by an unguessable stageId).
+// Mounted outside `/api` so it bypasses the rate limiter — a single preview
+// pulls many asset requests — and registered before the SPA catch-all below.
+app.use('/preview', previewRouter);
 
 // Serve built React client (production only — only when client/dist exists)
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');

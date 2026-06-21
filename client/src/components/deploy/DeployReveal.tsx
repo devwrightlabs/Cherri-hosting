@@ -95,8 +95,9 @@ export default function DeployReveal({
           </svg>
         </span>
         <h3 className="text-base font-semibold text-ink font-display">Deployment failed</h3>
-        <p className="text-ink-mut text-sm mt-1">
-          Something went wrong while sealing your site. You can try again.
+        <p className="text-ink-mut text-sm mt-1 break-words">
+          {deployment?.failureReason ??
+            'Something went wrong while sealing your site. You can try again.'}
         </p>
         <div className="flex gap-2 justify-center mt-4">
           <Button size="sm" onClick={onRetry}>

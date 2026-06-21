@@ -37,6 +37,8 @@ export interface Deployment {
   gateway: string;
   size: number;
   status: DeploymentStatus;
+  /** Human-readable failure detail (real Pinata error) when status === 'FAILED'. */
+  failureReason?: string | null;
   createdAt: string;
   updatedAt: string;
 }

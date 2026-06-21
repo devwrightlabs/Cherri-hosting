@@ -1,0 +1,81 @@
+DEPLOY WORKFLOW — FOLDER/ZIP UPLOAD → BUILD & PREVIEW → PI SDK CHECK → IPFS PIN → AUTO-DNS
+
+Build this exactly. Each phase has a TRIGGER, an ACTION, and DECISION BRANCHES. Do NOT write narrative/marketing copy into the app — these are build instructions only. Build and TEST one phase at a time, then show me before moving to the next. Surface the REAL error everywhere — never a generic "something went wrong."
+
+══ FIRST: DIAGNOSE THE CURRENT PIN FAILURE (do this before building anything new) ══
+Deploy currently fails at "sealing" with "Something went wrong while sealing your site."
+- Read the logs and show me the actual server-side error/stack trace at the failing step.
+- The pin uses Pinata. Confirm the exact env var the pin reads (e.g. PINATA_JWT) and that it is set and non-empty in Secrets.
+- Confirm the pin uses Pinata's current pinning endpoint (e.g. POST https://api.pinata.cloud/pinning/pinFileToIPFS with header Authorization: Bearer <PINATA_JWT>) — verify against Pinata's current docs.
+- Report the real cause BEFORE changing code. Likely: missing/misnamed JWT secret, wrong endpoint, oversized payload, or a Pinata plan limit.
+
+══ PHASE 1 — UPLOAD (accept a whole project, not loose files) ══
+A developer must upload their ENTIRE project in one action.
+UI: an upload card with three buttons + a drop zone.
+- "Select ZIP" → file input accepting .zip only. THIS IS THE PRIMARY PATH ON MOBILE. On select: unzip server-side, preserve the full folder structure, ignore node_modules and .git.
+- "Select Folder" → file input with webkitdirectory set. Works on desktop and some Android; on iOS it falls back to multi-file select. Preserve relative paths.
+- "Clear" → reset the upload state.
+- Drop zone: accept a dropped folder (use DataTransferItem directory APIs to read its full tree), a dropped .zip, or dropped files.
+Rules:
+- No artificial file-count or size cap in the client. Enforce limits only by the user's plan storage, server-side.
+- After upload, show a FILE TREE: every file with its path + total file count + total size (use the NaN-safe byte formatter). The developer sees the whole structure before continuing.
+- Detect project type: static (index.html at root) vs build-needed (package.json present).
+
+══ PHASE 2 — VALIDATE & PREVIEW (stop before pinning) ══
+Catch problems and let the developer SEE the site before it touches IPFS.
+- IF package.json present → run the build (npm ci && npm run build).
+   • Build FAILS → HALT. Show the real build error/stack trace in a red panel. Buttons: Retry / Reset. Nothing is uploaded to IPFS.
+   • Build SUCCEEDS → use the output folder (dist/ build/ or out/) as the deployable.
+- IF static (index.html at root) → use the folder as-is.
+- IF no index.html and no build output → HALT: "No index.html found — this doesn't look like a deployable site." Buttons: Retry / Reset.
+On a valid deployable:
+- Generate a PREVIEW: serve the deployable and show it in an in-app preview tab (iframe) so the developer confirms it looks right. Show entry file, size, file count.
+- Only a "Deploy to IPFS" button advances. Preview must pass first.
+
+══ PHASE 3 — PI SDK CHECK (is this app Pi-ready?) ══
+Scan the deployable's HTML/JS:
+- IF Pi SDK present (script src "https://sdk.minepi.com/pi-sdk.js" AND a Pi.init call) → green "✓ Pi SDK detected — Pi-ready" badge. Continue.
+- IF NOT present → amber panel: "Pi SDK not found — add it to make this a Pi app." Provide:
+   • The exact snippet to paste into <head>:
+     <script src="https://sdk.minepi.com/pi-sdk.js"></script>
+     <script>Pi.init({ version: "2.0", sandbox: true })</script>
+   • A 3-step guide: 1) add the script, 2) call Pi.init, 3) re-upload.
+   • This is a WARNING, not a hard block for static hosting — but mark the site "not Pi-ready" until the SDK is present.
+
+══ PHASE 4 — PIN TO IPFS (with real errors) ══
+Live status: Uploading → Pinning → Sealing → Live.
+- POST the deployable to Pinata with Authorization: Bearer <PINATA_JWT>.
+- SUCCESS → receive the CID. Reveal: gold shield, "Sealed to the permanent web", the live URL (https://gateway.pinata.cloud/ipfs/<CID>) in a copy field, a QR code, "View live site".
+- FAILURE → show the ACTUAL Pinata error (e.g. "Pinata: 401 invalid JWT", "Pinata: storage limit reached") — never a generic message. Buttons: Retry / Reset.
+- Save the deployment (project, CID, size, timestamp) so Projects + Storage update.
+
+══ PHASE 5 — CONNECT A .pi DOMAIN (auto-DNS — the paid feature) ══
+Context: a developer wins a .pi domain at Pi's auction. Owning it does NOT auto-connect it — a DNS record must point the domain to their IPFS CID. The app does this for them.
+1. Developer enters their .pi domain (e.g. myapp.pi) and picks which deployed project/CID it points to.
+2. Verify ownership via Pi's domain/ownership API if available.
+3. Create/update the DNSLink record mapping domain → CID:
+   • Record: TXT  _dnslink.myapp.pi  →  dnslink=/ipfs/<CID>
+   • IF Pi exposes a programmatic DNS/domain API → submit this record automatically server-side (the seamless paid feature).
+   • IF Pi does NOT expose such an API yet → pre-compute the exact record and show it with one-tap "Copy record" + a deep link to Pi's domain portal, so the only manual step is pasting one pre-filled value. FLAG THIS AS "NEEDS APPROVAL" — confirm whether Pi's API supports automated DNS before building full automation.
+4. On every redeploy, AUTO-UPDATE the _dnslink record to the new CID so the domain always serves the latest version.
+5. SSL/HTTPS is handled by the IPFS gateway — no certificate work for the developer.
+
+══ PRICING (update the tiers; every price reduces to 8) ══
+The .pi domain auto-DNS is the premium value.
+- Starter — Free: 1 project, ZIP/folder upload, IPFS pin, gateway URL only (no custom .pi domain). Pi fee 5%.
+- Builder — 26 π/mo (2+6=8): 1 custom .pi domain auto-wired, guaranteed pinning. Fee 3%.
+- Pro — 44 π/mo (4+4=8): up to 5 .pi domains auto-wired, preview + priority pinning, analytics. Fee 1.5%.
+- Business — 143 π/mo (1+4+3=8): unlimited .pi domains auto-wired, priority DNS updates, team + API. Fee 0.5%.
+Annual = ×10 (260 / 440 / 1430 — still reduce to 8).
+
+══ RESPONSIVE ══
+Keep the whole flow mobile-first (320px → desktop): single column, no horizontal scroll, ≥44px tap targets, file tree and preview scroll within their cards, upload buttons stack on narrow screens.
+
+══ BUILD ORDER ══
+1) Diagnose + fix the Pinata pin (Phase 4 must actually work).
+2) Phase 1 upload (ZIP first).
+3) Phase 2 validate + preview.
+4) Phase 3 Pi SDK check.
+5) Phase 5 .pi domain auto-DNS (confirm Pi's API first).
+6) Pricing update.
+Show me each phase before the next.

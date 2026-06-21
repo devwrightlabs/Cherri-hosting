@@ -145,6 +145,59 @@ export async function pinDirectory(
 }
 
 /**
+ * Turn a thrown pin error into an honest, user-facing message.
+ *
+ * Surfaces Pinata's actual response (auth failure, storage limit, etc.) instead
+ * of a generic "something went wrong", and never fabricates success.
+ */
+export function describePinError(err: unknown): string {
+  if (axios.isAxiosError(err)) {
+    const status = err.response?.status;
+    const data = err.response?.data as unknown;
+
+    let detail = '';
+    if (typeof data === 'string') {
+      detail = data;
+    } else if (data && typeof data === 'object') {
+      const d = data as Record<string, unknown>;
+      const e = d.error;
+      if (e && typeof e === 'object') {
+        const eo = e as Record<string, unknown>;
+        detail = String(eo.details ?? eo.reason ?? '');
+      } else if (typeof e === 'string') {
+        detail = e;
+      }
+      if (!detail && typeof d.message === 'string') detail = d.message;
+      if (!detail) {
+        try {
+          detail = JSON.stringify(d);
+        } catch {
+          detail = '';
+        }
+      }
+    }
+    detail = detail.slice(0, 300).trim();
+
+    if (status === 401 || status === 403) {
+      return `Pinata rejected the request (${status}). The server's Pinata credentials are invalid or lack permission.${detail ? ` ${detail}` : ''}`;
+    }
+    if (status) {
+      return `Pinata error ${status}${detail ? `: ${detail}` : ''}`;
+    }
+    if (err.code === 'ECONNABORTED') {
+      return 'Pinata timed out while pinning. Try again, or upload a smaller project.';
+    }
+    return `Could not reach Pinata: ${err.message}`;
+  }
+
+  if (err instanceof IntegrationUnavailableError) {
+    return err.message;
+  }
+
+  return err instanceof Error ? err.message : 'Unknown error while pinning to IPFS.';
+}
+
+/**
  * Unpin a CID from Pinata to free up pinned storage.
  */
 export async function unpin(cid: string): Promise<void> {

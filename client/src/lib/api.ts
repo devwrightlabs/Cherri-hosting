@@ -3,6 +3,13 @@ import type { PiEnv } from './piEnv';
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? '';
 
+/**
+ * Origin the API/server is served from (no `/api` suffix). Used for resources
+ * the server exposes outside `/api`, such as the sandboxed staging preview.
+ * Empty string in production where client and server share an origin.
+ */
+export const API_BASE = BASE_URL;
+
 export const apiClient = axios.create({
   baseURL: `${BASE_URL}/api`,
   headers: { 'Content-Type': 'application/json' },

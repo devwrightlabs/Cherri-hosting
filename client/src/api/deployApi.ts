@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios';
-import { apiClient } from '../lib/api';
+import { apiClient, API_BASE } from '../lib/api';
 import { Deployment } from '../types';
 
 // ─── Return types ────────────────────────────────────────────────────────────
@@ -69,6 +69,88 @@ export async function deployFiles(
 export async function getDeployment(id: string): Promise<Deployment> {
   const res = await apiClient.get(`/deployments/${id}`);
   return (res.data as { deployment: Deployment }).deployment;
+}
+
+// ─── Staging (validate + preview before pinning) ─────────────────────────────
+
+export interface FileTreeEntry {
+  path: string;
+  size: number;
+}
+
+export interface PiSdkScan {
+  scriptDetected: boolean;
+  initDetected: boolean;
+  ready: boolean;
+}
+
+export interface StageResult {
+  deployable: boolean;
+  /** Present when deployable=false — user-facing guidance, NOT an error. */
+  haltReason?: string;
+  /** Present when deployable=true — opaque handle for preview + pin. */
+  stageId?: string;
+  projectType: string;
+  rootPrefix?: string;
+  entryPoint?: string | null;
+  fileCount: number;
+  totalBytes: number;
+  fileTree: FileTreeEntry[];
+  sdk?: PiSdkScan;
+  /** Server path of the sandboxed preview, e.g. "/preview/<id>/". */
+  previewPath?: string;
+}
+
+/**
+ * POST /api/deployments/stage — upload + validate WITHOUT pinning.
+ *
+ * Returns a deployable stage (with a sandboxed preview) or a halt reason when
+ * the upload isn't a deployable static site (e.g. needs to be built first). A
+ * halt is a normal `deployable: false` response, not a thrown error.
+ */
+export async function stageDeploy(
+  projectId: string,
+  files: File[],
+  filePaths: string[],
+  onUploadProgress?: (percent: number) => void,
+): Promise<StageResult> {
+  const formData = new FormData();
+  formData.append('projectId', projectId);
+  formData.append('filePaths', JSON.stringify(filePaths));
+  files.forEach((f, i) => {
+    formData.append('files', f, filePaths[i] ?? f.name);
+  });
+
+  const res = await apiClient.post('/deployments/stage', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 180_000,
+    onUploadProgress: onUploadProgress
+      ? (event) => {
+          if (event.total) {
+            onUploadProgress(Math.round((event.loaded / event.total) * 100));
+          }
+        }
+      : undefined,
+  });
+
+  return res.data as StageResult;
+}
+
+/**
+ * POST /api/deployments/:stageId/pin — pin a previously staged upload to IPFS.
+ */
+export async function pinStaged(stageId: string): Promise<DeployFilesResult> {
+  const res = await apiClient.post(`/deployments/${stageId}/pin`);
+  return (res.data as { deployment: DeployFilesResult }).deployment;
+}
+
+/**
+ * Absolute URL for the sandboxed preview iframe. The preview is served by the
+ * API origin (outside `/api`), so it must be loaded from API_BASE rather than
+ * resolved against the SPA's own routes.
+ */
+export function previewUrl(previewPath: string): string {
+  return `${API_BASE}${previewPath}`;
 }
 
 // ─── Error normalisation ─────────────────────────────────────────────────────

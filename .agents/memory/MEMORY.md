@@ -5,3 +5,4 @@
 - [Pi env toggle](pi-env-toggle.md) — testnet/mainnet is a standalone store, not in providers; mainnet honestly gated (no key→503, no fallback); env threaded + persisted on payment rows.
 - [Pi domain loop](pi-domain-loop.md) — .pi domain→site connection can't be auto-wired (Pi controls resolution/certs, no public API); guide user to point domain manually, never fake "connected".
 - [Multi-package repo layout](monorepo-package-layout.md) — 3 package.json (root/client/server), no workspaces; install client/server deps in their own dir, NOT via root-installing tools.
+- [Staged deploy invariants](staged-deploy-invariants.md) — every upload path must shouldIgnoreFile before staging/pinning (preview is public by token); never pin unbuilt apps; pin claimed atomically.
