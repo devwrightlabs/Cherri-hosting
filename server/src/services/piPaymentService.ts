@@ -29,6 +29,8 @@ interface PiPayment {
   amount: number;
   memo: string;
   metadata: Record<string, unknown>;
+  /** ISO timestamp from the Pi Platform; gates legacy-price grandfathering. */
+  created_at?: string;
   status: {
     developer_approved: boolean;
     transaction_verified: boolean;

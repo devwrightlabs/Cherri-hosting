@@ -12,7 +12,7 @@ import { logger } from '../utils/logger';
 import { IntegrationUnavailableError } from '../utils/integrations';
 import {
   FREE_STORAGE_LIMIT_BYTES,
-  TIER1_PRICE_PI,
+  PRICING_V2_CUTOFF,
   resolveTierFromAmount,
 } from '../utils/constants';
 import { normalizePiEnv } from '../utils/piEnv';
@@ -69,7 +69,7 @@ subscriptionsRouter.post(
         res.status(403).json({ error: 'This payment belongs to a different account.' });
         return;
       }
-      if (payment.amount < TIER1_PRICE_PI) {
+      if (!resolveTierFromAmount(payment.amount)) {
         res.status(400).json({ error: 'Payment amount does not match any subscription plan.' });
         return;
       }
@@ -118,6 +118,7 @@ subscriptionsRouter.post(
       // payment we won't honour. Enforce up front:
       //  1. Ownership — the payer (user_uid) must be the authenticated user.
       //  2. Env — the env stamped in metadata at createPayment must match.
+      //  3. Amount — must map to a plan (grandfathering pre-cutoff legacy amounts).
       const pre = await getPayment(paymentId, env);
       if (pre.user_uid !== req.user!.piUserId) {
         logger.warn('Payment ownership mismatch', { paymentId, payer: pre.user_uid });
@@ -128,6 +129,22 @@ subscriptionsRouter.post(
       if (typeof preMetaEnv === 'string' && preMetaEnv !== env) {
         logger.warn('Payment env mismatch', { paymentId, requestEnv: env, metaEnv: preMetaEnv });
         res.status(400).json({ error: 'Payment environment mismatch.' });
+        return;
+      }
+
+      // Resolve the entitlement from the SERVER-fetched amount BEFORE completing,
+      // so we never developer-complete a payment we can't honour. Legacy prices
+      // are accepted only for payments created before the v2 cutoff — this
+      // grandfathers old in-flight payments without reopening the underpayment
+      // hole for new purchases.
+      const preCreatedAt = pre.created_at ? new Date(pre.created_at) : null;
+      const allowLegacy =
+        preCreatedAt !== null &&
+        !Number.isNaN(preCreatedAt.getTime()) &&
+        preCreatedAt < PRICING_V2_CUTOFF;
+      const tierInfo = resolveTierFromAmount(pre.amount, { allowLegacy });
+      if (!tierInfo) {
+        res.status(400).json({ error: 'Payment amount does not match any subscription plan.' });
         return;
       }
 
@@ -147,11 +164,17 @@ subscriptionsRouter.post(
         return;
       }
 
-      // HARD RULE: derive the entitlement from the server-verified amount, never
-      // from the client. A tampered client amount must never grant a tier.
-      const tierInfo = resolveTierFromAmount(completed.amount);
-      if (!tierInfo) {
-        res.status(400).json({ error: 'Payment amount does not match any subscription plan.' });
+      // The completed record is authoritative; its amount must match what we
+      // gated on before completing. A mismatch here is anomalous (Pi reporting a
+      // different amount post-completion) — refuse rather than grant a tier the
+      // payment didn't pay for.
+      if (Math.abs(completed.amount - pre.amount) > 1e-6) {
+        logger.error('Pi payment amount changed between inspect and complete', {
+          paymentId,
+          inspectedAmount: pre.amount,
+          completedAmount: completed.amount,
+        });
+        res.status(400).json({ error: 'Payment amount inconsistency detected.' });
         return;
       }
       if (clientAmount !== undefined && clientAmount !== completed.amount) {
@@ -173,7 +196,7 @@ subscriptionsRouter.post(
 
       const now = new Date();
       const periodEnd = new Date(now);
-      periodEnd.setMonth(periodEnd.getMonth() + 1);
+      periodEnd.setMonth(periodEnd.getMonth() + tierInfo.months);
 
       const subscription = await prisma.subscription.create({
         data: {

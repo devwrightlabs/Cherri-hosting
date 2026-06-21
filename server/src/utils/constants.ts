@@ -35,12 +35,32 @@ export const TIER2_MAX_UPLOAD_BYTES = 1024 * 1024 * 1024;
 export const TIER3_MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
 export const TIER4_MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
 
-/** Tier prices in Pi / month */
+/** Current tier prices in Pi / month (pricing v2, 2026-06). */
 export const PREMIUM_PRICE_PI = 10;
-export const TIER1_PRICE_PI = 17;
-export const TIER2_PRICE_PI = 35;
-export const TIER3_PRICE_PI = 88;
+export const TIER1_PRICE_PI = 26;
+export const TIER2_PRICE_PI = 44;
+export const TIER3_PRICE_PI = 143;
+/** Legacy Enterprise tier — not sold on the pricing page; recovery/grandfather only. */
 export const TIER4_PRICE_PI = 125;
+
+/** Annual plans bill 10× the monthly price (i.e. two months free). */
+export const ANNUAL_MULTIPLIER = 10;
+
+/**
+ * Pre-v2 monthly prices. Honoured ONLY when recovering a Pi payment that was
+ * created before the v2 rollout (see PRICING_V2_CUTOFF) — never for new
+ * purchases, so the price increase can't be bypassed by replaying an old amount.
+ */
+export const LEGACY_TIER1_PRICE_PI = 17;
+export const LEGACY_TIER2_PRICE_PI = 35;
+export const LEGACY_TIER3_PRICE_PI = 88;
+
+/**
+ * Rollout moment of pricing v2. A Pi payment whose created_at predates this is
+ * eligible to resolve against legacy prices (grandfathering); anything created
+ * at/after this must match a current price.
+ */
+export const PRICING_V2_CUTOFF = new Date('2026-06-21T00:00:00.000Z');
 
 /**
  * Max number of custom Pi domains that can be mapped per tier.
@@ -55,24 +75,86 @@ export const TIER_DOMAIN_LIMITS: Record<string, number> = {
   TIER4: -1,
 };
 
+/** Resolved entitlement for a verified Pi payment amount. */
+export interface TierResolution {
+  tierName: string;
+  storageLimit: number;
+  uploadLimit: number;
+  /** Paid period length in months — 1 for monthly, 12 for annual plans. */
+  months: number;
+}
+
+interface PriceEntry {
+  amount: number;
+  tierName: 'TIER1' | 'TIER2' | 'TIER3' | 'TIER4';
+  months: number;
+}
+
+/** Pi amounts are whole numbers here; tolerate float noise on equality. */
+const AMOUNT_EPSILON = 1e-6;
+
 /**
- * Resolve subscription tier name + storage limit from a Pi payment amount.
- * Returns null when the amount doesn't match any valid plan.
+ * Prices accepted for ALL new purchases — current monthly + annual (×10).
+ * Exact-match only: an amount must equal a listed price, so the >= cascade can
+ * no longer mis-map an annual amount (e.g. 260π Builder) onto a higher tier.
+ */
+const CURRENT_PRICE_ENTRIES: PriceEntry[] = [
+  { amount: TIER1_PRICE_PI, tierName: 'TIER1', months: 1 },
+  { amount: TIER2_PRICE_PI, tierName: 'TIER2', months: 1 },
+  { amount: TIER3_PRICE_PI, tierName: 'TIER3', months: 1 },
+  { amount: TIER1_PRICE_PI * ANNUAL_MULTIPLIER, tierName: 'TIER1', months: 12 },
+  { amount: TIER2_PRICE_PI * ANNUAL_MULTIPLIER, tierName: 'TIER2', months: 12 },
+  { amount: TIER3_PRICE_PI * ANNUAL_MULTIPLIER, tierName: 'TIER3', months: 12 },
+];
+
+/**
+ * Pre-v2 prices, honoured ONLY for grandfathered recovery (allowLegacy) of a
+ * payment created before PRICING_V2_CUTOFF. Never accepted for new purchases —
+ * otherwise a tampered client could keep buying paid tiers at the old amount.
+ */
+const LEGACY_PRICE_ENTRIES: PriceEntry[] = [
+  { amount: LEGACY_TIER1_PRICE_PI, tierName: 'TIER1', months: 1 },
+  { amount: LEGACY_TIER2_PRICE_PI, tierName: 'TIER2', months: 1 },
+  { amount: LEGACY_TIER3_PRICE_PI, tierName: 'TIER3', months: 1 },
+  { amount: TIER4_PRICE_PI, tierName: 'TIER4', months: 1 },
+  { amount: PREMIUM_PRICE_PI, tierName: 'TIER2', months: 1 }, // legacy Premium → TIER2
+];
+
+function storageLimitForTier(tierName: string): number {
+  switch (tierName) {
+    case 'TIER4': return TIER4_STORAGE_LIMIT_BYTES;
+    case 'TIER3': return TIER3_STORAGE_LIMIT_BYTES;
+    case 'TIER2': return TIER2_STORAGE_LIMIT_BYTES;
+    case 'TIER1': return TIER1_STORAGE_LIMIT_BYTES;
+    default: return PREMIUM_STORAGE_LIMIT_BYTES;
+  }
+}
+
+function matchPriceEntry(amount: number, entries: PriceEntry[]): PriceEntry | null {
+  return entries.find((e) => Math.abs(amount - e.amount) < AMOUNT_EPSILON) ?? null;
+}
+
+/**
+ * Resolve a subscription entitlement from a SERVER-verified Pi payment amount.
+ *
+ * Current prices are always accepted. Legacy prices are accepted only when
+ * `allowLegacy` is set (the recovery path passes it for payments created before
+ * the v2 cutoff). Returns null when the amount matches no permitted plan.
  */
 export function resolveTierFromAmount(
   amount: number,
-): { tierName: string; storageLimit: number; uploadLimit: number } | null {
-  if (amount >= TIER4_PRICE_PI)
-    return { tierName: 'TIER4', storageLimit: TIER4_STORAGE_LIMIT_BYTES, uploadLimit: TIER4_MAX_UPLOAD_BYTES };
-  if (amount >= TIER3_PRICE_PI)
-    return { tierName: 'TIER3', storageLimit: TIER3_STORAGE_LIMIT_BYTES, uploadLimit: TIER3_MAX_UPLOAD_BYTES };
-  if (amount >= TIER2_PRICE_PI)
-    return { tierName: 'TIER2', storageLimit: TIER2_STORAGE_LIMIT_BYTES, uploadLimit: TIER2_MAX_UPLOAD_BYTES };
-  if (amount >= TIER1_PRICE_PI)
-    return { tierName: 'TIER1', storageLimit: TIER1_STORAGE_LIMIT_BYTES, uploadLimit: TIER1_MAX_UPLOAD_BYTES };
-  if (amount >= PREMIUM_PRICE_PI)
-    return { tierName: 'TIER2', storageLimit: TIER2_STORAGE_LIMIT_BYTES, uploadLimit: TIER2_MAX_UPLOAD_BYTES }; // backward compat
-  return null;
+  options: { allowLegacy?: boolean } = {},
+): TierResolution | null {
+  const entry =
+    matchPriceEntry(amount, CURRENT_PRICE_ENTRIES) ??
+    (options.allowLegacy ? matchPriceEntry(amount, LEGACY_PRICE_ENTRIES) : null);
+  if (!entry) return null;
+  return {
+    tierName: entry.tierName,
+    storageLimit: storageLimitForTier(entry.tierName),
+    uploadLimit: maxUploadBytesForTier(entry.tierName),
+    months: entry.months,
+  };
 }
 
 /**

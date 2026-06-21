@@ -1,14 +1,17 @@
 /** Legacy / backward-compat Premium plan price in Pi. */
 export const PREMIUM_PRICE_PI = 10;
 
-/** Tier 1 — 17 Pi / month */
-export const TIER1_PRICE_PI = 17;
-/** Tier 2 — 35 Pi / month */
-export const TIER2_PRICE_PI = 35;
-/** Tier 3 — 88 Pi / month */
-export const TIER3_PRICE_PI = 88;
-/** Tier 4 — 125 Pi / month */
+/** Builder (Tier 1) — 26 Pi / month */
+export const TIER1_PRICE_PI = 26;
+/** Pro (Tier 2) — 44 Pi / month */
+export const TIER2_PRICE_PI = 44;
+/** Business (Tier 3) — 143 Pi / month */
+export const TIER3_PRICE_PI = 143;
+/** Legacy Enterprise (Tier 4) — 125 Pi / month (not sold on the pricing page) */
 export const TIER4_PRICE_PI = 125;
+
+/** Annual plans bill 10× the monthly price (i.e. two months free). */
+export const ANNUAL_MULTIPLIER = 10;
 
 export const TIER_LABELS: Record<string, string> = {
   FREE: 'Starter',

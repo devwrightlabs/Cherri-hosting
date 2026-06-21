@@ -11,7 +11,7 @@ import {
 import { logger } from '../utils/logger';
 import { IntegrationUnavailableError } from '../utils/integrations';
 import {
-  TIER1_PRICE_PI,
+  PRICING_V2_CUTOFF,
   resolveTierFromAmount,
 } from '../utils/constants';
 import { normalizePiEnv } from '../utils/piEnv';
@@ -77,9 +77,17 @@ paymentsRouter.post('/verify', async (req: AuthenticatedRequest, res: Response):
       return;
     }
 
-    // Validate amount maps to a known plan before touching anything
-    const tierInfo = resolveTierFromAmount(payment.amount);
-    if (!tierInfo || payment.amount < TIER1_PRICE_PI) {
+    // Validate amount maps to a known plan before touching anything. Recovery is
+    // the only path that may honour pre-v2 prices, and only for payments created
+    // before the rollout cutoff — so the price increase can't be replayed by a
+    // tampered client paying an old amount.
+    const createdAt = payment.created_at ? new Date(payment.created_at) : null;
+    const allowLegacy =
+      createdAt !== null &&
+      !Number.isNaN(createdAt.getTime()) &&
+      createdAt < PRICING_V2_CUTOFF;
+    const tierInfo = resolveTierFromAmount(payment.amount, { allowLegacy });
+    if (!tierInfo) {
       res.status(400).json({ error: 'Payment amount does not match any subscription plan.' });
       return;
     }
@@ -106,7 +114,7 @@ paymentsRouter.post('/verify', async (req: AuthenticatedRequest, res: Response):
       if (!existing) {
         const now = new Date();
         const periodEnd = new Date(now);
-        periodEnd.setMonth(periodEnd.getMonth() + 1);
+        periodEnd.setMonth(periodEnd.getMonth() + tierInfo.months);
 
         await prisma.subscription.create({
           data: {

@@ -11,10 +11,18 @@ Tier entitlement derives from the **server-verified** Pi payment — the `amount
 **How to apply:** map the *server* amount with `resolveTierFromAmount()`; reject if it maps to no plan. Treat client `amount` as a hint only. Never add a new payment-driven grant without the `user_uid` ownership check. Completion is idempotent on `piTxId` (return the existing subscription, don't 500).
 
 ## Tier price contract (Pi/month)
-FREE=0, TIER1=17, TIER2=35, TIER3=88, TIER4=125. The *displayed paid price IS the payment amount*, so any displayed price must equal the corresponding `TIERn_PRICE_PI` or `resolveTierFromAmount` rejects it. Change a price → change the constant, never just the card copy.
+Prices are sold from `TIERn_PRICE_PI` constants (mirrored client+server — change both in lockstep, never just card copy). The *displayed paid price IS the payment amount*, so any displayed price must equal a value `resolveTierFromAmount` accepts or it rejects. Annual = monthly × `ANNUAL_MULTIPLIER` (10 = two months free); the annual amount shown is exactly what `createPayment` charges, and the server returns `months` (1 or 12) for `periodEnd`.
 
-## UI identity mapping (master-prompt 4-tier model)
-Spec marketing tiers map onto existing server keys so the amount→tier contract is untouched: **Starter→FREE, Builder→TIER1, Pro→TIER2 (35π, "Most popular", the screen's only gold), Business→TIER3 (0.5% fee, green).** TIER4 stays "Enterprise" for legacy users (not shown as a card). Spec prices (10/35/100) are illustrative.
+## resolveTierFromAmount design (do not regress)
+It is **exact-match** (epsilon 1e-6) over price tables, NOT a `>=` cascade. **Why:** a `>=` cascade mis-maps a valid higher amount (e.g. an annual 260π) onto a higher tier, and lets any over/under amount slip into a tier. Two separate tables: CURRENT (current monthly + annual) is always accepted; LEGACY (pre-rollout amounts) is accepted **only** when the caller passes `{ allowLegacy: true }`.
+
+**Underpayment exploit (fixed, do not reopen):** never put old/legacy prices in the always-accepted table — a tampered client would keep buying paid tiers at the old amount forever. Legacy is honored ONLY for grandfathering an *old in-flight* Pi payment, gated by `payment.created_at < PRICING_V2_CUTOFF`. If Pi omits `created_at`, default to allowLegacy=false (deny = safe). New purchases (approve + normal complete) are current-only.
+
+## Never developer-complete a payment you can't honor
+On any path that calls `completePayment`, resolve the entitlement from the **server-fetched** payment amount BEFORE completing, and 400 if it maps to no plan. **Why:** completing first then rejecting an unmappable/legacy amount means the user paid and got nothing. The complete path uses the same `created_at < cutoff` legacy gate as recovery so old in-flight payments are grandfathered. After completing, assert `completed.amount === pre.amount` (entitlement still derives from the server amount; client `amount` stays advisory).
+
+## UI identity mapping
+Stable server keys keep the amount→tier contract fixed regardless of marketing copy: **Starter→FREE, Builder→TIER1, Pro→TIER2 (the Pricing screen's only gold zone), Business→TIER3 (0.5% fee, green).** TIER4 stays "Enterprise" for legacy users (not shown as a card; recovery/grandfather only).
 
 ## Other tier-gated limits
 - Domain limits: FREE=1, TIER1=1, TIER2=5, TIER3/4=unlimited. Enforced when a customDomain is set.

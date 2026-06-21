@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { usePiAuth } from '../hooks/usePiAuth';
 import LogoMark from '../components/ui/LogoMark';
 import Button from '../components/ui/Button';
+import { TIER2_PRICE_PI } from '../lib/constants';
 
 const valueRows = [
   {
@@ -53,8 +54,8 @@ const tiers = [
     highlight: false,
   },
   {
-    name: 'Tier 2',
-    price: '35 π',
+    name: 'Pro',
+    price: `${TIER2_PRICE_PI} π`,
     period: '/ month',
     features: ['10 GB storage', '5 Pi domains', 'Multi-domain mapping', 'Priority support'],
     highlight: true,

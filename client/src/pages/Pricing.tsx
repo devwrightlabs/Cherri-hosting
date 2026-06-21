@@ -15,6 +15,7 @@ import {
   TIER1_PRICE_PI,
   TIER2_PRICE_PI,
   TIER3_PRICE_PI,
+  ANNUAL_MULTIPLIER,
   TIER_LABELS,
   TIER_STORAGE_LABELS,
 } from '../lib/constants';
@@ -168,6 +169,7 @@ export default function Pricing() {
   const [subData, setSubData] = useState<SubscriptionData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [payingTier, setPayingTier] = useState<string | null>(null);
+  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'annual'>('monthly');
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -181,19 +183,25 @@ export default function Pricing() {
 
   const currentTier = subData?.user?.tier ?? user?.tier ?? 'FREE';
 
-  const handleUpgrade = (tierKey: string, amount: number, tierLabel: string) => {
+  const handleUpgrade = (
+    tierKey: string,
+    amount: number,
+    tierLabel: string,
+    months: number,
+  ) => {
     if (!window.Pi) {
       toastError('Open this app in Pi Browser to pay with Pi.');
       return;
     }
     setPayingTier(tierKey);
     const env = getEnv();
+    const periodLabel = months === 12 ? '1 year' : '1 month';
 
     window.Pi.createPayment(
       {
         amount,
-        memo: `Cherri Hosting ${tierLabel} — 1 month`,
-        metadata: { plan: tierKey.toLowerCase(), tier: tierKey, months: 1, env },
+        memo: `Cherri Hosting ${tierLabel} — ${periodLabel}`,
+        metadata: { plan: tierKey.toLowerCase(), tier: tierKey, months, env },
       },
       {
         onReadyForServerApproval: async (paymentId) => {
@@ -275,6 +283,32 @@ export default function Pricing() {
         </div>
       )}
 
+      {/* Billing period toggle — neutral styling so gold stays reserved for Pro */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-center">
+          <div className="inline-flex rounded-full border border-hairline bg-surface-900 p-0.5">
+            {(['monthly', 'annual'] as const).map((period) => (
+              <button
+                key={period}
+                type="button"
+                onClick={() => setBillingPeriod(period)}
+                aria-pressed={billingPeriod === period}
+                className={`rounded-full px-5 py-1.5 text-sm font-medium transition-colors ${
+                  billingPeriod === period
+                    ? 'bg-surface-800 text-ink'
+                    : 'text-ink-mut hover:text-ink'
+                }`}
+              >
+                {period === 'monthly' ? 'Monthly' : 'Annual'}
+              </button>
+            ))}
+          </div>
+        </div>
+        {billingPeriod === 'annual' && (
+          <p className="text-center text-xs text-live">Two months free, billed yearly</p>
+        )}
+      </div>
+
       {/* Tier cards — single column, four tiers */}
       <div className="space-y-4">
         {TIERS.map((tier) => {
@@ -286,6 +320,7 @@ export default function Pricing() {
           const inner = (
             <TierCardContent
               tier={tier}
+              billingPeriod={billingPeriod}
               isCurrentTier={isCurrentTier}
               isPaidAndActive={isPaidAndActive}
               isAuthenticated={isAuthenticated}
@@ -384,16 +419,18 @@ export default function Pricing() {
 
 interface TierCardContentProps {
   tier: TierDef;
+  billingPeriod: 'monthly' | 'annual';
   isCurrentTier: boolean;
   isPaidAndActive: boolean;
   isAuthenticated: boolean;
   canUpgrade: boolean;
   payingTier: string | null;
-  onUpgrade: (key: string, amount: number, label: string) => void;
+  onUpgrade: (key: string, amount: number, label: string, months: number) => void;
 }
 
 function TierCardContent({
   tier,
+  billingPeriod,
   isCurrentTier,
   isPaidAndActive,
   isAuthenticated,
@@ -404,6 +441,14 @@ function TierCardContent({
   // Business renders its fee line in --live green; the rest stay ink so gold
   // is reserved for the highlighted Pro card only.
   const feeClass = tier.feeGreen ? 'text-live' : 'text-ink';
+
+  // Annual plans bill 10× monthly (two months free). The displayed price is the
+  // exact amount charged, preserving the "displayed price == payment amount" rule.
+  const isAnnual = billingPeriod === 'annual';
+  const isPaid = tier.price > 0;
+  const displayPrice = isPaid && isAnnual ? tier.price * ANNUAL_MULTIPLIER : tier.price;
+  const periodSuffix = isAnnual ? '/yr' : '/mo';
+  const months = isAnnual ? 12 : 1;
 
   return (
     <>
@@ -417,12 +462,17 @@ function TierCardContent({
             <span className="text-3xl font-bold text-ink font-display">Free</span>
           ) : (
             <>
-              <span className="text-3xl font-bold text-ink font-display">{tier.price}</span>
+              <span className="text-3xl font-bold text-ink font-display">{displayPrice}</span>
               <span className="text-lg font-mono text-ink">π</span>
-              <span className="text-ink-mut text-sm ml-0.5">/mo</span>
+              <span className="text-ink-mut text-sm ml-0.5">{periodSuffix}</span>
             </>
           )}
         </div>
+        {isPaid && isAnnual && (
+          <p className="text-ink-mut text-xs mt-1">
+            <span className="font-mono">{tier.price} π</span>/mo billed yearly
+          </p>
+        )}
         <p className="text-ink-mut text-sm mt-2 leading-snug">{tier.headline}</p>
       </div>
 
@@ -465,7 +515,7 @@ function TierCardContent({
           <Button
             variant={tier.popular ? 'primary' : 'secondary'}
             className="w-full justify-center"
-            onClick={() => onUpgrade(tier.key, tier.price, tier.name)}
+            onClick={() => onUpgrade(tier.key, displayPrice, tier.name, months)}
             isLoading={payingTier === tier.key}
             disabled={payingTier !== null && payingTier !== tier.key}
           >
