@@ -22,27 +22,31 @@ import { IntegrationUnavailableError } from '../utils/integrations';
 
 const PINATA_BASE = 'https://api.pinata.cloud';
 
-/** Build auth headers from environment variables (JWT preferred, fall back to key/secret). */
+/**
+ * Build the Pinata auth header from server-side env vars ONLY (never read in
+ * client/browser code). PINATA_JWT is the primary credential; the api-key/secret
+ * pair is a fallback used only when the JWT is absent. If neither is present we
+ * stop with an honest error instead of attempting a pin that would fail.
+ */
 function buildAuthHeaders(): Record<string, string> {
-  const jwt = process.env.PINATA_JWT;
+  const jwt = process.env.PINATA_JWT?.trim();
   if (jwt) {
     return { Authorization: `Bearer ${jwt}` };
   }
 
-  const apiKey = process.env.PINATA_API_KEY;
-  const apiSecret = process.env.PINATA_API_SECRET;
-
-  if (!apiKey || !apiSecret) {
-    throw new IntegrationUnavailableError(
-      'pinata',
-      'Pinata/IPFS is not configured on the server. Set PINATA_JWT or both PINATA_API_KEY and PINATA_API_SECRET.',
-    );
+  const apiKey = process.env.PINATA_API_KEY?.trim();
+  const apiSecret = process.env.PINATA_API_SECRET?.trim();
+  if (apiKey && apiSecret) {
+    return {
+      pinata_api_key: apiKey,
+      pinata_secret_api_key: apiSecret,
+    };
   }
 
-  return {
-    pinata_api_key: apiKey,
-    pinata_secret_api_key: apiSecret,
-  };
+  throw new IntegrationUnavailableError(
+    'pinata',
+    'Pinata/IPFS is not configured on the server. Set the PINATA_JWT secret (a Pinata Admin JWT), or both PINATA_API_KEY and PINATA_API_SECRET.',
+  );
 }
 
 export interface PinResult {

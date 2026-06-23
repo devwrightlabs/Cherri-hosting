@@ -175,9 +175,35 @@ export function extractDeployError(err: unknown): DeployError {
       };
     }
 
+    // The server responded with an error body — surface its real message. This
+    // is where honest Pinata failures (e.g. "Pinata error 401: invalid JWT")
+    // reach the user instead of a generic placeholder.
     if (serverMessage) {
       return { kind: 'generic', message: serverMessage };
     }
+
+    // The server responded, but without a usable message body.
+    if (status) {
+      return {
+        kind: 'generic',
+        message: `The server returned an error (${status}). Please try again.`,
+      };
+    }
+
+    // No response at all — a true network-level failure. Never surface axios's
+    // bare "Network Error"; explain what actually happened.
+    if (axErr.code === 'ECONNABORTED' || /timeout/i.test(axErr.message)) {
+      return {
+        kind: 'generic',
+        message:
+          'The request timed out before the server responded. Your upload may be large or the connection slow — please try again.',
+      };
+    }
+
+    return {
+      kind: 'generic',
+      message: "Couldn't reach the Cherri server. Check your internet connection and try again.",
+    };
   }
 
   return {

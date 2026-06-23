@@ -12,12 +12,17 @@ export function isPiConfigured(): boolean {
   return Boolean(process.env.PI_API_KEY);
 }
 
-/** True when Pinata/IPFS credentials are configured (required for deploys). */
+/**
+ * True when Pinata/IPFS credentials are configured (required for deploys).
+ * PINATA_JWT is the primary credential; the api-key/secret pair is a fallback.
+ * Values are trimmed so a whitespace-only secret doesn't falsely report as
+ * configured (which must stay in lockstep with buildAuthHeaders in ipfs.ts).
+ */
 export function isPinataConfigured(): boolean {
-  return Boolean(
-    process.env.PINATA_JWT ||
-      (process.env.PINATA_API_KEY && process.env.PINATA_API_SECRET),
-  );
+  const jwt = process.env.PINATA_JWT?.trim();
+  const apiKey = process.env.PINATA_API_KEY?.trim();
+  const apiSecret = process.env.PINATA_API_SECRET?.trim();
+  return Boolean(jwt || (apiKey && apiSecret));
 }
 
 /** True when a database connection string is configured. */

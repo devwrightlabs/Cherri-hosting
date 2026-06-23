@@ -54,8 +54,10 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
             clearTimeout(pollTimeoutRef.current);
             pollTimeoutRef.current = null;
           }
+          // Keep the deployment on FAILED too so the reveal can show the real
+          // Pinata failure reason (failureReason) rather than a generic message.
+          setLiveDeployment(d);
           if (d.status === 'ACTIVE') {
-            setLiveDeployment(d);
             onDeploySuccess(d);
           }
           return;
