@@ -1,0 +1,27 @@
+WOODSTICK 2 — PHASE 0: RE-WIRE PINATA (fresh Admin key; deploy currently shows "Network Error" at pin)
+
+I am creating a NEW Pinata API key with ALL permissions enabled (Admin) so it can pin any file to IPFS. Re-wire the Pinata connection cleanly and let me re-enter the key.
+
+1. RE-EXPOSE THE SECRET INPUT
+   - Standardize the env var name on PINATA_JWT.
+   - Show me the Secrets input box for PINATA_JWT so I can paste the new Admin JWT now. If an old PINATA_JWT, PINATA_API_KEY, or PINATA_SECRET exists, delete those first so there's no stale/mismatched key — PINATA_JWT is the single source of truth.
+   - Confirm back to me: the secret name, that it's stored, its length and first 4 chars only (never print the full key).
+
+2. READ IT CORRECTLY
+   - The code reads PINATA_JWT server-side ONLY (never in client/browser code).
+   - Confirm it's non-empty at runtime before any pin attempt; if empty, stop and tell me.
+
+3. CORRECT REQUEST (verify against Pinata's current docs)
+   - Endpoint: POST https://api.pinata.cloud/pinning/pinFileToIPFS
+   - Header: Authorization: Bearer <PINATA_JWT>  (a JWT — NOT the old api-key/secret header pair)
+   - Body: multipart/form-data, files under the "file" field, folder paths preserved.
+   - The call MUST run from the server, not the browser (Pinata blocks browser CORS and exposing keys client-side). If it's currently client-side, move it server-side — that alone often clears "Network Error."
+
+4. REAL ERRORS, NEVER "NETWORK ERROR"
+   - Wrap the pin in try/catch; log full HTTP status + status text + Pinata response body.
+   - Show the actual message in the UI (e.g. "Pinata 401: invalid JWT", "Pinata 403: NO_SCOPES_FOUND", "Pinata 413: payload too large"). Kill the bare "Network Error".
+
+5. PROVE IT
+   - After I paste the new key, deploy one tiny test (a single index.html) and show me the successful Pinata response with the returned CID + the live gateway URL.
+
+Do step 1 first (show me the input box). After I paste the key, run 2-4, then prove with step 5.
