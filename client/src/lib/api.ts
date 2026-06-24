@@ -45,6 +45,21 @@ export const projectsApi = {
 };
 
 // Deployments
+export interface DomainTarget {
+  cid: string;
+  gatewayUrl: string;
+  ipfsPath: string;
+  /** DNSLink TXT record value: `dnslink=/ipfs/<cid>`. */
+  dnslink: string;
+  /** REAL gateway check — true only if the gateway actually served the CID. */
+  served: boolean;
+  /** Check was inconclusive (rate-limited / unreachable), not a definitive "down". */
+  indeterminate: boolean;
+  gatewayStatus: number | null;
+  reason?: string;
+  checkedAt: string;
+}
+
 export const deploymentsApi = {
   deploy: (formData: FormData) =>
     apiClient.post('/deployments', formData, {
@@ -54,6 +69,11 @@ export const deploymentsApi = {
   get: (id: string) => apiClient.get(`/deployments/${id}`),
   listByProject: (projectId: string) =>
     apiClient.get(`/deployments/project/${projectId}`),
+  // Exact .pi target values + a REAL gateway-serves-CID verification.
+  domainTarget: (deploymentId: string) =>
+    apiClient.get<DomainTarget>(`/deployments/${deploymentId}/domain-target`, {
+      timeout: 30000,
+    }),
 };
 
 // Subscriptions

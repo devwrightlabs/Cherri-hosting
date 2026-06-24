@@ -13,3 +13,13 @@ What Sherry legitimately provides: site files pinned to IPFS → a CID + an HTTP
 - The stored `customDomain` is a dashboard label only; never word it as "connected/mapped/live."
 - Don't claim Pi-side behavior you can't verify (exact portal steps, `.pi` cert mechanics) — attribute resolution/certs to Pi Network.
 - **Pi Browser nav quirk:** open Pi ecosystem pages via `window.open(url, '_blank')` — this triggers Pi Browser's native deep-link / app-switch behaviour and preserves the auth session. Do NOT use `window.location.href` for external pinet/Pi ecosystem URLs: it navigates the dApp frame itself, stripping Pi Auth headers and causing "An unexpected error occurred while authenticating."
+
+## Gateway-serves-CID verification must be 3-state, not boolean
+When verifying that an IPFS gateway actually serves a CID (the honest substitute for "is the domain live"), the public Pinata gateway (`gateway.pinata.cloud/ipfs/<cid>`) behaves in non-obvious ways:
+- A **valid** CID is answered with a **301 redirect** to a subdomain form — you MUST use `redirect: 'follow'` (HEAD then ranged GET) or you'll misread the 301 as failure.
+- A **bogus** CID returns 400.
+- It **rate-limits aggressively with 429**, and may be transiently unreachable.
+
+**Why:** a 429/timeout means "we couldn't check right now," NOT "the CID isn't served." Labeling that "not live" is a lie under the master honesty rule.
+
+**How to apply:** the verifier returns three states — `served` (confirmed live), `indeterminate` (429 / network error / unreachable), `not-served` (definitive 4xx like 400/404). `classifyGatewayStatus()` maps 429 → indeterminate. The client must render all three distinctly; never collapse indeterminate into a red "down".

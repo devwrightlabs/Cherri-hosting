@@ -3,7 +3,7 @@ import Card from '../ui/Card';
 import Button from '../ui/Button';
 import { PI_DOMAIN_PORTAL_URL } from '../../lib/constants';
 import { openExternal } from '../../lib/openExternal';
-import { projectsApi } from '../../lib/api';
+import { projectsApi, deploymentsApi, DomainTarget } from '../../lib/api';
 import { Project } from '../../types';
 import { useAuth } from '../../providers/AuthProvider';
 import { useToast } from '../ui/Toast';
@@ -30,6 +30,12 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
   const [saveError, setSaveError] = useState('');
   const [saveSuccess, setSaveSuccess] = useState('');
 
+  // Honest gateway verification (Feature C): the exact .pi target values plus a
+  // REAL gateway-serves-CID check fetched from the server on demand.
+  const [domainTarget, setDomainTarget] = useState<DomainTarget | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState('');
+
   // Projects that already have a domain recorded (for display).
   const [localMappings, setLocalMappings] = useState<Record<string, string>>({});
 
@@ -51,6 +57,13 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
   // The Dashboard fetch returns only the latest deployment per project.
   const latest = selectedProject?.deployments?.[0];
+
+  // A prior verification belongs to the previously selected project — clear it
+  // whenever the selection changes so we never show a stale "live" result.
+  useEffect(() => {
+    setDomainTarget(null);
+    setVerifyError('');
+  }, [selectedProjectId]);
 
   const tierLimit = TIER_DOMAIN_LIMITS[user?.tier ?? 'FREE'] ?? 1;
   const mappedCount = Object.keys(localMappings).length;
@@ -85,6 +98,24 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
       setSaveError(msg);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleVerify = async () => {
+    if (!latest?.id) return;
+    setIsVerifying(true);
+    setVerifyError('');
+    setDomainTarget(null);
+    try {
+      const { data } = await deploymentsApi.domainTarget(latest.id);
+      setDomainTarget(data);
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+        'Could not verify this deployment.';
+      setVerifyError(msg);
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -198,6 +229,75 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
                         Copy
                       </button>
                     </div>
+                  </div>
+                )}
+
+                {/* Honest gateway verification + DNSLink target (Feature C) */}
+                {latest.cid && (
+                  <div className="border-t border-surface-700/40 pt-2 space-y-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="w-full justify-center"
+                      isLoading={isVerifying}
+                      disabled={latest.status !== 'ACTIVE'}
+                      onClick={() => void handleVerify()}
+                    >
+                      {domainTarget ? 'Re-check it’s live' : 'Verify my site is live'}
+                    </Button>
+
+                    {latest.status !== 'ACTIVE' && (
+                      <p className="text-surface-500 text-[11px]">
+                        Verification runs once the deployment is live.
+                      </p>
+                    )}
+
+                    {domainTarget && (
+                      <>
+                        {domainTarget.served ? (
+                          <p className="text-emerald-400 text-xs leading-relaxed">
+                            ✓ Live on IPFS — the gateway served your site
+                            {domainTarget.gatewayStatus ? ` (HTTP ${domainTarget.gatewayStatus})` : ''}.
+                            Pointing your <span className="font-mono">.pi</span> name here is still done
+                            in Pi's portal; Cherri can't verify <span className="font-mono">.pi</span>{' '}
+                            resolution.
+                          </p>
+                        ) : domainTarget.indeterminate ? (
+                          <p className="text-surface-400 text-xs leading-relaxed">
+                            Couldn't verify right now — {domainTarget.reason}
+                          </p>
+                        ) : (
+                          <p className="text-amber-400 text-xs leading-relaxed">
+                            Not serving yet
+                            {domainTarget.gatewayStatus ? ` (HTTP ${domainTarget.gatewayStatus})` : ''}.{' '}
+                            {domainTarget.reason}
+                          </p>
+                        )}
+
+                        <div className="border-t border-surface-700/40 pt-2">
+                          <p className="text-[10px] text-surface-500 uppercase tracking-wider mb-1">
+                            DNSLink TXT value (advanced)
+                          </p>
+                          <p className="text-surface-500 text-[11px] leading-relaxed mb-1.5">
+                            If your domain host supports a DNSLink TXT record, set this exact value.
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs text-ink break-all min-w-0 flex-1">
+                              {domainTarget.dnslink}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => void copy(domainTarget.dnslink, 'DNSLink')}
+                              className="text-cherry-400 hover:text-cherry-300 text-xs flex-shrink-0"
+                            >
+                              Copy
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {verifyError && <p className="text-red-400 text-xs">{verifyError}</p>}
                   </div>
                 )}
               </div>

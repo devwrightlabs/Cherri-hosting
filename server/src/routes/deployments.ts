@@ -24,6 +24,15 @@ import {
   releaseStage,
   deleteStage,
 } from '../services/stagingStore';
+import {
+  enqueueBuild,
+  getBuildJob,
+  getBuildLogs,
+  hasActiveBuild,
+  detectPackageManager,
+  readBuildScript,
+  type BuildFinalizer,
+} from '../services/buildService';
 
 export const deploymentsRouter = Router();
 deploymentsRouter.use(piAuthMiddleware);
@@ -103,6 +112,333 @@ function parseFilePaths(raw: unknown): string[] | null {
   } catch {
     return null;
   }
+}
+
+// ─── Shared build-or-stage responder ───────────────────────────────────────────
+
+interface QuotaUser {
+  tier: string;
+  storageUsed: bigint;
+  storageLimit: bigint;
+}
+
+/**
+ * Given an assembled set of upload files, either stage a deployable static site
+ * immediately, queue a REAL server-side build, or halt honestly. Shared by the
+ * file-upload (/build-stage) and GitHub-import (/import-github) ingestion paths
+ * so both reuse the identical staged-deploy + build invariants.
+ */
+async function respondBuildOrStage(
+  res: Response,
+  ctx: {
+    userId: string;
+    projectId: string;
+    projectName: string;
+    user: QuotaUser;
+    allFiles: DeployFile[];
+    rawUploadBytes: number;
+  },
+): Promise<void> {
+  const { userId, projectId, projectName, user, allFiles, rawUploadBytes } = ctx;
+
+  if (allFiles.length === 0) {
+    res.status(400).json({ error: 'No deployable files found.' });
+    return;
+  }
+
+  const resolution = resolveDeployable(allFiles);
+
+  // Already a deployable static / pre-built site → stage now, no build.
+  if (resolution.deployable) {
+    const deployBytes = resolution.files.reduce((acc, f) => acc + f.buffer.length, 0);
+    if (user.storageUsed + BigInt(deployBytes) > user.storageLimit) {
+      res.status(402).json({
+        error: 'Storage quota exceeded. Upgrade to get more IPFS storage.',
+        kind: 'storage_limit',
+      });
+      return;
+    }
+    const sdk = scanPiSdk(resolution.files);
+    const stage = createStage({
+      userId,
+      projectId,
+      projectName,
+      rootPrefix: resolution.rootPrefix,
+      entryPoint: resolution.entryPoint as string,
+      files: resolution.files,
+      totalBytes: deployBytes,
+    });
+    res.status(200).json({
+      needsBuild: false,
+      deployable: true,
+      stageId: stage.id,
+      projectType: resolution.projectType,
+      rootPrefix: resolution.rootPrefix,
+      entryPoint: resolution.entryPoint,
+      fileCount: resolution.files.length,
+      totalBytes: deployBytes,
+      fileTree: resolution.files
+        .slice(0, 50)
+        .map((f) => ({ path: f.path, size: f.buffer.length })),
+      sdk,
+      previewPath: `/preview/${stage.id}/`,
+    });
+    return;
+  }
+
+  // Not statically deployable. Build it only if there is a build script.
+  const buildScript = readBuildScript(allFiles);
+  if (!buildScript) {
+    res.status(200).json({
+      needsBuild: false,
+      deployable: false,
+      haltReason: resolution.haltReason,
+      projectType: resolution.projectType,
+      fileCount: allFiles.length,
+      totalBytes: rawUploadBytes,
+      fileTree: allFiles
+        .slice(0, 50)
+        .map((f) => ({ path: f.path, size: f.buffer.length })),
+    });
+    return;
+  }
+
+  if (hasActiveBuild(userId)) {
+    res.status(429).json({
+      error: 'You already have a build running. Wait for it to finish before starting another.',
+    });
+    return;
+  }
+
+  const packageManager = detectPackageManager(allFiles);
+
+  // Finalizer runs after a successful build: re-check storage quota against the
+  // BUILT output and create the stage (same invariants as /stage).
+  const finalize: BuildFinalizer = async (output) => {
+    const resolved = resolveDeployable(output.files);
+    if (!resolved.deployable) {
+      return {
+        ok: false,
+        error: resolved.haltReason ?? 'The build output is not a deployable site.',
+      };
+    }
+    const deployBytes = resolved.files.reduce((acc, f) => acc + f.buffer.length, 0);
+    const freshUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (!freshUser) return { ok: false, error: 'User not found.' };
+    if (freshUser.storageUsed + BigInt(deployBytes) > freshUser.storageLimit) {
+      return {
+        ok: false,
+        error: 'Storage quota exceeded. Upgrade to get more IPFS storage.',
+      };
+    }
+    const sdk = scanPiSdk(resolved.files);
+    const stage = createStage({
+      userId,
+      projectId,
+      projectName,
+      rootPrefix: resolved.rootPrefix,
+      entryPoint: resolved.entryPoint as string,
+      files: resolved.files,
+      totalBytes: deployBytes,
+    });
+    return {
+      ok: true,
+      stage: {
+        stageId: stage.id,
+        previewPath: `/preview/${stage.id}/`,
+        entryPoint: resolved.entryPoint as string,
+        projectType: resolved.projectType,
+        fileCount: resolved.files.length,
+        totalBytes: deployBytes,
+        sdk,
+      },
+    };
+  };
+
+  const job = enqueueBuild({
+    userId,
+    projectId,
+    projectName,
+    files: allFiles,
+    packageManager,
+    finalize,
+  });
+
+  logger.info('Build queued', { jobId: job.id, projectId, packageManager });
+  res.status(202).json({ needsBuild: true, jobId: job.id, packageManager });
+}
+
+// ─── GitHub public-repo import (Feature B) ─────────────────────────────────────
+
+interface GitHubRepoRef {
+  owner: string;
+  repo: string;
+  /** Branch / tag / commit pulled from a /tree/<ref> URL, if any. */
+  ref?: string;
+}
+
+/** Parse an owner/repo (+ optional ref) from common GitHub URL shapes. */
+function parseGitHubRepo(input: string): GitHubRepoRef | null {
+  const s = input.trim().replace(/\.git$/i, '');
+  const urlMatch = s.match(
+    /^(?:https?:\/\/)?(?:www\.)?github\.com\/([^/\s]+)\/([^/\s]+)(?:\/tree\/([^\s?#]+))?/i,
+  );
+  if (urlMatch) {
+    return {
+      owner: urlMatch[1],
+      repo: urlMatch[2],
+      ref: urlMatch[3] ? decodeURIComponent(urlMatch[3]) : undefined,
+    };
+  }
+  const shorthand = s.match(/^([\w.-]+)\/([\w.-]+)$/);
+  if (shorthand) return { owner: shorthand[1], repo: shorthand[2] };
+  return null;
+}
+
+type GitHubMetaResult =
+  | { ok: true; defaultBranch: string }
+  | { ok: false; status: number; error: string };
+
+/** Resolve repo metadata via the public GitHub API (also detects private/404). */
+async function fetchGitHubMeta(owner: string, repo: string): Promise<GitHubMetaResult> {
+  let resp: globalThis.Response;
+  try {
+    resp = await fetch(
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+      {
+        headers: { 'User-Agent': 'Cherri-Hosting', Accept: 'application/vnd.github+json' },
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+  } catch {
+    return { ok: false, status: 502, error: 'Could not reach GitHub. Check the URL and try again.' };
+  }
+  if (resp.status === 404) {
+    return {
+      ok: false,
+      status: 404,
+      error:
+        "Repository not found. If it's private, Cherri can't import it yet — private repos need an access token, which we don't fake.",
+    };
+  }
+  if (resp.status === 403) {
+    return {
+      ok: false,
+      status: 429,
+      error: 'GitHub rate limit reached for this server. Please try again in a little while.',
+    };
+  }
+  if (!resp.ok) {
+    return { ok: false, status: 502, error: `GitHub returned an error (${resp.status}).` };
+  }
+  const json = (await resp.json()) as { default_branch?: string; private?: boolean };
+  if (json.private) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'That repository is private. Cherri can only import public repositories right now.',
+    };
+  }
+  return { ok: true, defaultBranch: json.default_branch || 'main' };
+}
+
+type ZipDownloadResult =
+  | { ok: true; buffer: Buffer }
+  | { ok: false; status: number; error: string; kind?: string };
+
+/**
+ * Read a response body into a Buffer, streaming chunk-by-chunk and aborting the
+ * moment the running total exceeds `maxBytes`. This enforces the tier cap BEFORE
+ * allocating the whole body, so a missing/incorrect content-length can't be used
+ * to force the server to buffer an unbounded archive into memory.
+ */
+async function readCappedBody(
+  resp: globalThis.Response,
+  maxBytes: number,
+): Promise<Buffer | 'too_large'> {
+  const reader = resp.body?.getReader();
+  if (!reader) {
+    // No readable stream — fall back to a buffered read with a post-guard.
+    const buf = Buffer.from(await resp.arrayBuffer());
+    return buf.length > maxBytes ? 'too_large' : buf;
+  }
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return 'too_large';
+      }
+      chunks.push(Buffer.from(value));
+    }
+  }
+  return Buffer.concat(chunks);
+}
+
+/** Download a repo archive (zip) from codeload, capped to the tier byte limit. */
+async function downloadRepoZip(
+  owner: string,
+  repo: string,
+  ref: string,
+  refExplicit: boolean,
+  maxBytes: number,
+): Promise<ZipDownloadResult> {
+  const base = `https://codeload.github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/zip`;
+  const e = encodeURIComponent(ref);
+  // For an explicit ref, try branch → tag → raw commit; otherwise the default branch.
+  const candidates = refExplicit
+    ? [`${base}/refs/heads/${e}`, `${base}/refs/tags/${e}`, `${base}/${e}`]
+    : [`${base}/refs/heads/${e}`];
+
+  for (const url of candidates) {
+    let resp: globalThis.Response;
+    try {
+      resp = await fetch(url, {
+        headers: { 'User-Agent': 'Cherri-Hosting' },
+        signal: AbortSignal.timeout(60_000),
+      });
+    } catch {
+      continue;
+    }
+    if (resp.status === 404) continue;
+    if (!resp.ok) {
+      return {
+        ok: false,
+        status: 502,
+        error: `GitHub returned an error downloading the archive (${resp.status}).`,
+      };
+    }
+    const declared = Number(resp.headers.get('content-length') || '0');
+    if (declared && declared > maxBytes) {
+      return {
+        ok: false,
+        status: 413,
+        error: `That repository's archive (${(declared / 1024 / 1024).toFixed(1)} MB) exceeds your plan's per-import limit. Upgrade to import larger repos.`,
+        kind: 'upload_too_large',
+      };
+    }
+    const body = await readCappedBody(resp, maxBytes);
+    if (body === 'too_large') {
+      return {
+        ok: false,
+        status: 413,
+        error: "That repository's archive exceeds your plan's per-import limit. Upgrade to import larger repos.",
+        kind: 'upload_too_large',
+      };
+    }
+    return { ok: true, buffer: body };
+  }
+  return {
+    ok: false,
+    status: 404,
+    error: refExplicit
+      ? `Couldn't find branch, tag, or commit "${ref}" in that repository.`
+      : "Couldn't download the repository archive from GitHub.",
+  };
 }
 
 // ─── Shared pin pipeline ───────────────────────────────────────────────────────
@@ -412,6 +748,338 @@ deploymentsRouter.post(
       }
       logger.error('Failed to stage upload', { error: err });
       res.status(500).json({ error: 'Failed to stage upload' });
+    }
+  },
+);
+
+/**
+ * POST /api/deployments/build-stage — upload, and if the project needs building,
+ * run a REAL server-side build, then stage the output for preview + pin.
+ *
+ * - Already-deployable static / pre-built upload → staged immediately
+ *   (needsBuild:false), exactly like /stage.
+ * - package.json with a `build` script → a sandboxed build job is queued
+ *   (202 + jobId); the client polls GET /builds/:jobId for streamed logs and the
+ *   resulting stage. We never fake the build — failures surface the real logs.
+ * - Otherwise → honest halt (no build script and no static entry point).
+ */
+deploymentsRouter.post(
+  '/build-stage',
+  upload.array('files', 2000),
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const parsed = z.object({ projectId: z.string().min(1) }).safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'projectId is required' });
+      return;
+    }
+    const { projectId } = parsed.data;
+
+    const multerFiles: Express.Multer.File[] = Array.isArray(req.files) ? req.files : [];
+    if (multerFiles.length === 0) {
+      res.status(400).json({ error: 'No files uploaded' });
+      return;
+    }
+
+    const clientFilePaths = parseFilePaths(req.body.filePaths);
+
+    try {
+      const project = await prisma.project.findFirst({
+        where: { id: projectId, userId: req.user!.id },
+      });
+      if (!project) {
+        res.status(404).json({ error: 'Project not found' });
+        return;
+      }
+
+      const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+      if (!user) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+
+      const rawUploadSize = multerFiles.reduce((acc, f) => acc + BigInt(f.size), 0n);
+      if (rawUploadSize > BigInt(maxUploadBytesForTier(user.tier))) {
+        res.status(413).json({
+          error: `Upload size (${(Number(rawUploadSize) / 1024 / 1024).toFixed(1)} MB) exceeds your plan's per-upload limit. Upgrade to upload larger projects.`,
+          kind: 'upload_too_large',
+        });
+        return;
+      }
+
+      const { files, single } = assembleUpload(multerFiles, clientFilePaths);
+      const allFiles: DeployFile[] =
+        files ??
+        (single
+          ? [{ buffer: single.buffer, path: single.name, mimeType: single.mimeType }]
+          : []);
+
+      if (allFiles.length === 0) {
+        res.status(400).json({ error: 'No deployable files found in the upload.' });
+        return;
+      }
+
+      await respondBuildOrStage(res, {
+        userId: req.user!.id,
+        projectId,
+        projectName: project.name,
+        user,
+        allFiles,
+        rawUploadBytes: Number(rawUploadSize),
+      });
+    } catch (err) {
+      if (err instanceof UploadTooLargeError) {
+        res.status(413).json({ error: err.message, kind: 'upload_too_large' });
+        return;
+      }
+      logger.error('Failed to process build-stage upload', { error: err });
+      res.status(500).json({ error: 'Failed to process upload' });
+    }
+  },
+);
+
+/**
+ * POST /api/deployments/import-github — import a PUBLIC GitHub repo by URL and
+ * run it through the exact same stage-or-build pipeline as a file upload. No git
+ * binary: the repo archive is fetched over HTTPS from codeload. Private repos are
+ * gated honestly (they need a token we don't have) — never faked.
+ */
+deploymentsRouter.post(
+  '/import-github',
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const parsed = z
+      .object({
+        projectId: z.string().min(1),
+        repoUrl: z.string().min(1),
+        ref: z.string().trim().min(1).optional(),
+      })
+      .safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'projectId and repoUrl are required.' });
+      return;
+    }
+    const { projectId, repoUrl, ref } = parsed.data;
+
+    const repoRef = parseGitHubRepo(repoUrl);
+    if (!repoRef) {
+      res.status(400).json({
+        error: "That doesn't look like a GitHub repository URL. Use https://github.com/owner/repo.",
+      });
+      return;
+    }
+
+    try {
+      const project = await prisma.project.findFirst({
+        where: { id: projectId, userId: req.user!.id },
+      });
+      if (!project) {
+        res.status(404).json({ error: 'Project not found' });
+        return;
+      }
+      const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+      if (!user) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+
+      // 1) Resolve metadata (also honestly detects private / not-found repos).
+      const explicitRef = ref ?? repoRef.ref;
+      const meta = await fetchGitHubMeta(repoRef.owner, repoRef.repo);
+      if (!meta.ok) {
+        res.status(meta.status).json({ error: meta.error });
+        return;
+      }
+
+      // 2) Download the archive, capped to the user's per-upload tier limit.
+      const branch = explicitRef ?? meta.defaultBranch;
+      const dl = await downloadRepoZip(
+        repoRef.owner,
+        repoRef.repo,
+        branch,
+        Boolean(explicitRef),
+        maxUploadBytesForTier(user.tier),
+      );
+      if (!dl.ok) {
+        res.status(dl.status).json({ error: dl.error, kind: dl.kind });
+        return;
+      }
+
+      // 3) Extract with the same caps + ignore filter as a ZIP upload (the
+      //    codeload archive nests everything under a single root which
+      //    extractZipToFiles strips).
+      let files: DeployFile[];
+      try {
+        files = extractZipToFiles(dl.buffer);
+      } catch (err) {
+        if (err instanceof UploadTooLargeError) {
+          res.status(413).json({ error: err.message, kind: 'upload_too_large' });
+          return;
+        }
+        throw err;
+      }
+
+      const rawUploadBytes = files.reduce((acc, f) => acc + f.buffer.length, 0);
+      await respondBuildOrStage(res, {
+        userId: req.user!.id,
+        projectId,
+        projectName: project.name,
+        user,
+        allFiles: files,
+        rawUploadBytes,
+      });
+    } catch (err) {
+      logger.error('Failed to import GitHub repository', { error: err });
+      res.status(500).json({ error: 'Failed to import the repository.' });
+    }
+  },
+);
+
+/**
+ * GET /api/deployments/builds/:jobId — poll a build's status, streamed logs, and
+ * (on success) the resulting stage for preview + pin.
+ */
+deploymentsRouter.get(
+  '/builds/:jobId',
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const jobId = getRouteParam(req.params.jobId);
+    const job = getBuildJob(jobId, req.user!.id);
+    if (!job) {
+      res.status(404).json({ error: 'Build not found or expired.' });
+      return;
+    }
+    res.json({
+      status: job.status,
+      packageManager: job.packageManager,
+      logs: getBuildLogs(jobId, req.user!.id) ?? '',
+      error: job.error,
+      stage: job.stage,
+    });
+  },
+);
+
+// ─── Pi domain target + honest gateway verification (Feature C) ────────────────
+
+type GatewayCheck = {
+  /** True only when the gateway actually returned the content. */
+  served: boolean;
+  /**
+   * True when the check is inconclusive (rate-limited / unreachable) rather than
+   * a definitive "not served". The site may well be live — we just couldn't
+   * confirm it this moment. Kept distinct so the UI never says "not live" when
+   * it actually means "couldn't verify".
+   */
+  indeterminate: boolean;
+  status: number | null;
+  reason?: string;
+};
+
+/** Map a non-success HTTP status to an honest served:false result. */
+function classifyGatewayStatus(status: number): GatewayCheck {
+  if (status === 429) {
+    return {
+      served: false,
+      indeterminate: true,
+      status,
+      reason:
+        'The public IPFS gateway is rate-limiting verification right now — your site may already be live. Try again in a moment.',
+    };
+  }
+  return { served: false, indeterminate: false, status, reason: `Gateway returned HTTP ${status}.` };
+}
+
+/**
+ * REAL check that the public IPFS gateway actually serves the deployment's CID.
+ * Tries a cheap HEAD first (following redirects — the public gateway 301s to a
+ * subdomain), then a 1-byte ranged GET for gateways that reject HEAD. Never
+ * fabricates a "connected" result: a non-2xx is reported truthfully, and a
+ * rate-limit / network failure is flagged indeterminate (not "down").
+ */
+async function verifyGatewayServesCid(gatewayUrl: string): Promise<GatewayCheck> {
+  try {
+    const head = await fetch(gatewayUrl, {
+      method: 'HEAD',
+      redirect: 'follow',
+      headers: { 'User-Agent': 'Cherri-Hosting' },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (head.ok) return { served: true, indeterminate: false, status: head.status };
+    // HEAD is often blocked/unsupported (or rate-limited) — retry with a GET
+    // unless the status is already a definitive answer.
+    if (![403, 405, 429, 501].includes(head.status)) {
+      return classifyGatewayStatus(head.status);
+    }
+  } catch {
+    // network/timeout on HEAD — try a GET before giving up.
+  }
+
+  try {
+    const get = await fetch(gatewayUrl, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: { 'User-Agent': 'Cherri-Hosting', Range: 'bytes=0-0' },
+      signal: AbortSignal.timeout(20_000),
+    });
+    // Don't drain the body — we only need the status line.
+    await get.body?.cancel().catch(() => undefined);
+    if (get.ok || get.status === 206) return { served: true, indeterminate: false, status: get.status };
+    return classifyGatewayStatus(get.status);
+  } catch {
+    return {
+      served: false,
+      indeterminate: true,
+      status: null,
+      reason:
+        'Could not reach the IPFS gateway to verify — it may still be propagating. Try again shortly.',
+    };
+  }
+}
+
+/**
+ * GET /api/deployments/:deploymentId/domain-target — return the EXACT values a
+ * user points their .pi domain at (the gateway URL and the DNSLink TXT value
+ * `dnslink=/ipfs/<cid>`), plus a REAL check that the gateway serves the CID.
+ *
+ * Honesty boundary: we can verify our gateway serves the content; we CANNOT
+ * verify that a .pi name resolves to it (Pi Network controls .pi resolution and
+ * exposes no public API), so the response never claims the domain is connected.
+ */
+deploymentsRouter.get(
+  '/:deploymentId/domain-target',
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const deploymentId = getRouteParam(req.params.deploymentId);
+    try {
+      const deployment = await prisma.deployment.findFirst({
+        where: { id: deploymentId, project: { userId: req.user!.id } },
+      });
+      if (!deployment) {
+        res.status(404).json({ error: 'Deployment not found' });
+        return;
+      }
+      if (!deployment.cid) {
+        res.status(409).json({
+          error: 'This deployment has no IPFS content yet. Deploy it to IPFS first.',
+        });
+        return;
+      }
+
+      const cid = deployment.cid;
+      const gatewayUrl = deployment.gateway || `https://gateway.pinata.cloud/ipfs/${cid}`;
+      const check = await verifyGatewayServesCid(gatewayUrl);
+
+      res.json({
+        cid,
+        gatewayUrl,
+        ipfsPath: `/ipfs/${cid}`,
+        // Standard DNSLink TXT value for pointing a domain at IPFS content.
+        dnslink: `dnslink=/ipfs/${cid}`,
+        served: check.served,
+        indeterminate: check.indeterminate,
+        gatewayStatus: check.status,
+        reason: check.reason,
+        checkedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      logger.error('Failed to build domain target', { error: err });
+      res.status(500).json({ error: 'Failed to verify the deployment.' });
     }
   },
 );

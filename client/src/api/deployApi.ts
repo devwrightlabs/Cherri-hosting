@@ -144,6 +144,102 @@ export async function pinStaged(stageId: string): Promise<DeployFilesResult> {
   return (res.data as { deployment: DeployFilesResult }).deployment;
 }
 
+// ─── Server-side build (Vercel-style) ────────────────────────────────────────
+
+export type BuildStatus =
+  | 'QUEUED'
+  | 'INSTALLING'
+  | 'BUILDING'
+  | 'COLLECTING'
+  | 'DONE'
+  | 'FAILED';
+
+/**
+ * Response of POST /build-stage. Either the upload was already deployable and is
+ * staged immediately (needsBuild:false → a normal StageResult), or a real
+ * server-side build was queued (needsBuild:true → poll getBuild with the jobId).
+ */
+export type BuildStageResult =
+  | ({ needsBuild: false } & StageResult)
+  | { needsBuild: true; jobId: string; packageManager: string };
+
+/** A build job's live state — its real streamed logs and, on success, its stage. */
+export interface BuildJobInfo {
+  status: BuildStatus;
+  packageManager: string;
+  logs: string;
+  error?: string;
+  stage?: {
+    stageId: string;
+    previewPath: string;
+    entryPoint: string;
+    projectType: string;
+    fileCount: number;
+    totalBytes: number;
+    sdk: PiSdkScan;
+  };
+}
+
+/**
+ * POST /api/deployments/build-stage — upload, and if the project needs building,
+ * run a REAL server-side build before staging. Static/pre-built uploads are
+ * staged immediately. Never fakes a build — failures surface the real logs.
+ */
+export async function buildStage(
+  projectId: string,
+  files: File[],
+  filePaths: string[],
+  onUploadProgress?: (percent: number) => void,
+): Promise<BuildStageResult> {
+  const formData = new FormData();
+  formData.append('projectId', projectId);
+  formData.append('filePaths', JSON.stringify(filePaths));
+  files.forEach((f, i) => {
+    formData.append('files', f, filePaths[i] ?? f.name);
+  });
+
+  const res = await apiClient.post('/deployments/build-stage', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 180_000,
+    onUploadProgress: onUploadProgress
+      ? (event) => {
+          if (event.total) {
+            onUploadProgress(Math.round((event.loaded / event.total) * 100));
+          }
+        }
+      : undefined,
+  });
+
+  return res.data as BuildStageResult;
+}
+
+/**
+ * GET /api/deployments/builds/:jobId — poll a build's status + streamed logs.
+ */
+export async function getBuild(jobId: string): Promise<BuildJobInfo> {
+  const res = await apiClient.get(`/deployments/builds/${jobId}`);
+  return res.data as BuildJobInfo;
+}
+
+/**
+ * POST /api/deployments/import-github — import a PUBLIC GitHub repo by URL and
+ * run it through the same stage-or-build pipeline. Returns the same result shape
+ * as buildStage (immediate stage, or a queued build to poll). Private/not-found
+ * repos surface an honest server error, never a faked import.
+ */
+export async function importGitHub(
+  projectId: string,
+  repoUrl: string,
+  ref?: string,
+): Promise<BuildStageResult> {
+  const res = await apiClient.post(
+    '/deployments/import-github',
+    { projectId, repoUrl, ref: ref?.trim() ? ref.trim() : undefined },
+    { timeout: 180_000 },
+  );
+  return res.data as BuildStageResult;
+}
+
 /**
  * Absolute URL for the sandboxed preview iframe. The preview is served by the
  * API origin (outside `/api`), so it must be loaded from API_BASE rather than

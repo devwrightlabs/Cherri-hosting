@@ -3,7 +3,8 @@
 - [Folder upload architecture](folder-upload-architecture.md) — FileSystemEntry API + webkitdirectory; server receives filePaths JSON alongside files; adm-zip handles ZIP extraction with common-root stripping.
 - [Multi-tier subscriptions](multi-tier-subscriptions.md) — entitlement from server Pi amount + payer uid; resolveTierFromAmount is exact-match over current-vs-legacy tables; never complete a payment you can't honor.
 - [Pi env toggle](pi-env-toggle.md) — testnet/mainnet is a standalone store, not in providers; mainnet honestly gated (no key→503, no fallback); env threaded + persisted on payment rows.
-- [Pi domain loop](pi-domain-loop.md) — .pi domain→site connection can't be auto-wired (Pi controls resolution/certs, no public API); guide user to point domain manually, never fake "connected".
+- [Pi domain loop](pi-domain-loop.md) — .pi domain→site can't be auto-wired (Pi controls resolution, no API); guide manual setup; gateway-serves-CID check is 3-state (served/indeterminate/not-served), 429≠down.
+- [GitHub import](github-import.md) — public repo via codeload zip (no git, SSRF-closed, strip `<repo>-<ref>/` root); streamed cap download; build runs same-UID on Replit = disclosed residual risk, not a true sandbox.
 - [Multi-package repo layout](monorepo-package-layout.md) — 3 package.json (root/client/server), no workspaces; install client/server deps in their own dir, NOT via root-installing tools.
 - [Staged deploy invariants](staged-deploy-invariants.md) — every upload path must shouldIgnoreFile before staging/pinning (preview is public by token); never pin unbuilt apps; pin claimed atomically.
 - [Pinata IPFS wiring](pinata-ipfs-wiring.md) — PINATA_JWT (Bearer) primary, key/secret fallback; trim in lockstep; both deploy poll paths must keep liveDeployment on FAILED to surface real errors.
