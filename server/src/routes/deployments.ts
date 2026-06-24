@@ -6,6 +6,7 @@ import { prisma } from '../utils/prismaClient';
 import { pinDirectory, pinFile, describePinError } from '../services/ipfs';
 import { logger } from '../utils/logger';
 import { isPinataConfigured } from '../utils/integrations';
+import { isRailwayConfigured } from '../services/railway';
 import { getRouteParam } from '../utils/routeParams';
 import { maxUploadBytesForTier, TIER2_MAX_UPLOAD_BYTES } from '../utils/constants';
 import {
@@ -13,6 +14,7 @@ import {
   getMimeType,
   extractZipToFiles,
   detectProjectType,
+  detectBackendNeed,
   resolveDeployable,
   scanPiSdk,
   shouldIgnoreFile,
@@ -146,6 +148,16 @@ async function respondBuildOrStage(
     return;
   }
 
+  // Does this project need a server-side backend? PAID tiers can deploy one
+  // (a service + database); the front-end still pins to IPFS regardless. The
+  // offer is surfaced here; provisioning is enforced server-side on the
+  // /backend-deploy route. Free = front-end only.
+  const backend = detectBackendNeed(allFiles);
+  const backendEligible = user.tier !== 'FREE';
+  if (backend.needsBackend) {
+    logger.info('Backend need detected', { projectId, backendEligible, reasons: backend.reasons });
+  }
+
   const resolution = resolveDeployable(allFiles);
 
   // Already a deployable static / pre-built site → stage now, no build.
@@ -181,6 +193,8 @@ async function respondBuildOrStage(
         .slice(0, 50)
         .map((f) => ({ path: f.path, size: f.buffer.length })),
       sdk,
+      needsBackend: backend.needsBackend,
+      backendEligible,
       previewPath: `/preview/${stage.id}/`,
     });
     return;
@@ -194,6 +208,8 @@ async function respondBuildOrStage(
       deployable: false,
       haltReason: resolution.haltReason,
       projectType: resolution.projectType,
+      needsBackend: backend.needsBackend,
+      backendEligible,
       fileCount: allFiles.length,
       totalBytes: rawUploadBytes,
       fileTree: allFiles
@@ -265,7 +281,13 @@ async function respondBuildOrStage(
   });
 
   logger.info('Build queued', { jobId: job.id, projectId, packageManager });
-  res.status(202).json({ needsBuild: true, jobId: job.id, packageManager });
+  res.status(202).json({
+    needsBuild: true,
+    jobId: job.id,
+    packageManager,
+    needsBackend: backend.needsBackend,
+    backendEligible,
+  });
 }
 
 // ─── GitHub public-repo import (Feature B) ─────────────────────────────────────
@@ -833,6 +855,85 @@ deploymentsRouter.post(
       }
       logger.error('Failed to process build-stage upload', { error: err });
       res.status(500).json({ error: 'Failed to process upload' });
+    }
+  },
+);
+
+/**
+ * POST /api/deployments/backend-deploy — request a server-side backend (a
+ * service + Postgres database) for a project that needs one.
+ *
+ * PAID TIERS ONLY — Free plans are front-end (IPFS) only. The paid-tier gate is
+ * ENFORCED here server-side so a tampered client can't provision a backend.
+ *
+ * Phase 2 status: detection + gating are live. The actual provider provisioning
+ * (create service + Postgres, enable scale-to-zero, deploy code, capture public
+ * URL) is wired in once the operator's provider workspace can provision —
+ * verified live on a disposable project with teardown. Until then this degrades
+ * HONESTLY with a 503 instead of faking a backend that doesn't exist.
+ */
+deploymentsRouter.post(
+  '/backend-deploy',
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const parsed = z.object({ projectId: z.string().min(1) }).safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'projectId is required' });
+      return;
+    }
+    const { projectId } = parsed.data;
+
+    try {
+      const project = await prisma.project.findFirst({
+        where: { id: projectId, userId: req.user!.id },
+      });
+      if (!project) {
+        res.status(404).json({ error: 'Project not found' });
+        return;
+      }
+
+      const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+      if (!user) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+
+      // PAID TIERS ONLY. Reload from the DB (never trust the client) and reject
+      // Free with a clear, honest upgrade prompt — the front-end stays on IPFS.
+      if (user.tier === 'FREE') {
+        res.status(402).json({
+          error:
+            'Deploying with a backend (server + database) requires a paid plan. Upgrade to add one — your front-end stays on IPFS either way.',
+          kind: 'tier_required',
+        });
+        return;
+      }
+
+      // Honest integration availability: no provider token → unavailable, not faked.
+      if (!isRailwayConfigured()) {
+        res.status(503).json({
+          error:
+            'Backend deployments are temporarily unavailable. Your front-end can still deploy to IPFS.',
+          kind: 'backend_unavailable',
+        });
+        return;
+      }
+
+      // Live provisioning is finalized once the provider workspace can provision
+      // (verified on a disposable project + teardown). Until then degrade
+      // honestly rather than fake a server. No DB row is created for a backend
+      // that doesn't exist.
+      logger.info('Backend deploy requested (provisioning not yet enabled)', {
+        projectId,
+        tier: user.tier,
+      });
+      res.status(503).json({
+        error:
+          "Backend deployments aren't available yet — this is being finalized. Your front-end can still deploy to IPFS now.",
+        kind: 'backend_unavailable',
+      });
+    } catch (err) {
+      logger.error('Backend deploy request failed', { error: err });
+      res.status(500).json({ error: 'Failed to process the backend deploy request.' });
     }
   },
 );

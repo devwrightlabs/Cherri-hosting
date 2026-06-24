@@ -180,6 +180,108 @@ export function detectProjectType(
   return { type, entryPoint };
 }
 
+/**
+ * Server frameworks whose presence in package.json means the project runs a
+ * long-lived server process (not just static files), so it needs a backend.
+ */
+const SERVER_FRAMEWORK_DEPS = [
+  'express',
+  'fastify',
+  'koa',
+  '@hapi/hapi',
+  'hapi',
+  'hono',
+  'restify',
+  'polka',
+  'micro',
+  'connect',
+  '@nestjs/core',
+  'sails',
+  '@adonisjs/core',
+  '@feathersjs/feathers',
+  'apollo-server',
+  '@apollo/server',
+  'socket.io',
+];
+
+export interface BackendNeed {
+  /** True when the project needs a running server, not just static hosting. */
+  needsBackend: boolean;
+  /** Human-readable signals behind the decision (for logging + honest UI hints). */
+  reasons: string[];
+}
+
+/**
+ * Read the shallowest package.json in the upload (the project root one) and
+ * parse it. Returns null if there's no package.json or it isn't valid JSON.
+ */
+function readRootPackageJson(files: DeployFile[]): Record<string, unknown> | null {
+  const candidates = files
+    .filter((f) => f.path === 'package.json' || f.path.endsWith('/package.json'))
+    .sort((a, b) => a.path.split('/').length - b.path.split('/').length);
+  const pkgFile = candidates[0];
+  if (!pkgFile) return null;
+  try {
+    const parsed = JSON.parse(pkgFile.buffer.subarray(0, 1024 * 1024).toString('utf8'));
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decide whether an uploaded/imported project needs a server-side backend
+ * (Next.js SSR/API routes, Express/Fastify/Nest/etc., a server entry file).
+ *
+ * Pure + read-only: we never run the project. Signals are conservative — a
+ * plain static site (Vite/CRA/Angular build output, lone HTML) returns
+ * `needsBackend:false`. The deploy step uses this to offer "Deploy with
+ * backend" (paid tiers only); the front-end always still pins to IPFS.
+ */
+export function detectBackendNeed(files: DeployFile[]): BackendNeed {
+  const reasons: string[] = [];
+  const paths = files.map((f) => f.path);
+  const hasPath = (re: RegExp) => paths.some((p) => re.test(p));
+
+  // 1) Server framework dependency or a start script that launches a server.
+  const pkg = readRootPackageJson(files);
+  if (pkg) {
+    const deps: Record<string, string> = {
+      ...((pkg.dependencies as Record<string, string> | undefined) ?? {}),
+      ...((pkg.devDependencies as Record<string, string> | undefined) ?? {}),
+    };
+    for (const dep of SERVER_FRAMEWORK_DEPS) {
+      if (deps[dep]) reasons.push(`depends on "${dep}"`);
+    }
+    const scripts = (pkg.scripts as Record<string, string> | undefined) ?? {};
+    const start = (scripts.start ?? '').trim();
+    if (/\b(node|nest start|next start|fastify start|tsx|ts-node)\b/.test(start)) {
+      reasons.push(`start script runs a server (${start.slice(0, 60)})`);
+    }
+  }
+
+  // 2) Next.js that is NOT configured as a static export → needs a Node server.
+  const nextConfig = files.find((f) => /(^|\/)next\.config\.(js|ts|mjs|cjs)$/.test(f.path));
+  if (nextConfig) {
+    const cfg = nextConfig.buffer.subarray(0, 256 * 1024).toString('utf8');
+    if (!/output\s*:\s*['"]export['"]/.test(cfg)) {
+      reasons.push('Next.js without static export (output:"export")');
+    }
+  }
+
+  // 3) API route directories (Next pages/app router) → server endpoints.
+  if (hasPath(/(^|\/)(pages|app)\/api\//)) {
+    reasons.push('has API routes (pages/api or app/api)');
+  }
+
+  // 4) A dedicated server entry file.
+  if (hasPath(/(^|\/)(src\/)?server\.(js|ts|mjs|cjs)$/)) {
+    reasons.push('has a server entry file (server.*)');
+  }
+
+  return { needsBackend: reasons.length > 0, reasons };
+}
+
 // Ordered preference for the deployable entry point. Root first, then the
 // common build-output folders. Whichever matches becomes the site root.
 const ENTRY_PRIORITY = [

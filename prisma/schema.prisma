@@ -36,6 +36,7 @@ model Project {
   userId       String
   user         User         @relation(fields: [userId], references: [id])
   deployments  Deployment[]
+  backendService BackendService?
 
   @@index([userId])
 }
@@ -58,6 +59,35 @@ model Deployment {
   project   Project  @relation(fields: [projectId], references: [id])
 
   @@index([projectId])
+}
+
+/// A project's server-side backend (a service + Postgres database) provisioned
+/// on the landlord provider (Railway) for projects that need a server. Created
+/// only for PAID tiers; the front-end always still pins to IPFS. End users NEVER
+/// see the provider — these provider ids are operator-only and must never leak.
+model BackendService {
+  id                      String   @id @default(uuid())
+  projectId               String   @unique
+  project                 Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// PROVISIONING | ACTIVE | FAILED | DELETING | DELETED
+  status                  String   @default("PROVISIONING")
+  /// Provider (Railway) identifiers — operator-only, never exposed to end users.
+  railwayProjectId        String?
+  railwayEnvironmentId    String?
+  railwayBackendServiceId String?
+  railwayDbServiceId      String?
+  /// Public backend URL captured after the provider domain is created.
+  publicUrl               String?
+  /// Provider region the backend runs in, when known.
+  region                  String?
+  /// Whether scale-to-zero / sleep was enabled on the backend service.
+  sleepEnabled            Boolean  @default(false)
+  /// Real, sanitized failure detail when status=FAILED.
+  failureReason           String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([status])
 }
 
 model Subscription {
