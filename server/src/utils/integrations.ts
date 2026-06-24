@@ -56,6 +56,35 @@ export function isPirc2Configured(): boolean {
 }
 
 /**
+ * True when a backend "template" source for provisioned app backends is
+ * configured — either a git repo (RAILWAY_BACKEND_TEMPLATE_REPO) or a container
+ * image (RAILWAY_BACKEND_IMAGE). Provisioning needs something concrete to
+ * actually deploy as each app's backend service; without it provisioning stays
+ * honestly blocked. Operator-only, like the Railway token itself.
+ */
+export function isBackendTemplateConfigured(): boolean {
+  return Boolean(
+    process.env.RAILWAY_BACKEND_TEMPLATE_REPO?.trim() ||
+      process.env.RAILWAY_BACKEND_IMAGE?.trim(),
+  );
+}
+
+/**
+ * True when a PRIVATE snapshot store is configured for Phase 7 database dumps.
+ * Raw DB dumps must NEVER be placed on public IPFS, so this gates the
+ * destructive snapshot -> delete path. SNAPSHOT_STORE_PROVIDER names the store;
+ * provider-specific credentials are validated by the store adapter at use time.
+ */
+export function isSnapshotStoreConfigured(): boolean {
+  return Boolean(process.env.SNAPSHOT_STORE_PROVIDER?.trim());
+}
+
+/** True when an at-rest encryption key for DB snapshots is configured. */
+export function isSnapshotEncryptionConfigured(): boolean {
+  return Boolean(process.env.SNAPSHOT_ENCRYPTION_KEY?.trim());
+}
+
+/**
  * Error thrown when a feature is invoked but its required external integration
  * is not configured. Routes catch this and return HTTP 503 so the client can
  * surface a friendly "service unavailable" message rather than a 500 crash.

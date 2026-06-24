@@ -18,6 +18,7 @@ import { logger } from '../utils/logger';
 import { pauseUserApps } from './appLifecycleService';
 import { notifyOnce } from './notificationService';
 import { INVOICE_GRACE_DAYS } from './invoiceService';
+import { isBackendLaneLive } from './goLiveService';
 
 let started = false;
 
@@ -27,6 +28,10 @@ function formatUsd(cents: number): string {
 
 /** One reconciler pass. Safe to call repeatedly. */
 export async function runLifecycleTick(): Promise<void> {
+  // GO-LIVE gate: invoice dunning + app pausing are live actions; stay inert
+  // until the operator flips the master switch.
+  if (!(await isBackendLaneLive())) return;
+
   const now = new Date();
 
   // 1. Notify on invoices that are due (once each).

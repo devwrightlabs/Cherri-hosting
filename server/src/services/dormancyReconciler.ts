@@ -13,6 +13,7 @@
 import { prisma } from '../utils/prismaClient';
 import { logger } from '../utils/logger';
 import { getCostControlConfig } from './costControlService';
+import { isCapabilityEnabled } from './goLiveService';
 import {
   ACTIVITY_SOURCE,
   refreshActivity,
@@ -29,6 +30,11 @@ const FRESHNESS_MS = Number(
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export async function runDormancyTick(): Promise<void> {
+  // GO-LIVE gate: dormancy detection polls the provider and flags DBs — a live
+  // action. Stay inert until the dormancyDetection capability is enabled. The
+  // destructive snapshot/delete is additionally gated inside snapshotAndDelete.
+  if (!(await isCapabilityEnabled('dormancyDetection'))) return;
+
   const config = await getCostControlConfig();
 
   // 1) Refresh activity for every live provisioned DB.

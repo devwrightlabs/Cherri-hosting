@@ -15,6 +15,7 @@ import { computePiOwed } from '../utils/piPricing';
 import { getPiUsdPrice } from './piPriceService';
 import { resumeUserApps } from './appLifecycleService';
 import { notifyOnce } from './notificationService';
+import { computeOverageForUser, type OverageResult } from './meteringService';
 
 /** Days after an invoice is due before unsettled apps may be paused. */
 export const INVOICE_GRACE_DAYS = Math.max(0, Number(process.env.INVOICE_GRACE_DAYS ?? 7));
@@ -28,22 +29,20 @@ export class InvoiceNotFoundError extends Error {
   }
 }
 
-export interface OverageResult {
-  cents: number;
-  source: string;
-}
+export type { OverageResult };
 
 /**
- * Accrued overage for a billing cycle. Phase 4 metering does NOT exist yet, so
- * this honestly returns 0 tagged 'METERING_DEFERRED' — it never fabricates a
- * usage figure. Wiring real metered overage here is a Phase 4 task.
+ * Accrued overage for a billing cycle, computed from REAL sampled provider usage
+ * in the closed cycle (see meteringService). Returns 0 tagged METERING_UNAVAILABLE
+ * when metering is off or no usage was sampled — it never fabricates a figure.
  */
-export function computeOverageCents(_args: {
+export function computeOverageCents(args: {
   userId: string;
+  plan: string;
   cycleStart: Date;
   cycleEnd: Date;
-}): OverageResult {
-  return { cents: 0, source: 'METERING_DEFERRED' };
+}): Promise<OverageResult> {
+  return computeOverageForUser(args);
 }
 
 export interface InvoiceTotals {
@@ -85,8 +84,9 @@ export interface CreateInvoiceInput {
 
 /** Persist a dollar-canonical invoice (status OPEN). Charges nothing. */
 export async function createInvoiceForPeriod(input: CreateInvoiceInput) {
-  const overage = computeOverageCents({
+  const overage = await computeOverageCents({
     userId: input.userId,
+    plan: input.plan,
     cycleStart: input.cycleStart,
     cycleEnd: input.cycleEnd,
   });

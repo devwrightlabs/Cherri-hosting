@@ -17,11 +17,13 @@ import { billingRouter } from './routes/billing';
 import { invoicesRouter } from './routes/invoices';
 import { notificationsRouter } from './routes/notifications';
 import { operatorCostControlRouter } from './routes/operatorCostControl';
+import { operatorGoLiveRouter } from './routes/operatorGoLive';
 import { logger } from './utils/logger';
 import { integrationStatus, isRailwayConfigured } from './utils/integrations';
 import { startBillingScheduler } from './services/billingScheduler';
 import { startBillingLifecycleReconciler } from './services/billingLifecycleReconciler';
 import { startDormancyReconciler } from './services/dormancyReconciler';
+import { startMeteringSampler } from './services/meteringSampler';
 
 // ---------------------------------------------------------------------------
 // Startup environment check (non-fatal by design)
@@ -200,6 +202,7 @@ app.use('/api/billing', billingRouter);
 app.use('/api/invoices', invoicesRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/operator/cost-control', operatorCostControlRouter);
+app.use('/api/operator/go-live', operatorGoLiveRouter);
 
 // Sandboxed staging previews (public, guarded by an unguessable stageId).
 // Mounted outside `/api` so it bypasses the rate limiter — a single preview
@@ -247,6 +250,10 @@ app.listen(PORT, () => {
   // no provisioned DBs / Railway is unreachable, and never marks dormancy off
   // missing data, so it is always safe to start.
   startDormancyReconciler();
+  // Start the Phase 4 metering sampler. sampleAllUsage self-skips when the
+  // metering capability is off or Railway is unconfigured, so it is always safe
+  // to start and writes no samples until GO-LIVE + metering keys are present.
+  startMeteringSampler();
 });
 
 export default app;

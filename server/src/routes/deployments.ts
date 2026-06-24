@@ -7,6 +7,12 @@ import { pinDirectory, pinFile, describePinError } from '../services/ipfs';
 import { logger } from '../utils/logger';
 import { isPinataConfigured } from '../utils/integrations';
 import { isRailwayConfigured } from '../services/railway';
+import {
+  provisionBackend,
+  resolveCustomerBackendUrl,
+  resolveInjectableBackendUrlForProject,
+} from '../services/provisioningService';
+import { injectCherriRuntimeConfig } from '../utils/frontendConfig';
 import { getRouteParam } from '../utils/routeParams';
 import { maxUploadBytesForTier, TIER2_MAX_UPLOAD_BYTES } from '../utils/constants';
 import {
@@ -472,6 +478,7 @@ async function downloadRepoZip(
  */
 async function executePin(opts: {
   deploymentId: string;
+  projectId: string;
   userId: string;
   projectName: string;
   pinFiles: DeployFile[] | null;
@@ -479,7 +486,8 @@ async function executePin(opts: {
   /** When provided, the stage is removed once the pin succeeds. */
   stageId?: string;
 }): Promise<void> {
-  const { deploymentId, userId, projectName, pinFiles, singleFile, stageId } = opts;
+  const { deploymentId, projectId, userId, projectName, pinFiles, singleFile, stageId } =
+    opts;
 
   try {
     await prisma.deployment.update({
@@ -489,7 +497,21 @@ async function executePin(opts: {
 
     let pinResult;
     if (pinFiles && pinFiles.length > 0) {
-      pinResult = await pinDirectory(pinFiles, projectName);
+      // Phase 3 env-split wiring: when the project has a verified branded backend
+      // URL AND the GO-LIVE envWiring capability is enabled, inject the Cherri
+      // runtime config so the published front-end talks to its backend. Otherwise
+      // this is a no-op and the bundle ships with no backend config (honest —
+      // never injects a provider URL or a backend that isn't verified-active).
+      const backendUrl = await resolveInjectableBackendUrlForProject(projectId);
+      const filesToPin = backendUrl
+        ? injectCherriRuntimeConfig(pinFiles, backendUrl)
+        : pinFiles;
+      if (backendUrl) {
+        logger.info('Injected Cherri runtime backend config into bundle', {
+          deploymentId,
+        });
+      }
+      pinResult = await pinDirectory(filesToPin, projectName);
     } else if (singleFile) {
       pinResult = await pinFile(singleFile.buffer, singleFile.name, singleFile.mimeType);
     } else {
@@ -622,6 +644,7 @@ deploymentsRouter.post(
 
       void executePin({
         deploymentId: deployment.id,
+        projectId,
         userId: req.user!.id,
         projectName: project.name,
         pinFiles,
@@ -918,19 +941,63 @@ deploymentsRouter.post(
         return;
       }
 
-      // Live provisioning is finalized once the provider workspace can provision
-      // (verified on a disposable project + teardown). Until then degrade
-      // honestly rather than fake a server. No DB row is created for a backend
-      // that doesn't exist.
-      logger.info('Backend deploy requested (provisioning not yet enabled)', {
-        projectId,
-        tier: user.tier,
-      });
-      res.status(503).json({
-        error:
-          "Backend deployments aren't available yet — this is being finalized. Your front-end can still deploy to IPFS now.",
-        kind: 'backend_unavailable',
-      });
+      // Provisioning is gated behind the GO-LIVE master switch + its required
+      // keys. When not live, provisionBackend returns BLOCKED and creates
+      // nothing — we degrade honestly (front-end still deploys to IPFS) and
+      // NEVER fake a backend. The real failure detail is recorded operator-side
+      // on the BackendService row; the end user only ever gets honest, generic
+      // messaging with no provider (Railway) leak.
+      const result = await provisionBackend(projectId);
+      switch (result.outcome) {
+        case 'PROVISIONED':
+        case 'EXISTS': {
+          // Expose only a branded (non-provider) URL; the raw provider domain is
+          // operator-only and is never leaked to the end user.
+          const backendUrl = resolveCustomerBackendUrl(result.publicUrl);
+          res.status(200).json({
+            ok: true,
+            status: 'active',
+            backendUrl,
+            ...(backendUrl
+              ? {}
+              : {
+                  note: 'Your backend is active. A branded backend URL is being finalized.',
+                }),
+          });
+          return;
+        }
+        case 'CAP_REACHED':
+          logger.warn('Backend provisioning blocked by live-DB cap', { projectId });
+          res.status(503).json({
+            error:
+              'Backend capacity is temporarily full. Your front-end can still deploy to IPFS — please try the backend again shortly.',
+            kind: 'backend_capacity',
+          });
+          return;
+        case 'BLOCKED':
+          logger.info('Backend provisioning not live (gated)', {
+            projectId,
+            reason: result.reason,
+          });
+          res.status(503).json({
+            error:
+              "Backend deployments aren't available yet — this is being finalized. Your front-end can still deploy to IPFS now.",
+            kind: 'backend_unavailable',
+          });
+          return;
+        case 'FAILED':
+        default:
+          logger.error('Backend provisioning failed', {
+            projectId,
+            reason: result.reason,
+          });
+          res.status(502).json({
+            error:
+              'We could not finish setting up your backend. Your front-end is still on IPFS — please try again.',
+            kind: 'backend_provision_failed',
+          });
+          return;
+      }
     } catch (err) {
       logger.error('Backend deploy request failed', { error: err });
       res.status(500).json({ error: 'Failed to process the backend deploy request.' });
@@ -1250,6 +1317,7 @@ deploymentsRouter.post(
       // release on failure (so a retry can re-claim and re-pin).
       void executePin({
         deploymentId: deployment.id,
+        projectId: stage.projectId,
         userId: req.user!.id,
         projectName: stage.projectName,
         pinFiles: stage.files,

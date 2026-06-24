@@ -371,6 +371,76 @@ export async function upsertVariable(input: {
   return data.variableUpsert;
 }
 
+/**
+ * Create a public Railway-generated domain (`*.up.railway.app`) for a service so
+ * the provisioned backend has a reachable public URL. Schema per Railway's
+ * public API; first EXERCISED live in Phase 2+ — a wrong shape surfaces a real
+ * RailwayApiError (we never fabricate a URL). The resulting provider domain is
+ * operator-only; it is never exposed to end users (a branded domain is used for
+ * that), so this value must not be returned to clients or written into IPFS.
+ */
+export async function createServiceDomain(args: {
+  serviceId: string;
+  environmentId: string;
+  targetPort?: number;
+}): Promise<{ domain: string }> {
+  const data = await railwayRequest<{ serviceDomainCreate: { domain: string } }>(
+    `mutation serviceDomainCreate($input: ServiceDomainCreateInput!) {
+       serviceDomainCreate(input: $input) { domain }
+     }`,
+    { input: args },
+  );
+  return data.serviceDomainCreate;
+}
+
+/** Railway deployment status enum (subset; per the public API schema). */
+export type RailwayDeploymentStatus =
+  | 'BUILDING'
+  | 'DEPLOYING'
+  | 'INITIALIZING'
+  | 'QUEUED'
+  | 'WAITING'
+  | 'NEEDS_APPROVAL'
+  | 'SUCCESS'
+  | 'FAILED'
+  | 'CRASHED'
+  | 'REMOVED'
+  | 'SKIPPED'
+  | 'SLEEPING';
+
+/**
+ * Fetch the latest deployment (id + status) for a service in an environment,
+ * used to VERIFY a deploy actually reached SUCCESS before a service is marked
+ * ACTIVE — we never mark ACTIVE off an unverified/in-progress deploy. Returns
+ * null when there is no deployment yet. Schema per Railway's public API; first
+ * exercised live in Phase 2+.
+ */
+export async function getLatestDeploymentStatus(args: {
+  projectId: string;
+  serviceId: string;
+  environmentId: string;
+}): Promise<{ id: string; status: RailwayDeploymentStatus } | null> {
+  const data = await railwayRequest<{
+    deployments: {
+      edges: { node: { id: string; status: RailwayDeploymentStatus } }[];
+    };
+  }>(
+    `query deployments($input: DeploymentListInput!) {
+       deployments(first: 1, input: $input) {
+         edges { node { id status } }
+       }
+     }`,
+    {
+      input: {
+        projectId: args.projectId,
+        serviceId: args.serviceId,
+        environmentId: args.environmentId,
+      },
+    },
+  );
+  return data.deployments.edges[0]?.node ?? null;
+}
+
 /** A Railway `MetricMeasurement` enum value (verified via introspection). */
 export type RailwayMeasurement =
   | 'CPU_USAGE'

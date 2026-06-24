@@ -34,6 +34,32 @@ export const PLAN_CATALOG: Record<PlanKey, PlanDef> = {
 
 export const PAID_PLAN_KEYS: readonly PaidPlanKey[] = ['BUILDER', 'PRO', 'TIER4'];
 
+/**
+ * Phase 4 metering: network egress allowance (GB) included per plan, and the
+ * overage rate in integer US cents per GB beyond the allowance. Overage is
+ * metered off REAL sampled provider usage only — when no usage was sampled the
+ * billing path charges 0 and tags METERING_UNAVAILABLE (never a guessed figure).
+ * Operators can override the defaults via env without a code change.
+ */
+export const METERING_INCLUDED_GB: Record<PlanKey, number> = {
+  FREE: Number(process.env.METERING_INCLUDED_GB_FREE ?? 0),
+  BUILDER: Number(process.env.METERING_INCLUDED_GB_BUILDER ?? 100),
+  PRO: Number(process.env.METERING_INCLUDED_GB_PRO ?? 500),
+  TIER4: Number(process.env.METERING_INCLUDED_GB_TIER4 ?? 2000),
+};
+
+/** US cents charged per GB of network egress beyond a plan's included GB. */
+export const METERING_OVERAGE_CENTS_PER_GB = Number(
+  process.env.METERING_OVERAGE_CENTS_PER_GB ?? 10,
+);
+
+/** Included network egress (GB) for a plan key; 0 for unknown keys. */
+export function includedNetworkGb(planKey: string): number {
+  return Object.prototype.hasOwnProperty.call(METERING_INCLUDED_GB, planKey)
+    ? METERING_INCLUDED_GB[planKey as PlanKey]
+    : 0;
+}
+
 /** Default dollar->Pi conversion buffer (~4%) covering exchange slippage. */
 export const BILLING_BUFFER_BPS = 400;
 

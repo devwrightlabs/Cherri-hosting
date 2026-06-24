@@ -83,6 +83,10 @@ model BackendService {
   railwayEnvironmentId    String?
   railwayBackendServiceId String?
   railwayDbServiceId      String?
+  /// Last Railway deployment id for the backend service. Used to verify the
+  /// deploy actually reached a SUCCESS state before the service is marked ACTIVE
+  /// — we never mark ACTIVE off an unverified or in-progress deploy.
+  railwayDeploymentId     String?
   /// Public backend URL captured after the provider domain is created.
   publicUrl               String?
   /// Provider region the backend runs in, when known.
@@ -132,6 +136,7 @@ model BackendService {
   dbDeleteFailureReason   String?
   dbRestoreFailureReason  String?
   snapshots               DbSnapshot[]
+  usageSamples            UsageSample[]
 
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
@@ -168,6 +173,28 @@ model DbSnapshot {
   @@index([backendServiceId, createdAt])
 }
 
+/// Phase 4 metering ledger: periodic, append-only samples of an app backend's
+/// cumulative provider usage. Overage for a billing cycle is computed from real
+/// closed-cycle samples (positive deltas, reset-aware) — never fabricated. With
+/// metering inert (GO-LIVE off or Railway unconfigured) no samples are written,
+/// so overage honestly stays 0/METERING_UNAVAILABLE. Operator-only data.
+model UsageSample {
+  id                  String         @id @default(uuid())
+  backendServiceId    String
+  backendService      BackendService @relation(fields: [backendServiceId], references: [id], onDelete: Cascade)
+  /// Where the sample came from (e.g. RAILWAY_ESTIMATED_USAGE). Never guessed.
+  source              String
+  /// Cumulative network usage (RX+TX, GB) observed at sampledAt for the
+  /// provider's then-current billing period.
+  networkGb           Float
+  /// The provider billing-period start this cumulative reading belongs to, so a
+  /// period reset (cumulative value dropping) is detected, not read as negative.
+  providerPeriodStart DateTime?
+  sampledAt           DateTime       @default(now())
+
+  @@index([backendServiceId, sampledAt])
+}
+
 /// Operator-only cost-exposure alerts (e.g. approaching the live-DB cap). Kept
 /// separate from end-user Notification (which requires a userId) — these are
 /// surfaced only on the operator cost dashboard, never to end users.
@@ -201,6 +228,26 @@ model OperatorCostControlConfig {
   /// while OFF, dormant DBs are flagged but never snapshotted or deleted.
   snapshotDeleteEnabled Boolean  @default(false)
   updatedAt             DateTime @updatedAt
+}
+
+/// Single-row master "GO-LIVE" switch for the whole backend lane (WOODSTICK 3
+/// Phases 2-7). The operator flips this AFTER paying the landlord (Railway) and
+/// adding the required keys. While goLiveEnabled is false EVERYTHING in the
+/// backend lane stays inert: provisioning returns an honest 503/PENDING, no
+/// usage is metered or charged, and no dormancy snapshot/delete ever runs.
+/// Per-capability readiness is still gated on the specific real-world keys each
+/// capability needs (see goLiveService.goLiveReadiness), so flipping this switch
+/// can never by itself fake readiness or start billing for a missing dependency.
+model GoLiveConfig {
+  /// Always the literal id "singleton" — there is exactly one row.
+  id                     String   @id @default("singleton")
+  /// The master switch. False until the operator has paid Railway + added keys.
+  goLiveEnabled          Boolean  @default(false)
+  /// Operator attestation that the Railway account is paid (this cannot be
+  /// verified programmatically). Provisioning stays blocked until this is true,
+  /// so we never attempt to run up a bill on an unpaid landlord account.
+  railwayPaidAttestation Boolean  @default(false)
+  updatedAt              DateTime @updatedAt
 }
 
 model Subscription {

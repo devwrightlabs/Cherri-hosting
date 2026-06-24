@@ -18,6 +18,7 @@
 import { prisma } from '../utils/prismaClient';
 import { logger } from '../utils/logger';
 import { isRailwayConfigured, getEstimatedUsage } from './railway';
+import { snapshotAndDelete, restoreSnapshot } from './snapshotService';
 
 export const ACTIVITY_SOURCE = 'RAILWAY_ESTIMATED_USAGE';
 
@@ -124,104 +125,24 @@ export async function markDormant(
 }
 
 /**
- * Dormant action: snapshot then delete the live DB to stop billing. INERT until
- * the snapshot/delete path is enabled AND a private store + a real provisioned
- * DB exist. Until then it records an honest PENDING snapshot + reason and leaves
- * the DB exactly as-is (never deleted, never marked SNAPSHOTTED).
+ * Dormant action: snapshot then delete the live DB to stop billing. Delegates to
+ * the gated snapshot orchestration, which only exports/deletes when the
+ * dormancySnapshotDelete capability is fully enabled and a verifiably STORED
+ * snapshot exists — otherwise it records an honest PENDING snapshot + reason and
+ * leaves the DB exactly as-is. Kept as the reconciler's entry point.
  */
 export async function snapshotAndDeleteDormant(
   serviceId: string,
 ): Promise<SeamResult> {
-  const svc = await prisma.backendService.findUnique({
-    where: { id: serviceId },
-  });
-  if (!svc) return { effected: false, reason: 'service not found' };
-
-  const config = await prisma.operatorCostControlConfig.findUnique({
-    where: { id: 'singleton' },
-  });
-
-  const blockers: string[] = [];
-  if (!config?.snapshotDeleteEnabled) {
-    blockers.push('snapshot/delete disabled in operator config');
-  }
-  if (!isSnapshotStoreConfigured()) {
-    blockers.push('no private snapshot store configured');
-  }
-  if (!isRailwayConfigured()) blockers.push('Railway not configured');
-  if (!svc.railwayDbServiceId) {
-    blockers.push('no provisioned database to snapshot');
-  }
-
-  if (blockers.length > 0) {
-    const reason = `Snapshot/delete not effected: ${blockers.join('; ')}.`;
-    await prisma.dbSnapshot.create({
-      data: { backendServiceId: serviceId, status: 'PENDING', failureReason: reason },
-    });
-    await prisma.backendService.update({
-      where: { id: serviceId },
-      data: { dbDeleteFailureReason: reason },
-    });
-    logger.warn('Dormant snapshot/delete not effected', { serviceId, reason });
-    return { effected: false, reason };
-  }
-
-  // Live path (deferred): EXPORTING -> encrypt -> private store -> checksum ->
-  // STORED -> deleteService -> DELETE_PENDING -> DELETED. Snapshot MUST be
-  // verifiably STORED before any delete. Until that path is implemented we
-  // still degrade HONESTLY — record a PENDING snapshot + failure reason and
-  // leave the DB exactly as-is (never SNAPSHOTTED/DELETED).
-  const reason = 'Live snapshot/delete path pending implementation.';
-  await prisma.dbSnapshot.create({
-    data: { backendServiceId: serviceId, status: 'PENDING', failureReason: reason },
-  });
-  await prisma.backendService.update({
-    where: { id: serviceId },
-    data: { dbDeleteFailureReason: reason },
-  });
-  logger.warn('Dormant snapshot/delete not effected', { serviceId, reason });
-  return { effected: false, reason };
+  return snapshotAndDelete(serviceId);
 }
 
 /**
- * Wake a dormant/deleted DB on demand by restoring its snapshot. INERT: with no
- * STORED snapshot and no live provisioning it records an honest RESTORE_PENDING
- * + reason and NEVER claims the database was restored.
+ * Wake a dormant/deleted DB on demand by restoring its snapshot. Delegates to the
+ * gated restore orchestration, which only marks LIVE after a checksum-verified
+ * download, decrypt, restore, and connection check — otherwise it records an
+ * honest failure reason and NEVER claims the database was restored.
  */
 export async function wakeDb(serviceId: string): Promise<SeamResult> {
-  const svc = await prisma.backendService.findUnique({
-    where: { id: serviceId },
-  });
-  if (!svc) return { effected: false, reason: 'service not found' };
-
-  if (
-    svc.dbLifecycleStatus !== 'DELETED' &&
-    svc.dbLifecycleStatus !== 'SNAPSHOTTED'
-  ) {
-    return {
-      effected: false,
-      reason: `Nothing to wake (db status ${svc.dbLifecycleStatus}).`,
-    };
-  }
-
-  const snapshot = await prisma.dbSnapshot.findFirst({
-    where: { backendServiceId: serviceId, status: 'STORED' },
-    orderBy: { createdAt: 'desc' },
-  });
-  if (!snapshot) {
-    const reason = 'Wake unavailable: no STORED snapshot to restore from.';
-    await prisma.backendService.update({
-      where: { id: serviceId },
-      data: { dbRestoreFailureReason: reason },
-    });
-    return { effected: false, reason };
-  }
-
-  const reason =
-    'Wake/restore not effected: live provisioning + snapshot store not available yet.';
-  await prisma.backendService.update({
-    where: { id: serviceId },
-    data: { dbLifecycleStatus: 'RESTORE_PENDING', dbRestoreFailureReason: reason },
-  });
-  return { effected: false, reason };
+  return restoreSnapshot(serviceId);
 }

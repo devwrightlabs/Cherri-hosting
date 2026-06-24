@@ -19,6 +19,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../utils/prismaClient';
 import { logger } from '../utils/logger';
 import { isPirc2Configured, IntegrationUnavailableError } from '../utils/integrations';
+import { isBackendLaneLive } from './goLiveService';
 import { chargeCycle, InsufficientFundsError } from './pirc2Service';
 import {
   grantPremiumAccess,
@@ -142,6 +143,10 @@ async function billSubscription(sub: DueSub): Promise<void> {
 
 /** One scheduler pass. Safe to call repeatedly. */
 export async function runBillingTick(): Promise<void> {
+  // GO-LIVE gate: nothing bills (charge or expire/revoke) until the operator
+  // flips the master switch. Inert lane => no-op.
+  if (!(await isBackendLaneLive())) return;
+
   const now = new Date();
 
   // 1. Expire subscriptions whose paid period ended and won't renew.

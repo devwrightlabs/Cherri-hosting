@@ -149,6 +149,99 @@ export async function assertCapAllowsNewDb(): Promise<void> {
   }
 }
 
+/**
+ * Advisory-lock key that serializes all live-DB provisioning so two concurrent
+ * provisions can never both slip under the cap. Arbitrary stable constant.
+ */
+export const PROVISION_LOCK_KEY = 947211;
+
+/** In-flight provision statuses that have reserved a cap slot. */
+const RESERVING_STATUSES = ['PROVISIONING'];
+
+/**
+ * Count rows occupying a live-DB cap slot: a provisioned-and-still-billing DB OR
+ * an in-flight provision about to create one. Distinct rows (a row matching both
+ * conditions is counted once).
+ */
+export async function countCapSlots(
+  client: Prisma.TransactionClient = prisma as unknown as Prisma.TransactionClient,
+): Promise<number> {
+  return client.backendService.count({
+    where: {
+      OR: [
+        {
+          railwayDbServiceId: { not: null },
+          dbLifecycleStatus: { notIn: NOT_BILLING_STATUSES },
+        },
+        { status: { in: RESERVING_STATUSES } },
+      ],
+    },
+  });
+}
+
+export interface ReserveResult {
+  ok: boolean;
+  backendServiceId?: string;
+  reason?: string;
+  status: CapStatus;
+}
+
+/**
+ * Atomically reserve a live-DB cap slot AND create the PROVISIONING
+ * BackendService row, under a Postgres advisory lock. This is the concurrency-
+ * safe live-path replacement for assertCapAllowsNewDb: the cap check and the
+ * slot-reserving row insert commit together, so two concurrent provisions can
+ * never both pass the cap. The slow provider work runs AFTER this returns,
+ * outside the (short) transaction. Returns ok:false (no row created) at the cap.
+ */
+export async function reserveProvisioningSlot(
+  projectId: string,
+): Promise<ReserveResult> {
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${PROVISION_LOCK_KEY})`;
+    const config = await tx.operatorCostControlConfig.upsert({
+      where: { id: COST_CONFIG_ID },
+      update: {},
+      create: { id: COST_CONFIG_ID },
+    });
+    const current = await countCapSlots(tx);
+    const max = config.maxLiveDbs;
+    const mkStatus = (n: number): CapStatus => {
+      const percent = max > 0 ? Math.round((n / max) * 100) : 100;
+      return {
+        current: n,
+        max,
+        percent,
+        atWarn: percent >= config.warnAtPercent,
+        atCap: n >= max,
+        warnAtPercent: config.warnAtPercent,
+      };
+    };
+    if (current >= max) {
+      return {
+        ok: false as const,
+        reason: `Live database cap reached (${current}/${max}). New backends are blocked to cap cost exposure.`,
+        status: mkStatus(current),
+      };
+    }
+    const bs = await tx.backendService.create({
+      data: { projectId, status: 'PROVISIONING' },
+    });
+    return {
+      ok: true as const,
+      backendServiceId: bs.id,
+      status: mkStatus(current + 1),
+    };
+  });
+  // Alerts are best-effort and emitted outside the lock transaction.
+  if (!result.ok) {
+    await emitCapAlert('CAP_REACHED', result.status);
+  } else if (result.status.atWarn) {
+    await emitCapAlert('CAP_WARNING', result.status);
+  }
+  return result;
+}
+
 async function emitCapAlert(
   type: 'CAP_WARNING' | 'CAP_REACHED',
   status: CapStatus,
