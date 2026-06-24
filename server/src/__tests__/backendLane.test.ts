@@ -21,11 +21,96 @@ import {
 import { encryptSnapshot, decryptSnapshot, snapshotAndDelete } from '../services/snapshotService';
 import { resolveSnapshotStore, SnapshotStoreError } from '../services/snapshotStore';
 import {
+  isS3Provider,
+  s3ConfigMissing,
+  createS3SnapshotStore,
+  MAX_SINGLE_PUT_BYTES,
+} from '../services/snapshotStoreS3';
+import {
   getGoLiveConfig,
   updateGoLiveConfig,
   goLiveReadiness,
 } from '../services/goLiveService';
+import { isSnapshotStoreConfigured } from '../utils/integrations';
 import { prisma } from '../utils/prismaClient';
+
+/** Run `fn` with the given env vars set, restoring prior values afterwards. */
+function withEnv(vars: Record<string, string | undefined>, fn: () => void): void {
+  const prior: Record<string, string | undefined> = {};
+  for (const k of Object.keys(vars)) prior[k] = process.env[k];
+  for (const [k, v] of Object.entries(vars)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  try {
+    fn();
+  } finally {
+    for (const [k, v] of Object.entries(prior)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
+const FULL_S3_ENV = {
+  SNAPSHOT_S3_BUCKET: 'cherri-snapshots',
+  SNAPSHOT_S3_ACCESS_KEY_ID: 'test-akid',
+  SNAPSHOT_S3_SECRET_ACCESS_KEY: 'test-secret',
+  SNAPSHOT_S3_ENDPOINT: 'https://example.r2.cloudflarestorage.com',
+};
+
+/** Async variant of withEnv for tests that await inside the env scope. */
+async function withEnvAsync(
+  vars: Record<string, string | undefined>,
+  fn: () => Promise<void>,
+): Promise<void> {
+  const prior: Record<string, string | undefined> = {};
+  for (const k of Object.keys(vars)) prior[k] = process.env[k];
+  for (const [k, v] of Object.entries(vars)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  try {
+    await fn();
+  } finally {
+    for (const [k, v] of Object.entries(prior)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
+/** In-memory fake of the S3 client send() surface for adapter round-trip tests. */
+function makeFakeS3() {
+  const objects = new Map<string, Buffer>();
+  const calls: string[] = [];
+  const client = {
+    async send(command: any): Promise<any> {
+      const name = command?.constructor?.name ?? 'Unknown';
+      calls.push(name);
+      const input = command.input ?? {};
+      if (name === 'PutObjectCommand') {
+        objects.set(input.Key, Buffer.from(input.Body));
+        return {};
+      }
+      if (name === 'GetObjectCommand') {
+        const buf = objects.get(input.Key);
+        if (!buf) {
+          const err = new Error('NoSuchKey') as Error & { name: string };
+          err.name = 'NoSuchKey';
+          throw err;
+        }
+        return { Body: { transformToByteArray: async () => new Uint8Array(buf) } };
+      }
+      if (name === 'DeleteObjectCommand') {
+        objects.delete(input.Key);
+        return {};
+      }
+      throw new Error(`unexpected S3 command ${name}`);
+    },
+  };
+  return { client, objects, calls };
+}
 
 // ─── Pure: metering math ─────────────────────────────────────────────────────
 
@@ -88,15 +173,174 @@ test('resolveSnapshotStore is null (inert) when no provider configured', () => {
   }
 });
 
-test('resolveSnapshotStore throws honestly for a configured-but-unimplemented provider', () => {
-  const prev = process.env.SNAPSHOT_STORE_PROVIDER;
-  process.env.SNAPSHOT_STORE_PROVIDER = 's3';
-  try {
+test('resolveSnapshotStore throws honestly for a provider with no adapter', () => {
+  withEnv({ SNAPSHOT_STORE_PROVIDER: 'azure-blob' }, () => {
     assert.throws(() => resolveSnapshotStore(), SnapshotStoreError);
-  } finally {
-    if (prev === undefined) delete process.env.SNAPSHOT_STORE_PROVIDER;
-    else process.env.SNAPSHOT_STORE_PROVIDER = prev;
+  });
+});
+
+// ─── S3-compatible adapter (no network: construction + config only) ──────────
+
+test('isS3Provider recognizes the S3-compatible family and rejects others', () => {
+  for (const p of ['s3', 'AWS-S3', 'r2', 'cloudflare-r2', 'gcs', 'minio']) {
+    assert.equal(isS3Provider(p), true, `${p} should be S3-compatible`);
   }
+  for (const p of ['azure-blob', 'backblaze', 'dropbox', '']) {
+    assert.equal(isS3Provider(p), false, `${p} should not be S3-compatible`);
+  }
+});
+
+test('s3ConfigMissing lists every absent credential, empty when complete', () => {
+  withEnv(
+    {
+      SNAPSHOT_S3_BUCKET: undefined,
+      SNAPSHOT_S3_ACCESS_KEY_ID: undefined,
+      SNAPSHOT_S3_SECRET_ACCESS_KEY: undefined,
+    },
+    () => {
+      assert.deepEqual(s3ConfigMissing('s3'), [
+        'SNAPSHOT_S3_BUCKET',
+        'SNAPSHOT_S3_ACCESS_KEY_ID',
+        'SNAPSHOT_S3_SECRET_ACCESS_KEY',
+      ]);
+    },
+  );
+  withEnv(FULL_S3_ENV, () => {
+    assert.deepEqual(s3ConfigMissing('s3'), []);
+  });
+});
+
+test('s3ConfigMissing requires an endpoint for non-AWS providers (R2/GCS/MinIO)', () => {
+  // AWS-native derives its endpoint from the region, so endpoint is not required.
+  withEnv({ ...FULL_S3_ENV, SNAPSHOT_S3_ENDPOINT: undefined }, () => {
+    assert.deepEqual(s3ConfigMissing('s3'), []);
+  });
+  // A non-AWS provider with no endpoint is not usable -> reported missing.
+  withEnv({ ...FULL_S3_ENV, SNAPSHOT_S3_ENDPOINT: undefined }, () => {
+    assert.deepEqual(s3ConfigMissing('r2'), ['SNAPSHOT_S3_ENDPOINT']);
+  });
+  // With its endpoint supplied it is complete.
+  withEnv(FULL_S3_ENV, () => {
+    assert.deepEqual(s3ConfigMissing('r2'), []);
+  });
+});
+
+test('resolveSnapshotStore throws when an S3 provider is selected but uncredentialed', () => {
+  withEnv(
+    {
+      SNAPSHOT_STORE_PROVIDER: 's3',
+      SNAPSHOT_S3_BUCKET: undefined,
+      SNAPSHOT_S3_ACCESS_KEY_ID: undefined,
+      SNAPSHOT_S3_SECRET_ACCESS_KEY: undefined,
+    },
+    () => {
+      assert.throws(() => resolveSnapshotStore(), SnapshotStoreError);
+    },
+  );
+});
+
+test('resolveSnapshotStore builds a fully-credentialed S3 store (no network on construct)', () => {
+  withEnv({ SNAPSHOT_STORE_PROVIDER: 'r2', ...FULL_S3_ENV }, () => {
+    const store = resolveSnapshotStore();
+    assert.ok(store, 'store should resolve');
+    assert.equal(store!.provider, 'r2');
+    for (const m of ['put', 'get', 'verify', 'remove'] as const) {
+      assert.equal(typeof store![m], 'function', `store.${m} must exist`);
+    }
+  });
+});
+
+test('createS3SnapshotStore refuses to build without credentials', () => {
+  withEnv(
+    {
+      SNAPSHOT_S3_BUCKET: undefined,
+      SNAPSHOT_S3_ACCESS_KEY_ID: undefined,
+      SNAPSHOT_S3_SECRET_ACCESS_KEY: undefined,
+    },
+    () => {
+      assert.throws(() => createS3SnapshotStore('s3'));
+    },
+  );
+});
+
+test('isSnapshotStoreConfigured is true only when a usable store is fully wired', () => {
+  withEnv({ SNAPSHOT_STORE_PROVIDER: undefined }, () => {
+    assert.equal(isSnapshotStoreConfigured(), false);
+  });
+  withEnv(
+    {
+      SNAPSHOT_STORE_PROVIDER: 's3',
+      SNAPSHOT_S3_BUCKET: undefined,
+      SNAPSHOT_S3_ACCESS_KEY_ID: undefined,
+      SNAPSHOT_S3_SECRET_ACCESS_KEY: undefined,
+    },
+    () => {
+      assert.equal(isSnapshotStoreConfigured(), false);
+    },
+  );
+  withEnv({ SNAPSHOT_STORE_PROVIDER: 'azure-blob' }, () => {
+    assert.equal(isSnapshotStoreConfigured(), false);
+  });
+  withEnv({ SNAPSHOT_STORE_PROVIDER: 's3', ...FULL_S3_ENV }, () => {
+    assert.equal(isSnapshotStoreConfigured(), true);
+  });
+});
+
+test('isSnapshotStoreConfigured is false for a non-AWS provider lacking its endpoint', () => {
+  withEnv(
+    { SNAPSHOT_STORE_PROVIDER: 'r2', ...FULL_S3_ENV, SNAPSHOT_S3_ENDPOINT: undefined },
+    () => {
+      assert.equal(isSnapshotStoreConfigured(), false);
+    },
+  );
+});
+
+test('S3 adapter put/get/verify/remove round-trips against a mocked client', async () => {
+  await withEnvAsync({ SNAPSHOT_STORE_PROVIDER: 's3', ...FULL_S3_ENV }, async () => {
+    const { client, objects } = makeFakeS3();
+    const store = createS3SnapshotStore('s3', client);
+    const data = Buffer.from('opaque-encrypted-ciphertext');
+
+    const stored = await store.put('snapshots/svc/abc.enc', data);
+    assert.equal(stored.locationRef, 'snapshots/svc/abc.enc');
+    assert.equal(stored.sizeBytes, data.length);
+
+    // get returns the exact bytes that were stored.
+    const got = await store.get(stored.locationRef);
+    assert.deepEqual(got, data);
+
+    // verify is true only for the real checksum, false for a wrong one.
+    assert.equal(await store.verify(stored.locationRef, stored.checksum), true);
+    assert.equal(await store.verify(stored.locationRef, 'not-the-checksum'), false);
+
+    // after removal the object is gone, so verify is false (never a throw).
+    await store.remove(stored.locationRef);
+    assert.equal(await store.verify(stored.locationRef, stored.checksum), false);
+    assert.equal(objects.size, 0);
+  });
+});
+
+test('S3 adapter applies the configured key prefix', async () => {
+  await withEnvAsync(
+    { SNAPSHOT_STORE_PROVIDER: 's3', ...FULL_S3_ENV, SNAPSHOT_S3_PREFIX: 'cherri/prod' },
+    async () => {
+      const { client, objects } = makeFakeS3();
+      const store = createS3SnapshotStore('s3', client);
+      const stored = await store.put('snapshots/x.enc', Buffer.from('z'));
+      assert.equal(stored.locationRef, 'cherri/prod/snapshots/x.enc');
+      assert.ok(objects.has('cherri/prod/snapshots/x.enc'));
+    },
+  );
+});
+
+test('S3 adapter refuses an over-limit object without attempting an upload', async () => {
+  await withEnvAsync({ SNAPSHOT_STORE_PROVIDER: 's3', ...FULL_S3_ENV }, async () => {
+    const { client, calls } = makeFakeS3();
+    const store = createS3SnapshotStore('s3', client);
+    const oversize = { length: MAX_SINGLE_PUT_BYTES + 1 } as unknown as Buffer;
+    await assert.rejects(() => store.put('snapshots/big.enc', oversize));
+    assert.equal(calls.length, 0, 'no upload should be attempted for an over-limit object');
+  });
 });
 
 // ─── DB-backed: honest-inert contract while GO-LIVE is OFF ───────────────────

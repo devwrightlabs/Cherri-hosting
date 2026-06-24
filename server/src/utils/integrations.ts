@@ -6,6 +6,7 @@
  * use these helpers to fail fast with a clear, structured error instead of
  * throwing opaque runtime errors or crashing the process.
  */
+import { isS3Provider, s3ConfigMissing } from '../services/snapshotStoreS3';
 
 /** True when a Pi Network server API key is configured (required for payments). */
 export function isPiConfigured(): boolean {
@@ -70,13 +71,18 @@ export function isBackendTemplateConfigured(): boolean {
 }
 
 /**
- * True when a PRIVATE snapshot store is configured for Phase 7 database dumps.
- * Raw DB dumps must NEVER be placed on public IPFS, so this gates the
- * destructive snapshot -> delete path. SNAPSHOT_STORE_PROVIDER names the store;
- * provider-specific credentials are validated by the store adapter at use time.
+ * True when a PRIVATE snapshot store is configured AND usable for Phase 7 DB
+ * dumps. Raw DB dumps must NEVER be placed on public IPFS, so this gates the
+ * destructive snapshot -> delete path. We require not just SNAPSHOT_STORE_PROVIDER
+ * but a fully-credentialed, implemented adapter — a provider named without its
+ * credentials (or with no adapter) reports NOT configured, so GO-LIVE readiness
+ * stays honestly blocked instead of claiming a store that would fail at use time.
  */
 export function isSnapshotStoreConfigured(): boolean {
-  return Boolean(process.env.SNAPSHOT_STORE_PROVIDER?.trim());
+  const provider = process.env.SNAPSHOT_STORE_PROVIDER?.trim();
+  if (!provider) return false;
+  if (isS3Provider(provider)) return s3ConfigMissing(provider).length === 0;
+  return false;
 }
 
 /** True when an at-rest encryption key for DB snapshots is configured. */

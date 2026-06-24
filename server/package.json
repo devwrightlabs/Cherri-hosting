@@ -12,6 +12,7 @@
     "prisma:migrate": "prisma migrate dev"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1075.0",
     "@prisma/client": "^5.22.0",
     "@types/adm-zip": "^0.5.8",
     "adm-zip": "^0.5.17",
