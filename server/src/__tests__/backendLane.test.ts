@@ -11,6 +11,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import { Prisma } from '@prisma/client';
 
 import {
   consumedFromReadings,
@@ -31,7 +32,17 @@ import {
   updateGoLiveConfig,
   goLiveReadiness,
 } from '../services/goLiveService';
-import { isSnapshotStoreConfigured } from '../utils/integrations';
+import { isSnapshotStoreConfigured, IntegrationUnavailableError } from '../utils/integrations';
+import {
+  processServicePage,
+  verifyAllowanceApproval,
+  revokeAllowance,
+  __setPirc2ChainClient,
+  Pirc2ChainClient,
+  ProcessPageResult,
+  ApprovalTxInfo,
+} from '../services/pirc2Service';
+import { runBillingTick } from '../services/billingScheduler';
 import { prisma } from '../utils/prismaClient';
 
 /** Run `fn` with the given env vars set, restoring prior values afterwards. */
@@ -409,6 +420,356 @@ test('backend lane stays inert while GO-LIVE master switch is OFF', async (t) =>
 
   // Restore the operator's prior switch state.
   await updateGoLiveConfig({ goLiveEnabled: prior.goLiveEnabled });
+});
+
+// ─── PiRC2 Phase 8: on-chain recurring draws (mocked chain client) ───────────
+
+/** Full testnet PiRC2 env (a dummy merchant secret — the fake client is
+ *  injected, so Keypair.fromSecret is never exercised). */
+const PIRC2_TESTNET_ENV = {
+  PIRC2_CONTRACT_ID: 'CCUF75B6W3HRJTJD6O7OXNI72HGJ7DERZ5MUNOMFMSK23ME5GUIKPFYV',
+  SOROBAN_RPC_URL: 'https://rpc.testnet.minepi.com',
+  PIRC2_NETWORK_PASSPHRASE: 'Pi Testnet',
+  PIRC2_MERCHANT_SECRET: 'test-merchant-secret',
+  PIRC2_BLOCKED_PASSPHRASES: undefined,
+};
+const STELLAR_MAINNET_PASSPHRASE = 'Public Global Stellar Network ; September 2015';
+
+interface FakeChain {
+  client: Pirc2ChainClient;
+  calls: { submitProcess: number; fetchApprovalTx: number; lastProcess?: unknown };
+}
+function makeFakeChain(opts: {
+  process?: (input: { serviceId: string; offset: number; limit: number }) => ProcessPageResult;
+  approval?: (txId: string) => ApprovalTxInfo | null;
+} = {}): FakeChain {
+  const calls: FakeChain['calls'] = { submitProcess: 0, fetchApprovalTx: 0 };
+  return {
+    calls,
+    client: {
+      async submitProcess(input) {
+        calls.submitProcess += 1;
+        calls.lastProcess = input;
+        return (
+          opts.process?.(input) ?? {
+            txId: 'tx-empty',
+            result: { charged: 0, failed: 0, skipped: 0, total: 0 },
+            events: [],
+          }
+        );
+      },
+      async fetchApprovalTx(txId) {
+        calls.fetchApprovalTx += 1;
+        return opts.approval ? opts.approval(txId) : null;
+      },
+    },
+  };
+}
+
+test('processServicePage is honest-inert (503) and makes no chain call when unconfigured', async () => {
+  const fake = makeFakeChain();
+  __setPirc2ChainClient(fake.client);
+  try {
+    await withEnvAsync(
+      {
+        PIRC2_CONTRACT_ID: undefined,
+        SOROBAN_RPC_URL: undefined,
+        PIRC2_NETWORK_PASSPHRASE: undefined,
+        PIRC2_MERCHANT_SECRET: undefined,
+      },
+      async () => {
+        await assert.rejects(() => processServicePage('1', 0, 50), IntegrationUnavailableError);
+      },
+    );
+    assert.equal(fake.calls.submitProcess, 0, 'unconfigured must never reach the chain');
+  } finally {
+    __setPirc2ChainClient(null);
+  }
+});
+
+test('processServicePage refuses to draw without a merchant signer (no chain call)', async () => {
+  const fake = makeFakeChain();
+  __setPirc2ChainClient(fake.client);
+  try {
+    await withEnvAsync({ ...PIRC2_TESTNET_ENV, PIRC2_MERCHANT_SECRET: undefined }, async () => {
+      await assert.rejects(() => processServicePage('1', 0, 50), IntegrationUnavailableError);
+    });
+    assert.equal(fake.calls.submitProcess, 0);
+  } finally {
+    __setPirc2ChainClient(null);
+  }
+});
+
+test('processServicePage refuses a known production/mainnet network (no chain call)', async () => {
+  const fake = makeFakeChain();
+  __setPirc2ChainClient(fake.client);
+  try {
+    await withEnvAsync(
+      { ...PIRC2_TESTNET_ENV, PIRC2_NETWORK_PASSPHRASE: STELLAR_MAINNET_PASSPHRASE },
+      async () => {
+        await assert.rejects(() => processServicePage('1', 0, 50), IntegrationUnavailableError);
+      },
+    );
+    assert.equal(fake.calls.submitProcess, 0, 'mainnet passphrase must be blocked before any RPC');
+  } finally {
+    __setPirc2ChainClient(null);
+  }
+});
+
+test('processServicePage fails closed on an unknown/unlisted network passphrase (no chain call)', async () => {
+  const fake = makeFakeChain();
+  __setPirc2ChainClient(fake.client);
+  try {
+    await withEnvAsync(
+      { ...PIRC2_TESTNET_ENV, PIRC2_NETWORK_PASSPHRASE: 'Some Unknown Network ; 2099' },
+      async () => {
+        await assert.rejects(() => processServicePage('1', 0, 50), IntegrationUnavailableError);
+      },
+    );
+    assert.equal(fake.calls.submitProcess, 0, 'unlisted passphrase must fail closed before any RPC');
+  } finally {
+    __setPirc2ChainClient(null);
+  }
+});
+
+test('processServicePage refuses a non-https Soroban RPC endpoint (no chain call)', async () => {
+  const fake = makeFakeChain();
+  __setPirc2ChainClient(fake.client);
+  try {
+    await withEnvAsync(
+      { ...PIRC2_TESTNET_ENV, SOROBAN_RPC_URL: 'http://rpc.testnet.minepi.com' },
+      async () => {
+        await assert.rejects(() => processServicePage('1', 0, 50), IntegrationUnavailableError);
+      },
+    );
+    assert.equal(fake.calls.submitProcess, 0, 'plaintext RPC must be refused before any RPC');
+  } finally {
+    __setPirc2ChainClient(null);
+  }
+});
+
+test('processServicePage delegates to the chain client and returns parsed events on testnet', async () => {
+  const fake = makeFakeChain({
+    process: (input) => ({
+      txId: 'tx-draw',
+      result: { charged: 1, failed: 1, skipped: 3, total: 5 },
+      events: [
+        { kind: 'charge', subscriberAddress: 'GSUB1', serviceId: input.serviceId, txId: 'tx-draw' },
+        { kind: 'chg_fail', subscriberAddress: 'GSUB2', serviceId: input.serviceId, txId: 'tx-draw' },
+      ],
+    }),
+  });
+  __setPirc2ChainClient(fake.client);
+  try {
+    await withEnvAsync(PIRC2_TESTNET_ENV, async () => {
+      const out = await processServicePage('7', 0, 50);
+      assert.equal(fake.calls.submitProcess, 1);
+      assert.deepEqual(fake.calls.lastProcess, { serviceId: '7', offset: 0, limit: 50 });
+      assert.equal(out.result.charged, 1);
+      assert.equal(out.events.length, 2);
+      assert.equal(out.events[0].kind, 'charge');
+      assert.equal(out.events[0].subscriberAddress, 'GSUB1');
+      assert.equal(out.events[1].kind, 'chg_fail');
+    });
+  } finally {
+    __setPirc2ChainClient(null);
+  }
+});
+
+test('verifyAllowanceApproval is honest-inert (503) when PiRC2 is unconfigured', async () => {
+  const fake = makeFakeChain();
+  __setPirc2ChainClient(fake.client);
+  try {
+    await withEnvAsync(
+      { PIRC2_CONTRACT_ID: undefined, SOROBAN_RPC_URL: undefined, PIRC2_NETWORK_PASSPHRASE: undefined },
+      async () => {
+        await assert.rejects(
+          () => verifyAllowanceApproval({ approvalTxId: 't', subscriberAddress: 'GSUB' }),
+          IntegrationUnavailableError,
+        );
+      },
+    );
+    assert.equal(fake.calls.fetchApprovalTx, 0);
+  } finally {
+    __setPirc2ChainClient(null);
+  }
+});
+
+test('verifyAllowanceApproval rejects unrelated / failed / wrong-actor approval transactions', async () => {
+  await withEnvAsync(PIRC2_TESTNET_ENV, async () => {
+    const base = {
+      succeeded: true,
+      contractId: PIRC2_TESTNET_ENV.PIRC2_CONTRACT_ID,
+      functionName: 'subscribe',
+      subscriberAddress: 'GSUB',
+      serviceId: '42',
+      subId: '1001',
+    };
+    const cases: Array<{ name: string; info: ApprovalTxInfo | null }> = [
+      { name: 'tx not found', info: null },
+      { name: 'tx failed', info: { ...base, succeeded: false } },
+      { name: 'wrong contract', info: { ...base, contractId: 'CWRONGCONTRACTID' } },
+      { name: 'wrong function', info: { ...base, functionName: 'transfer' } },
+      { name: 'wrong subscriber', info: { ...base, subscriberAddress: 'GIMPOSTER' } },
+    ];
+    for (const c of cases) {
+      const fake = makeFakeChain({ approval: () => c.info });
+      __setPirc2ChainClient(fake.client);
+      try {
+        const r = await verifyAllowanceApproval({ approvalTxId: 't', subscriberAddress: 'GSUB' });
+        assert.equal(r.verified, false, `${c.name} must NOT verify`);
+        assert.equal(r.serviceId, null, `${c.name} must not leak a service id`);
+        assert.equal(r.subId, null);
+      } finally {
+        __setPirc2ChainClient(null);
+      }
+    }
+  });
+});
+
+test('verifyAllowanceApproval accepts a matching subscribe() tx and returns service/sub ids', async () => {
+  const fake = makeFakeChain({
+    approval: () => ({
+      succeeded: true,
+      contractId: PIRC2_TESTNET_ENV.PIRC2_CONTRACT_ID,
+      functionName: 'subscribe',
+      subscriberAddress: 'GSUBOK',
+      serviceId: '42',
+      subId: '1001',
+    }),
+  });
+  __setPirc2ChainClient(fake.client);
+  try {
+    await withEnvAsync(PIRC2_TESTNET_ENV, async () => {
+      const r = await verifyAllowanceApproval({ approvalTxId: 'tok', subscriberAddress: 'GSUBOK' });
+      assert.equal(r.verified, true);
+      assert.equal(r.serviceId, '42');
+      assert.equal(r.subId, '1001');
+    });
+  } finally {
+    __setPirc2ChainClient(null);
+  }
+});
+
+test('revokeAllowance is an honest no-op (resolves, never throws) even when unconfigured', async () => {
+  await withEnvAsync(
+    { PIRC2_CONTRACT_ID: undefined, SOROBAN_RPC_URL: undefined, PIRC2_NETWORK_PASSPHRASE: undefined },
+    async () => {
+      await revokeAllowance('GSUB'); // must simply resolve
+    },
+  );
+  assert.ok(true);
+});
+
+test('runBillingTick performs zero on-chain draws while GO-LIVE is OFF', async () => {
+  const prior = await getGoLiveConfig();
+  await updateGoLiveConfig({ goLiveEnabled: false });
+  const fake = makeFakeChain();
+  __setPirc2ChainClient(fake.client);
+  try {
+    await withEnvAsync(PIRC2_TESTNET_ENV, async () => {
+      await runBillingTick();
+    });
+    assert.equal(fake.calls.submitProcess, 0, 'no draw may occur while the master switch is off');
+  } finally {
+    __setPirc2ChainClient(null);
+    await updateGoLiveConfig({ goLiveEnabled: prior.goLiveEnabled });
+  }
+});
+
+test('billing reconciles each subscriber from contract events, not aggregate counts', async () => {
+  const prior = await getGoLiveConfig();
+  await updateGoLiveConfig({ goLiveEnabled: true });
+
+  const SERVICE = '7';
+  const past = new Date(Date.now() - 60_000);
+  const mk = async (addr: string) => {
+    const user = await prisma.user.create({
+      data: { piUserId: `pi-${crypto.randomUUID()}`, username: `u-${addr.toLowerCase()}` },
+    });
+    const sub = await prisma.piSubscription.create({
+      data: {
+        userId: user.id,
+        tier: 'PREMIUM',
+        status: 'ACTIVE',
+        subscriberAddress: addr,
+        contractId: PIRC2_TESTNET_ENV.PIRC2_CONTRACT_ID,
+        onChainServiceId: SERVICE,
+        approvalTxId: `appr-${crypto.randomUUID()}`,
+        currency: 'PI',
+        amountPerCycle: new Prisma.Decimal('1'),
+        allowanceTotal: new Prisma.Decimal('12'),
+        allowanceRemaining: new Prisma.Decimal('12'),
+        intervalDays: 30,
+        cyclesAuthorized: 12,
+        cyclesBilled: 0,
+        nextBillingAt: past,
+      },
+    });
+    return { user, sub };
+  };
+
+  const charged = await mk('GAAA');
+  const failed = await mk('GBBB');
+  const notDue = await mk('GCCC');
+
+  // The aggregate counts deliberately LIE (charged: 99) — only the per-subscriber
+  // events are authoritative, so exactly one user (GAAA) may be granted access.
+  const fake = makeFakeChain({
+    process: (input) => ({
+      txId: 'tx-batch',
+      result: { charged: 99, failed: 99, skipped: 99, total: 3 },
+      events: [
+        { kind: 'charge', subscriberAddress: 'GAAA', serviceId: input.serviceId, txId: 'tx-batch' },
+        { kind: 'chg_fail', subscriberAddress: 'GBBB', serviceId: input.serviceId, txId: 'tx-batch' },
+      ],
+    }),
+  });
+  __setPirc2ChainClient(fake.client);
+
+  try {
+    await withEnvAsync(PIRC2_TESTNET_ENV, async () => {
+      await runBillingTick();
+    });
+
+    const [subA, subB, subC, userA, userB, userC] = await Promise.all([
+      prisma.piSubscription.findUnique({ where: { id: charged.sub.id } }),
+      prisma.piSubscription.findUnique({ where: { id: failed.sub.id } }),
+      prisma.piSubscription.findUnique({ where: { id: notDue.sub.id } }),
+      prisma.user.findUnique({ where: { id: charged.user.id } }),
+      prisma.user.findUnique({ where: { id: failed.user.id } }),
+      prisma.user.findUnique({ where: { id: notDue.user.id } }),
+    ]);
+
+    // GAAA: charge event => cycle advanced + access granted.
+    assert.equal(subA?.status, 'ACTIVE');
+    assert.equal(subA?.cyclesBilled, 1);
+    assert.equal(userA?.tier, 'PREMIUM');
+
+    // GBBB: chg_fail event => PAST_DUE, no cycle, access NOT granted.
+    assert.equal(subB?.status, 'PAST_DUE');
+    assert.equal(subB?.cyclesBilled, 0);
+    assert.equal(userB?.tier, 'FREE');
+
+    // GCCC: no event => not charged, not granted, backed off for retry.
+    assert.equal(subC?.status, 'ACTIVE');
+    assert.equal(subC?.cyclesBilled, 0);
+    assert.equal(userC?.tier, 'FREE');
+    assert.ok(
+      subC?.nextBillingAt && subC.nextBillingAt.getTime() > Date.now(),
+      'an uncharged subscriber must be rescheduled, not granted',
+    );
+
+    assert.equal(fake.calls.submitProcess, 1, 'one batched draw for the single service');
+  } finally {
+    for (const x of [charged, failed, notDue]) {
+      await prisma.billingEvent.deleteMany({ where: { subscriptionId: x.sub.id } });
+      await prisma.piSubscription.delete({ where: { id: x.sub.id } }).catch(() => undefined);
+      await prisma.user.delete({ where: { id: x.user.id } }).catch(() => undefined);
+    }
+    __setPirc2ChainClient(null);
+    await updateGoLiveConfig({ goLiveEnabled: prior.goLiveEnabled });
+  }
 });
 
 test.after(async () => {

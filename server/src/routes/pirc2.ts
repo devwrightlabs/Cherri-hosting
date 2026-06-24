@@ -46,6 +46,8 @@ function serializeSubscription(
     status: sub.status,
     subscriberAddress: sub.subscriberAddress,
     contractId: sub.contractId,
+    onChainServiceId: sub.onChainServiceId,
+    onChainSubId: sub.onChainSubId,
     approvalTxId: sub.approvalTxId,
     currency: sub.currency,
     amountPerCycle: sub.amountPerCycle.toString(),
@@ -122,9 +124,24 @@ pirc2Router.post('/subscribe', async (req: AuthenticatedRequest, res: Response):
     }
 
     // Verify the one-time allowance approval on-chain (throws 503 if PiRC2 off).
-    const verified = await verifyAllowanceApproval({ approvalTxId, subscriberAddress });
-    if (!verified) {
+    const verification = await verifyAllowanceApproval({ approvalTxId, subscriberAddress });
+    if (!verification.verified) {
       res.status(400).json({ error: 'Allowance approval could not be verified on-chain.' });
+      return;
+    }
+
+    // Fail closed: the service id that drives every future on-chain draw must be
+    // decoded from the verified subscribe() tx itself. We never trust a
+    // client-supplied service id to route a real charge. If it could not be
+    // decoded, the subscription is not billable and we refuse to open it.
+    const onChainServiceId = verification.serviceId;
+    const onChainSubId = verification.subId ?? null;
+    if (!onChainServiceId) {
+      res.status(422).json({
+        error:
+          'On-chain service id could not be decoded from the verified subscribe transaction; ' +
+          'cannot open a billable subscription.',
+      });
       return;
     }
 
@@ -138,6 +155,8 @@ pirc2Router.post('/subscribe', async (req: AuthenticatedRequest, res: Response):
         status: 'ACTIVE',
         subscriberAddress,
         contractId: process.env.PIRC2_CONTRACT_ID ?? null,
+        onChainServiceId,
+        onChainSubId,
         approvalTxId,
         currency: 'PI',
         amountPerCycle: perCycle,

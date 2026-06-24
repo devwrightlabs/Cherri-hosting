@@ -289,7 +289,14 @@ model PiSubscription {
   subscriberAddress  String?
   /// PiRC2 subscription smart-contract id this allowance targets.
   contractId         String?
-  /// The on-chain tx hash that granted the spending allowance (one-time approval).
+  /// PiRC2 on-chain service id (u64, stored as string) this subscription belongs
+  /// to. Required to drive the contract's batch process(merchant, service_id, ...).
+  onChainServiceId   String?
+  /// PiRC2 on-chain subscription id (sub_id, u64 as string) returned by the
+  /// contract's subscribe(). Used for honest per-subscription on-chain reconcile.
+  onChainSubId       String?
+  /// The on-chain tx hash that granted the spending allowance (the subscriber's
+  /// one-time subscribe()/approve() transaction).
   approvalTxId       String?  @unique
   currency           String   @default("PI")
   /// Amount drawn each billing cycle.
@@ -314,6 +321,7 @@ model PiSubscription {
 
   @@index([userId])
   @@index([status, nextBillingAt])
+  @@index([contractId, onChainServiceId])
 }
 
 /// Immutable log of subscription lifecycle / on-chain billing events. These are

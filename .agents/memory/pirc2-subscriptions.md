@@ -26,17 +26,56 @@ PREMIUM is granted ONLY as a consequence of a real successful charge.
 **Config gates (`isPirc2Configured`):** PIRC2_CONTRACT_ID + SOROBAN_RPC_URL +
 PIRC2_NETWORK_PASSPHRASE. Mutating draws additionally require
 PIRC2_MERCHANT_SECRET (signer). `verifyAllowanceApproval` is real (Soroban RPC
-`getTransaction`) when configured; `chargeCycle`/`revokeAllowance` are the
-activation seam that still need the contract client wired for the target
-network.
+`getTransaction`) when configured and fail-closed.
 
-**Lifecycle:** subscribe verifies the one-time allowance approval on-chain and
-creates an ACTIVE sub with `nextBillingAt=now`, `cyclesBilled=0`, no access yet.
-The billing scheduler (interval tick, singleton, `BILLING_TICK_MS` default 60s)
-draws each cycle → on success advances period/allowance + grants access; on
-`InsufficientFundsError` → PAST_DUE + revoke access; at horizon
-(`cyclesBilled>=cyclesAuthorized`) stops billing then EXPIRES when period ends.
-Cancel = best-effort revoke + CANCELLED + immediate access revoke.
+**Contract-native BATCH model (the key correctness rule):** the contract bills
+via a MERCHANT-authed `process(merchant, service_id, offset, limit)` that draws a
+*page of subscribers at once* and emits per-subscriber events: `charge`
+(subscriber,service_id,price) and `chg_fail` (subscriber,service_id,sub_id).
+Insufficient funds is a `chg_fail` EVENT, not a tx failure. So you must reconcile
+each local row by MATCHING ITS subscriberAddress against the decoded events —
+NEVER trust the aggregate ProcessResult counts as per-user proof (a count of "1
+charged" does not tell you WHICH subscriber). `subscribe` is SUBSCRIBER-authed;
+the merchant CANNOT revoke/cancel → `revokeAllowance` is an honest no-op (local
+stop only; on-chain allowance lapses at its horizon or the subscriber cancels).
+
+**Lifecycle:** subscribe verifies the one-time allowance approval on-chain
+(fail-closed: must succeed + invoke configured contract's `subscribe` + author =
+expected subscriber; service_id/sub_id decoded from THAT tx, never a client
+hint) and creates an ACTIVE sub with `nextBillingAt=now`, `cyclesBilled=0`, no
+access yet. The billing scheduler groups due rows by `onChainServiceId`, claims a
+window, pages `process()` once per service, and reconciles each row from events:
+charge → advance period/allowance + grant; chg_fail → PAST_DUE + revoke; no event
+for a due row → release claim + back off. Horizon + expiry preserved.
 
 **Why grant-after-charge:** prevents free PREMIUM in the partial-config state
 (RPC present, signer absent) where draws keep failing.
+
+**Decode authority:** decode contract events with the SDK's own
+`humanizeEvents` (stellar-base, re-exported by stellar-sdk) — it gives the `C...`
+contractId strkey via `StrKey.encodeContract(event.contractId())` plus
+`scValToNative` topics/data. `ContractEvent.contractId()` is an xdr.Hash (NOT an
+ScAddress) — `Address.fromScAddress` on it is WRONG. Don't hand-roll the XDR walk.
+
+**Testnet-only guard is FAIL-CLOSED (`assertDrawNetworkAllowed`):** a draw runs
+only if the network passphrase is on a testnet ALLOWLIST (builtin: "Pi Testnet",
+"Test SDF Network ; September 2015"; extend via PIRC2_ALLOWED_PASSPHRASES) AND
+not on the mainnet denylist (builtin: Stellar public + "Pi Network"; denylist
+wins) AND SOROBAN_RPC_URL is https. Unknown/empty passphrase ⇒ refused. **Why:** a
+denylist alone lets an unknown production passphrase slip through; PiRC2 has no
+mainnet contract so default-deny is the only safe stance.
+
+**Pre-enablement follow-ups (MUST address before enabling real draws on testnet
+— not yet done, feature stays gated):**
+- *Crash idempotency:* if `process()` tx succeeds but the node dies before the
+  per-row DB reconcile commits, the next tick's `process()` SKIPS that already-
+  charged subscriber (no new event) so they're charged on-chain but never
+  granted. Errs safe (under-grants, never fakes) but needs durable
+  process-tx/event persistence + replay, or an on-chain per-sub state read, to
+  recover. Don't "fix" by granting on a bare is_subscription_active read —
+  active≠charged-this-cycle.
+- *Wallet ownership binding:* `/subscribe` proves the subscribe tx's subscriber
+  matches the client-supplied subscriberAddress, but does NOT bind that address
+  to the authenticated Pi user. A user could claim someone else's public
+  subscribe tx (approvalTxId @unique only blocks double-binding the SAME tx).
+  Needs a wallet challenge-response / Pi-user↔address proof before opening.
