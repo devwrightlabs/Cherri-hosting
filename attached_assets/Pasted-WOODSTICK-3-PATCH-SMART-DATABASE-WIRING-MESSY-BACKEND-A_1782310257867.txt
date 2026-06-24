@@ -1,0 +1,36 @@
+WOODSTICK 3 — PATCH: SMART DATABASE WIRING + MESSY-BACKEND AUTO-FIX (add to Phase 2/3)
+
+Goal: when Cherri provisions a database, the user's app must ACTUALLY connect to it and work — not just get an empty database. Detect the backend's state and react. The live database creation stays gated behind the paid Railway step (do not provision until I confirm Railway is paid).
+
+STEP 1 — CLASSIFY THE BACKEND (before provisioning anything):
+- NO backend (static only) → no database. Host front-end on IPFS. Skip all DB steps.
+- HAS a backend → inspect HOW it expects its database (next steps).
+
+STEP 2 — DETECT THE DATABASE CONNECTION METHOD:
+- Scan the backend code/config for: an env var like DATABASE_URL / DB_URL / POSTGRES_URL, OR a hardcoded connection string / localhost / inline credentials, OR an ORM config (Prisma schema, Drizzle config, Sequelize, TypeORM, raw pg).
+- Report to the user what it found: "Detected Prisma + DATABASE_URL — ready to wire" OR "Found a hardcoded database connection — needs fixing."
+
+STEP 3 — WIRE THE CLEAN CASE:
+- If the backend reads from an env var (DATABASE_URL etc.): inject Cherri's Railway Postgres connection string into that env var server-side. Never expose it in the IPFS front-end.
+
+STEP 4 — AUTO-FIX THE MESSY CASE (the differentiator):
+- If the backend has a HARDCODED database connection (localhost, inline credentials): show the user exactly what's wrong, then auto-rewrite that code to read from DATABASE_URL instead, and inject Cherri's connection string. Show a diff/summary of what was changed.
+- If credentials are scattered/inconsistent: standardize them to DATABASE_URL.
+- Always show the user what Cherri changed — never silently rewrite their code without telling them.
+
+STEP 5 — CREATE THE TABLES (migrations):
+- Detect the schema/ORM and run the correct setup to create tables on the new database:
+  • Prisma → prisma migrate deploy (or db push)
+  • Drizzle → drizzle-kit push
+  • Sequelize/TypeORM → run its migrations
+  • Raw SQL schema file → execute it
+- If migrations succeed → the database is live AND populated; the app works.
+- If NO schema/migrations exist → tell the user "No database setup found — your app will get an empty database. Add your schema/migrations, then redeploy," with the exact steps.
+
+STEP 6 — IF IT CAN'T BE SAFELY FIXED:
+- Do NOT fake success or ship a broken app. Show the user the real problem in plain language + step-by-step manual fix instructions (e.g. "Change your database connection to use process.env.DATABASE_URL — here's how").
+
+STEP 7 — VERIFY:
+- After wiring + migrations, test that the deployed backend actually connects to the database (a real connection check). Only mark "backend live" if the connection succeeds. If it fails, show the real error.
+
+NOTE: All live database creation + this wiring runs only AFTER Railway is on a paid plan ($20 plan). Until then, build all detection/fix/migration LOGIC, but gate the actual provisioning + live test behind my confirmation that Railway is paid.
