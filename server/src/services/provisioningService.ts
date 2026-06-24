@@ -115,6 +115,29 @@ export async function resolveInjectableBackendUrlForProject(
 }
 
 /**
+ * Phase 9 — per-app DB credential isolation guard. The value wired into a user
+ * backend's DATABASE_URL MUST be a Railway variable reference to THAT app's own
+ * Postgres service — never a literal connection string and never Cherri's own
+ * master DATABASE_URL. Each app's Postgres lives in its own Railway project with
+ * its own credentials, so one app can never reach another app's (or our)
+ * database. This guard makes a wrong value impossible to inject even if a future
+ * code change passed one by mistake.
+ */
+export function assertPerAppDbIsolation(name: string, value: string): void {
+  if (name !== 'DATABASE_URL') return;
+  const v = value.trim();
+  const cherri = process.env.DATABASE_URL?.trim();
+  if (cherri && v === cherri) {
+    throw new Error("Refusing to inject Cherri's master DATABASE_URL into a user backend.");
+  }
+  if (!/^\$\{\{[^}]+\.DATABASE_URL\}\}$/.test(v)) {
+    throw new Error(
+      "Per-app DATABASE_URL must be a Railway variable reference to the app's own Postgres, not a literal connection string.",
+    );
+  }
+}
+
+/**
  * Provision a backend (service + Postgres) for a project. Idempotent per
  * project. See module doc for the honesty guarantees. Returns a discriminated
  * result; the HTTP route maps it to an honest status (never leaks provider ids).
@@ -226,12 +249,14 @@ export async function provisionBackend(
     //    the Postgres service. Resolved server-side at deploy — NEVER written
     //    into IPFS files. skipDeploys so the explicit deploy below is the one
     //    we verify.
+    const dbVarValue = `\${{${PG_SERVICE_NAME}.DATABASE_URL}}`;
+    assertPerAppDbIsolation('DATABASE_URL', dbVarValue);
     await upsertVariable({
       projectId: proj.id,
       environmentId: env.id,
       serviceId: svc.id,
       name: 'DATABASE_URL',
-      value: `\${{${PG_SERVICE_NAME}.DATABASE_URL}}`,
+      value: dbVarValue,
       skipDeploys: true,
     });
 

@@ -1120,6 +1120,7 @@ deploymentsRouter.get(
       logs: getBuildLogs(jobId, req.user!.id) ?? '',
       error: job.error,
       stage: job.stage,
+      security: job.security,
     });
   },
 );

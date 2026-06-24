@@ -27,6 +27,21 @@ import os from 'os';
 import path from 'path';
 import { DeployFile, getMimeType, shouldIgnoreFile } from '../utils/deployFiles';
 import { logger } from '../utils/logger';
+import {
+  augmentInstallArgs,
+  BUILD_SCRIPT_ALLOWLIST,
+  findShadowedAllowlisted,
+  getBuildIsolation,
+  getBuildSecurityDisclosure,
+  getBuildSecurityPolicy,
+  proveRegistryFromNpmLock,
+  rebuildArgs,
+  resourceWrapper,
+  scanPackageScripts,
+  type BuildResourceLimits,
+  type BuildSecurityDisclosure,
+  type BuildSecurityPolicy,
+} from './buildSecurity';
 
 export type PackageManager = 'npm' | 'pnpm' | 'yarn';
 
@@ -78,6 +93,8 @@ export interface BuildJob {
   status: BuildStatus;
   error?: string;
   stage?: BuildStageInfo;
+  /** Phase 9 — the build-security posture actually applied to this build. */
+  security?: BuildSecurityDisclosure;
   createdAt: number;
   updatedAt: number;
 }
@@ -112,6 +129,7 @@ function publicJob(j: InternalJob): BuildJob {
     status: j.status,
     error: j.error,
     stage: j.stage,
+    security: j.security,
     createdAt: j.createdAt,
     updatedAt: j.updatedAt,
   };
@@ -237,8 +255,14 @@ async function pump(): Promise<void> {
 
 // ─── Build execution ───────────────────────────────────────────────────────────
 
-/** Sanitized environment for a build step — our secrets are never included. */
-function buildEnv(homeDir: string, production: boolean): NodeJS.ProcessEnv {
+/**
+ * Sanitized environment for a build step — our secrets are never included.
+ * Phase 9 also SCRUBS user/global npm + git config so an uploaded `.npmrc` /
+ * `.netrc` (or one in a real HOME) cannot redirect the registry, inject auth, or
+ * re-enable scripts: user/global config are pointed at empty paths in the
+ * throwaway HOME, and git is stopped from prompting for credentials.
+ */
+export function buildEnv(homeDir: string, production: boolean): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH ?? '/usr/bin:/bin',
     HOME: homeDir,
@@ -247,7 +271,14 @@ function buildEnv(homeDir: string, production: boolean): NodeJS.ProcessEnv {
     npm_config_update_notifier: 'false',
     npm_config_fund: 'false',
     npm_config_audit: 'false',
+    // Scrub user/global npm config — only the project's own .npmrc + our CLI
+    // flags apply (and CLI flags win, so --ignore-scripts cannot be overridden).
+    npm_config_userconfig: path.join(homeDir, '.npmrc'),
+    npm_config_globalconfig: path.join(homeDir, '.npmrc-global'),
     PNPM_HOME: path.join(homeDir, '.pnpm'),
+    // Never let a build hang on an interactive git/credential prompt.
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_ASKPASS: '/bin/true',
   };
   // Install must include devDependencies (build tools live there) → leave
   // NODE_ENV unset. The build step runs as production.
@@ -272,10 +303,14 @@ function runStep(
   cwd: string,
   env: NodeJS.ProcessEnv,
   timeoutMs: number,
+  limits: BuildResourceLimits,
 ): Promise<StepResult> {
   return new Promise((resolve, reject) => {
     appendLog(job, `$ ${cmd} ${args.join(' ')}`);
-    const child = spawn(cmd, args, {
+    // Apply best-effort OS resource caps via a shell wrapper that exec's the real
+    // command in place, so the detached process-group SIGKILL below still works.
+    const wrapped = resourceWrapper(cmd, args, limits);
+    const child = spawn(wrapped.cmd, wrapped.args, {
       cwd,
       env,
       shell: false,
@@ -334,6 +369,10 @@ async function writeSource(dir: string, files: DeployFile[]): Promise<void> {
   for (const f of files) {
     const rel = f.path.replace(/\\/g, '/');
     if (!rel || rel.split('/').some((seg) => seg === '..' || seg === '')) continue;
+    // Defense in depth: never stage node_modules, VCS dirs, or secret files even
+    // if an upstream caller forgot to filter — a planted node_modules/<pkg> with
+    // a malicious script must never reach the builder.
+    if (shouldIgnoreFile(rel)) continue;
     const dest = path.resolve(dir, rel);
     if (dest !== rootResolved && !dest.startsWith(rootResolved + path.sep)) continue;
     await fsp.mkdir(path.dirname(dest), { recursive: true });
@@ -391,14 +430,193 @@ async function collectOutput(baseDir: string, outDir: string): Promise<DeployFil
   return out;
 }
 
+/** Allowlisted packages actually present in node_modules (top of the tree). */
+async function detectPresentAllowlisted(srcDir: string): Promise<string[]> {
+  const present: string[] = [];
+  for (const name of BUILD_SCRIPT_ALLOWLIST) {
+    const pkgJson = path.join(srcDir, 'node_modules', ...name.split('/'), 'package.json');
+    if (await exists(pkgJson)) present.push(name);
+  }
+  return present;
+}
+
+/**
+ * The package installed at node_modules/<name> must actually CALL itself <name>.
+ * Defeats an `npm:` alias (folder `esbuild` holding a package whose real name is
+ * `evil`) from getting `evil`'s lifecycle scripts run during an allowlisted rebuild.
+ */
+async function installedNameMatches(srcDir: string, name: string): Promise<boolean> {
+  try {
+    const raw = await fsp.readFile(
+      path.join(srcDir, 'node_modules', ...name.split('/'), 'package.json'),
+      'utf8',
+    );
+    return (JSON.parse(raw) as { name?: unknown }).name === name;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Log the build-security posture and scan the project's OWN package.json for
+ * install lifecycle scripts + suspicious tokens. We always TELL the user what
+ * the policy will do with their scripts — never silently block or run them.
+ */
+async function announceSecurityPolicy(
+  job: InternalJob,
+  policy: BuildSecurityPolicy,
+  srcDir: string,
+): Promise<void> {
+  const iso = getBuildIsolation();
+  appendLog(job, `\n=== Build security ===`);
+  appendLog(job, `Dependency policy: ${policy.mode}.`);
+  if (policy.blockInstallScripts) {
+    appendLog(
+      job,
+      policy.rebuildAllowlisted
+        ? 'Dependency install scripts are BLOCKED; afterwards, only registry-sourced packages from a vetted native-tools allowlist are rebuilt (anything redirected to a non-registry source stays blocked).'
+        : 'Dependency install scripts are BLOCKED (strict mode).',
+    );
+  } else {
+    appendLog(
+      job,
+      'Dependency install scripts WILL RUN (permissive mode); suspicious ones are flagged below.',
+    );
+  }
+  appendLog(
+    job,
+    `Isolation: ${iso.runner} (containerized: ${iso.containerized}) — ${iso.limitations[0]}.`,
+  );
+
+  let parsed: unknown = null;
+  try {
+    parsed = JSON.parse(await fsp.readFile(path.join(srcDir, 'package.json'), 'utf8'));
+  } catch {
+    return;
+  }
+  const scan = scanPackageScripts(parsed);
+  if (scan.hooks.length > 0) {
+    const verb = policy.blockInstallScripts ? 'are BLOCKED' : 'will run';
+    appendLog(
+      job,
+      `⚠ This project declares install lifecycle scripts (${scan.hooks.join(', ')}) — they ${verb} under the current policy.`,
+    );
+  }
+  for (const s of scan.suspicious) {
+    appendLog(job, `⚠ Flagged in "${s.hook}": ${s.label}.`);
+  }
+}
+
+/**
+ * BALANCED mode only: after a scripts-blocked install, rebuild the allowlisted
+ * native packages so real apps still work. Best-effort — a rebuild failure is
+ * logged honestly but does not fail the build (the build step surfaces any real
+ * consequence of a missing native binary).
+ */
+async function maybeRebuildAllowlisted(
+  job: InternalJob,
+  srcDir: string,
+  homeDir: string,
+  policy: BuildSecurityPolicy,
+): Promise<void> {
+  if (!policy.rebuildAllowlisted) return;
+  const detected = await detectPresentAllowlisted(srcDir);
+  if (detected.length === 0) return;
+
+  // Provenance is proven from the LOCKFILE (what the package manager actually
+  // installs from), not from root package.json. We only verify npm's lockfile
+  // today; for pnpm/yarn we cannot prove public-registry provenance here, so we
+  // refuse to run their scripts and say so honestly rather than guess.
+  if (job.packageManager !== 'npm') {
+    appendLog(
+      job,
+      `\nℹ ${detected.length} allowlisted native package(s) detected, but public-registry provenance can't be verified for ${job.packageManager} lockfiles yet — their install scripts stay BLOCKED (not rebuilt). Set BUILD_DEPENDENCY_POLICY=permissive if your app needs them.`,
+    );
+    return;
+  }
+
+  let lock: unknown = null;
+  try {
+    lock = JSON.parse(await fsp.readFile(path.join(srcDir, 'package-lock.json'), 'utf8'));
+  } catch {
+    appendLog(
+      job,
+      `\nℹ No readable package-lock.json after install — registry provenance can't be proven, so allowlisted native packages were NOT rebuilt. Set BUILD_DEPENDENCY_POLICY=permissive if your app needs them.`,
+    );
+    return;
+  }
+  const proven = proveRegistryFromNpmLock(lock, detected);
+
+  // Defense in depth: also drop anything the root declares as a redirect, and
+  // require the installed package to actually call itself that name.
+  let userPkg: unknown = null;
+  try {
+    userPkg = JSON.parse(await fsp.readFile(path.join(srcDir, 'package.json'), 'utf8'));
+  } catch {
+    /* no/invalid package.json — rely on lockfile provenance + name check */
+  }
+  const shadowed = new Set(findShadowedAllowlisted(userPkg));
+
+  const present: string[] = [];
+  const refused: string[] = [];
+  for (const name of detected) {
+    if (proven.has(name) && !shadowed.has(name) && (await installedNameMatches(srcDir, name))) {
+      present.push(name);
+    } else {
+      refused.push(name);
+    }
+  }
+  if (refused.length > 0) {
+    appendLog(
+      job,
+      `\n⚠ Not rebuilt — public-registry provenance unproven, or the name is redirected/mismatched on disk (install scripts stay BLOCKED): ${refused.join(', ')}.`,
+    );
+  }
+  if (present.length === 0) return;
+
+  const args = rebuildArgs(job.packageManager, present);
+  if (!args) {
+    appendLog(
+      job,
+      `\nℹ ${present.length} allowlisted native package(s) detected, but ${job.packageManager} has no targeted rebuild — they were not rebuilt. Set BUILD_DEPENDENCY_POLICY=permissive if your app needs them.`,
+    );
+    return;
+  }
+  appendLog(job, `\n=== Rebuilding allowlisted native packages (${present.join(', ')}) ===`);
+  let step: StepResult;
+  try {
+    step = await runStep(
+      job,
+      job.packageManager,
+      args,
+      srcDir,
+      buildEnv(homeDir, false),
+      INSTALL_TIMEOUT_MS,
+      policy.resources,
+    );
+  } catch (err) {
+    appendLog(job, `ℹ Allowlisted rebuild could not start: ${(err as Error).message}`);
+    return;
+  }
+  if (step.timedOut || step.code !== 0) {
+    appendLog(job, 'ℹ Allowlisted rebuild did not complete cleanly (continuing).');
+  }
+}
+
 async function runJob(job: InternalJob): Promise<void> {
   const work = path.join(os.tmpdir(), `cherri-build-${job.id}`);
   const src = path.join(work, 'src');
   const home = path.join(work, 'home');
 
   try {
+    // 0700 throwaway dirs so another tenant's build can't read this one's source
+    // or HOME (chmod after mkdir to defeat a permissive umask).
+    await fsp.mkdir(work, { recursive: true });
+    await fsp.chmod(work, 0o700).catch(() => {});
     await fsp.mkdir(src, { recursive: true });
+    await fsp.chmod(src, 0o700).catch(() => {});
     await fsp.mkdir(home, { recursive: true });
+    await fsp.chmod(home, 0o700).catch(() => {});
     await writeSource(src, job.files);
     // Free the in-memory source buffers now that they're on disk.
     job.files = [];
@@ -408,6 +626,11 @@ async function runJob(job: InternalJob): Promise<void> {
         ? await exists(path.join(src, 'package-lock.json'))
         : true;
 
+    // ── Build-security policy (Phase 9) ──
+    const policy = getBuildSecurityPolicy();
+    job.security = getBuildSecurityDisclosure(policy);
+    await announceSecurityPolicy(job, policy, src);
+
     // ── Install ──
     setStatus(job, 'INSTALLING');
     appendLog(job, `\n=== Installing dependencies (${job.packageManager}) ===`);
@@ -416,10 +639,11 @@ async function runJob(job: InternalJob): Promise<void> {
       step = await runStep(
         job,
         job.packageManager,
-        installArgs(job.packageManager, hasLockfile),
+        augmentInstallArgs(installArgs(job.packageManager, hasLockfile), policy),
         src,
         buildEnv(home, false),
         INSTALL_TIMEOUT_MS,
+        policy.resources,
       );
     } catch (err) {
       return fail(
@@ -432,6 +656,9 @@ async function runJob(job: InternalJob): Promise<void> {
       return fail(job, `Dependency install failed (exit ${step.code}).`);
     }
 
+    // Re-enable only the vetted allowlist's native build scripts (balanced mode).
+    await maybeRebuildAllowlisted(job, src, home, policy);
+
     // ── Build ──
     setStatus(job, 'BUILDING');
     appendLog(job, `\n=== Running build ===`);
@@ -443,6 +670,7 @@ async function runJob(job: InternalJob): Promise<void> {
         src,
         buildEnv(home, true),
         BUILD_TIMEOUT_MS,
+        policy.resources,
       );
     } catch (err) {
       return fail(job, `Could not start the build: ${(err as Error).message}`);
