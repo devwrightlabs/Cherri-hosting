@@ -98,10 +98,109 @@ model BackendService {
   /// Honest detail when a pause could NOT be effected (e.g. provider not
   /// configured, no provisioned service, stop/resume semantics unverified).
   pauseFailureReason      String?
+
+  // --- Phase 7: idle-database cost control ---------------------------------
+  // The DATABASE lifecycle is tracked separately from the service `status`
+  // above; none of this ever touches the IPFS front-end (Deployment), which
+  // stays live even when the backend DB is dormant or deleted.
+  /// LIVE | DORMANT_PENDING | SNAPSHOT_PENDING | SNAPSHOTTED | DELETE_PENDING
+  /// | DELETED | RESTORE_PENDING | RESTORE_FAILED. Only ever SNAPSHOTTED /
+  /// DELETED / RESTORED after a real, verified operation — never on a deferred,
+  /// disabled, or unconfigured path (those record an honest *_PENDING + reason).
+  dbLifecycleStatus       String    @default("LIVE")
+  /// Last time the provider showed non-trivial network activity for this app.
+  /// Null until a trusted activity signal has actually been observed.
+  lastProviderActivityAt  DateTime?
+  /// Where lastProviderActivityAt came from (e.g. RAILWAY_ESTIMATED_USAGE).
+  /// Null when no trusted activity signal exists yet — we never guess activity.
+  activitySource          String?
+  /// Last cumulative network usage (GB, RX+TX) observed for this app's project,
+  /// used to detect a real positive delta between dormancy-reconciler polls.
+  lastNetworkUsageGb      Float?
+  /// When we FIRST established a real provider-activity baseline for this app.
+  /// Dormancy is only ever measured from an observed window starting here (or
+  /// from lastProviderActivityAt) — never from createdAt — so a single first
+  /// poll on an old service can't be misread as days of inactivity.
+  activityBaselineAt      DateTime?
+  /// Last time the dormancy reconciler polled provider activity for this app.
+  dbActivityCheckedAt     DateTime?
+  /// When the DB was flagged dormant (intent), and the honest reason.
+  dormantAt               DateTime?
+  dormancyReason          String?
+  /// Honest detail when a dormant snapshot/delete or a wake/restore could not
+  /// be effected (provider not live, snapshot store not configured, etc.).
+  dbDeleteFailureReason   String?
+  dbRestoreFailureReason  String?
+  snapshots               DbSnapshot[]
+
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
   @@index([status])
+  @@index([dbLifecycleStatus])
+}
+
+/// A point-in-time export of an app's Postgres database, taken before the live
+/// Railway DB is deleted to stop billing (Phase 7 "dormant action"). A snapshot
+/// is only ever STORED after a real, checksum-verified export to a configured
+/// PRIVATE store — never on a deferred/unconfigured store, and raw dumps are
+/// never placed on public IPFS. All fields here are operator-only.
+model DbSnapshot {
+  id               String         @id @default(uuid())
+  backendServiceId String
+  backendService   BackendService @relation(fields: [backendServiceId], references: [id], onDelete: Cascade)
+  /// PENDING | EXPORTING | STORED | FAILED | RESTORING | RESTORED
+  status           String         @default("PENDING")
+  /// Opaque pointer to the configured private store + location; null until a
+  /// real export to a real store has happened. Never exposed to end users.
+  storageProvider  String?
+  locationRef      String?
+  /// Integrity check of the (encrypted) dump; set only when STORED.
+  checksum         String?
+  sizeBytes        BigInt?
+  /// Whether the stored dump was encrypted at rest (required before any upload).
+  encrypted        Boolean        @default(false)
+  /// Honest detail when a snapshot/restore could not be effected.
+  failureReason    String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([backendServiceId, createdAt])
+}
+
+/// Operator-only cost-exposure alerts (e.g. approaching the live-DB cap). Kept
+/// separate from end-user Notification (which requires a userId) — these are
+/// surfaced only on the operator cost dashboard, never to end users.
+model OperatorAlert {
+  id        String    @id @default(uuid())
+  /// CAP_WARNING | CAP_REACHED
+  type      String
+  message   String
+  /// JSON-encoded structured context (counts, threshold) for the dashboard.
+  context   String?
+  /// Dedup key so a given crossing is alerted once until cleared/re-crossed.
+  dedupeKey String?   @unique
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([readAt, createdAt])
+}
+
+/// Single-row operator configuration for idle-DB cost control (Phase 7).
+model OperatorCostControlConfig {
+  /// Always the literal id "singleton" — there is exactly one config row.
+  id                    String   @id @default("singleton")
+  /// Max simultaneously LIVE databases across the account (absolute exposure).
+  maxLiveDbs            Int      @default(10)
+  /// Warn the operator when live DBs reach this percent of the cap.
+  warnAtPercent         Int      @default(80)
+  /// Days of zero provider-side activity before a DB is marked DORMANT_PENDING.
+  inactivityDays        Int      @default(7)
+  /// Master switch for the snapshot -> delete -> restore path. Stays OFF until a
+  /// private snapshot store is configured AND Railway provisioning is live;
+  /// while OFF, dormant DBs are flagged but never snapshotted or deleted.
+  snapshotDeleteEnabled Boolean  @default(false)
+  updatedAt             DateTime @updatedAt
 }
 
 model Subscription {

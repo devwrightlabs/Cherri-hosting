@@ -16,10 +16,12 @@ import { paymentsRouter } from './routes/payments';
 import { billingRouter } from './routes/billing';
 import { invoicesRouter } from './routes/invoices';
 import { notificationsRouter } from './routes/notifications';
+import { operatorCostControlRouter } from './routes/operatorCostControl';
 import { logger } from './utils/logger';
 import { integrationStatus, isRailwayConfigured } from './utils/integrations';
 import { startBillingScheduler } from './services/billingScheduler';
 import { startBillingLifecycleReconciler } from './services/billingLifecycleReconciler';
+import { startDormancyReconciler } from './services/dormancyReconciler';
 
 // ---------------------------------------------------------------------------
 // Startup environment check (non-fatal by design)
@@ -197,6 +199,7 @@ app.use('/api/payments', paymentsRouter);
 app.use('/api/billing', billingRouter);
 app.use('/api/invoices', invoicesRouter);
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/operator/cost-control', operatorCostControlRouter);
 
 // Sandboxed staging previews (public, guarded by an unguessable stageId).
 // Mounted outside `/api` so it bypasses the rate limiter — a single preview
@@ -240,6 +243,10 @@ app.listen(PORT, () => {
   // runs independently of PiRC2 and only processes existing invoices, so it is
   // always safe to start.
   startBillingLifecycleReconciler();
+  // Start the Phase 7 idle-DB dormancy reconciler. It self-skips when there are
+  // no provisioned DBs / Railway is unreachable, and never marks dormancy off
+  // missing data, so it is always safe to start.
+  startDormancyReconciler();
 });
 
 export default app;

@@ -12,3 +12,4 @@
 - [Phase 2 backend provisioning](phase2-backend-provisioning.md) — detection + paid-tier gating shipped; live Railway provisioning deferred until workspace is paid; honest 503, never fake a backend; front-end always still IPFS.
 - [Phase 3 frontend config contract](phase3-frontend-config-contract.md) — backend URL exposed to IPFS site via cherri.config.json + window.__CHERRI__ (runtime, not build-time env); pure injector built UNWIRED; wiring/env-builder/verify deferred to live provisioning.
 - [Dollar-pegged billing](dollar-pegged-billing.md) — USD-anchored plans; quote-only foundation; honest 503 on price, never-undercharge ceil math, SSRF-safe provider allowlist; REPLACE model + grandfathering.
+- [Phase 7 idle-DB cost control](phase7-idle-db-cost-control.md) — hard cap = primary defense (no native Railway snapshot); inert honest dormancy/snapshot seams; dormancy from activityBaselineAt never createdAt; operator = OPERATOR_PI_USER_IDS allowlist.
