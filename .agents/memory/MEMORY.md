@@ -10,3 +10,4 @@
 - [Pinata IPFS wiring](pinata-ipfs-wiring.md) — PINATA_JWT (Bearer) primary, key/secret fallback; trim in lockstep; both deploy poll paths must keep liveDeployment on FAILED to surface real errors.
 - [Railway landlord](railway-landlord.md) — per-app backend+Postgres provisioner; team token (no `me`), no Postgres mutation (serviceCreate+image), soft spend caps, never expose Railway publicly.
 - [Phase 2 backend provisioning](phase2-backend-provisioning.md) — detection + paid-tier gating shipped; live Railway provisioning deferred until workspace is paid; honest 503, never fake a backend; front-end always still IPFS.
+- [Phase 3 frontend config contract](phase3-frontend-config-contract.md) — backend URL exposed to IPFS site via cherri.config.json + window.__CHERRI__ (runtime, not build-time env); pure injector built UNWIRED; wiring/env-builder/verify deferred to live provisioning.
