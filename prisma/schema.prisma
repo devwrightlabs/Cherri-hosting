@@ -25,6 +25,8 @@ model User {
   subscriptions Subscription[]
   piSubscriptions PiSubscription[]
   paymentQuotes PaymentQuote[]
+  invoices      Invoice[]
+  notifications Notification[]
 }
 
 model Project {
@@ -71,6 +73,10 @@ model BackendService {
   projectId               String   @unique
   project                 Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   /// PROVISIONING | ACTIVE | FAILED | DELETING | DELETED
+  /// | PAUSE_PENDING (pause intended but not yet effected on the provider)
+  /// | PAUSED (verified stopped on the provider) | RESUME_PENDING (resume not
+  /// yet effected). A service is only ever marked PAUSED after a real, verified
+  /// provider stop — never on a missing id, unconfigured provider, or error.
   status                  String   @default("PROVISIONING")
   /// Provider (Railway) identifiers — operator-only, never exposed to end users.
   railwayProjectId        String?
@@ -85,6 +91,13 @@ model BackendService {
   sleepEnabled            Boolean  @default(false)
   /// Real, sanitized failure detail when status=FAILED.
   failureReason           String?
+  /// When the service was actually (verifiably) paused on the provider.
+  pausedAt                DateTime?
+  /// Why a pause/resume was initiated (e.g. "Invoice <id> overdue").
+  pauseReason             String?
+  /// Honest detail when a pause could NOT be effected (e.g. provider not
+  /// configured, no provisioned service, stop/resume semantics unverified).
+  pauseFailureReason      String?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
@@ -211,4 +224,73 @@ model PaymentQuote {
 
   @@index([userId])
   @@index([status, expiresAt])
+}
+
+/// A canonical, DOLLAR-denominated bill for one billing cycle. The dollar total
+/// is the source of truth; the Pi amount is produced on demand via the Phase 5
+/// quote engine at settlement time (and never blocks recording the debt). An
+/// invoice records what is owed — creating or pricing one charges NOTHING.
+model Invoice {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  /// Optional links to the subscription this cycle bills (no FK relation kept
+  /// intentionally to avoid coupling the two billing models).
+  subscriptionId   String?
+  piSubscriptionId String?
+  /// Catalog plan key this cycle bills (e.g. 'BUILDER' | 'PRO' | 'TIER4').
+  plan           String
+  cycleStart     DateTime
+  cycleEnd       DateTime
+  /// Plan subtotal in integer cents.
+  subscriptionCents Int
+  /// Accrued overage in cents. 0 until Phase 4 metering exists.
+  overageCents   Int      @default(0)
+  /// Where overageCents came from; 'METERING_DEFERRED' until Phase 4.
+  overageSource  String   @default("METERING_DEFERRED")
+  /// subscriptionCents + overageCents.
+  totalCents     Int
+  currency       String   @default("USD")
+  /// OPEN | PAID | OVERDUE | VOID. (Pause state lives on BackendService.)
+  status         String   @default("OPEN")
+  dueAt          DateTime
+  /// Apps may be paused once now > graceUntil and the invoice is still unpaid.
+  graceUntil     DateTime
+  paidAt         DateTime?
+  /// Most recent Pi quote produced for settling this invoice (display only).
+  latestPaymentQuoteId String?
+  /// Set only once a real, verified Pi settlement is linked (deferred cutover).
+  paymentId      String?  @unique
+  txid           String?  @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status, dueAt])
+  @@index([status, graceUntil])
+}
+
+/// A user-facing, in-app notification (billing lifecycle, etc.). Email delivery
+/// is intentionally not implemented yet; this store is the single source the
+/// client reads and an email channel can later mirror.
+model Notification {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  /// INVOICE_DUE | INVOICE_OVERDUE | APPS_PAUSED | APPS_RESUMED
+  /// | CAP_WARNING_80 | CAP_REACHED_100 (cap types require Phase 4 metering and
+  /// are never emitted until real usage data exists).
+  type       String
+  message    String
+  /// Loosely links the notification to an invoice when relevant (no FK).
+  invoiceId  String?
+  readAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  /// DB-level dedup for "notify once per event": at most one notification per
+  /// (user, type, invoice). NULL invoiceId rows are exempt (Postgres treats
+  /// NULLs as distinct), which is intended — only invoice-linked alerts dedup.
+  @@unique([userId, type, invoiceId])
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
 }

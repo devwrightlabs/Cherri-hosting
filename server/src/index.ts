@@ -14,9 +14,12 @@ import { subscriptionsRouter } from './routes/subscriptions';
 import { pirc2Router } from './routes/pirc2';
 import { paymentsRouter } from './routes/payments';
 import { billingRouter } from './routes/billing';
+import { invoicesRouter } from './routes/invoices';
+import { notificationsRouter } from './routes/notifications';
 import { logger } from './utils/logger';
 import { integrationStatus, isRailwayConfigured } from './utils/integrations';
 import { startBillingScheduler } from './services/billingScheduler';
+import { startBillingLifecycleReconciler } from './services/billingLifecycleReconciler';
 
 // ---------------------------------------------------------------------------
 // Startup environment check (non-fatal by design)
@@ -192,6 +195,8 @@ app.use('/api/subscriptions', subscriptionsRouter);
 app.use('/api/subscriptions/pirc2', pirc2Router);
 app.use('/api/payments', paymentsRouter);
 app.use('/api/billing', billingRouter);
+app.use('/api/invoices', invoicesRouter);
+app.use('/api/notifications', notificationsRouter);
 
 // Sandboxed staging previews (public, guarded by an unguessable stageId).
 // Mounted outside `/api` so it bypasses the rate limiter — a single preview
@@ -231,6 +236,10 @@ app.listen(PORT, () => {
   // Start the PiRC2 recurring-billing loop. It self-skips when PiRC2 is not
   // configured, so it is always safe to start.
   startBillingScheduler();
+  // Start the billing lifecycle reconciler (invoice due -> grace -> pause). It
+  // runs independently of PiRC2 and only processes existing invoices, so it is
+  // always safe to start.
+  startBillingLifecycleReconciler();
 });
 
 export default app;
