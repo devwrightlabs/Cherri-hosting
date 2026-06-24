@@ -13,6 +13,7 @@ import { deployRouter } from './routes/deploy';
 import { subscriptionsRouter } from './routes/subscriptions';
 import { pirc2Router } from './routes/pirc2';
 import { paymentsRouter } from './routes/payments';
+import { billingRouter } from './routes/billing';
 import { logger } from './utils/logger';
 import { integrationStatus, isRailwayConfigured } from './utils/integrations';
 import { startBillingScheduler } from './services/billingScheduler';
@@ -190,6 +191,7 @@ app.use('/api/deploy', deployRouter);
 app.use('/api/subscriptions', subscriptionsRouter);
 app.use('/api/subscriptions/pirc2', pirc2Router);
 app.use('/api/payments', paymentsRouter);
+app.use('/api/billing', billingRouter);
 
 // Sandboxed staging previews (public, guarded by an unguessable stageId).
 // Mounted outside `/api` so it bypasses the rate limiter — a single preview

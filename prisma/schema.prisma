@@ -24,6 +24,7 @@ model User {
   projects     Project[]
   subscriptions Subscription[]
   piSubscriptions PiSubscription[]
+  paymentQuotes PaymentQuote[]
 }
 
 model Project {
@@ -174,4 +175,40 @@ model BillingEvent {
   createdAt      DateTime       @default(now())
 
   @@index([subscriptionId])
+}
+
+model PaymentQuote {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  /// Catalog plan key being quoted: 'BUILDER' | 'PRO' | 'TIER4'.
+  plan           String
+  /// Dollar subtotal in integer cents (plan price + overage).
+  dollarCents    Int
+  /// Accrued overage in cents. Always 0 until Phase 4 metering exists.
+  overageCents   Int      @default(0)
+  /// Live Pi/USD rate this quote was priced at.
+  piUsdRate      Decimal  @db.Decimal(18, 8)
+  /// Where piUsdRate came from (matches PI_PRICE_SOURCE, e.g. 'coingecko').
+  source         String
+  /// When the source last observed that rate.
+  observedAt     DateTime
+  /// Conversion buffer applied, in basis points (default 400 = 4%).
+  bufferBps      Int      @default(400)
+  /// Pi owed = (dollar / piUsd) * (1 + buffer), rounded up to 7 dp.
+  quotedPiAmount Decimal  @db.Decimal(18, 8)
+  /// Pi environment this quote targets: 'testnet' | 'mainnet'.
+  env            String   @default("testnet")
+  /// PENDING | PAID | EXPIRED | CANCELLED
+  status         String   @default("PENDING")
+  /// Set once a Pi payment is created/linked against this quote.
+  paymentId      String?  @unique
+  /// On-chain tx hash once the linked payment completes.
+  txid           String?  @unique
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status, expiresAt])
 }
