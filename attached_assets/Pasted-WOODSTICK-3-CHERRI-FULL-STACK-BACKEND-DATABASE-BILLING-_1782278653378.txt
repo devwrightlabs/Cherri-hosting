@@ -1,0 +1,99 @@
+WOODSTICK 3 — CHERRI FULL-STACK BACKEND + DATABASE + BILLING (Railway landlord; build AFTER static hosting works)
+
+READ FIRST — OPERATING RULES:
+- Heaviest, costliest lane. Do NOT start until woodstick 1 + 2 (upload → build → harden → pin → .pi DNS) work end-to-end. Confirm static hosting works before Phase 1.
+- Build ONE PHASE AT A TIME. After each phase STOP, summarize, ask "Phase X complete — ready for Phase Y?" Wait for my yes.
+- Surface REAL errors everywhere (HTTP status + body). No generic "Network Error." No marketing copy in the app.
+- Where I write NEEDS APPROVAL: stop, confirm the real-world fact with me, do NOT fake or assume it.
+
+LANDLORD: Railway, on MY account, runs BOTH the backend service AND the Postgres database per app, provisioned via Railway's API. User NEVER sees Railway or a DB dashboard — to them it's "Cherri gave me an app + database." Postgres is the engine (Railway runs real Postgres).
+
+CONTEXT: Front-end on IPFS (existing). Apps that need a server get a backend + Postgres on MY Railway account. Cherri meters each app, caps it per app, bills the user in Pi (pegged to a dollar target): subscription + overage. I carry infra cost; caps + subscription protect me.
+
+──────── PHASE 1 — RAILWAY CONNECTION + COST-CONTROL FACTS ────────
+- Add RAILWAY_API_TOKEN to Secrets (my token), server-side only. Show me the input box.
+- Server module that can, via Railway's API: create project/service, deploy code, provision Postgres, inject DB connection string into the backend, set env vars, read usage metrics, stop/delete a service.
+- NEEDS APPROVAL — verify against Railway's CURRENT docs and report to me before building cost logic: (a) can a backend service scale to zero / sleep when idle? (b) Does a Railway Postgres DB run 24/7, or can it pause/sleep? (c) exact billing granularity (per-second? per-GB?).
+- Confirm by listing my Railway projects. STOP and report.
+
+──────── PHASE 2 — DETECT BACKEND NEED + PROVISION ────────
+- In the build step: if a project needs a server (Next SSR/API, Express, etc.), offer "Deploy with backend" — PAID TIERS ONLY (Free = front-end only).
+- On deploy: provision backend service + Postgres DB, enable scale-to-zero/sleep if available, deploy backend code, capture public URL.
+- Front-end still pins to IPFS (existing flow). STOP and report.
+
+──────── PHASE 3 — ENV SPLIT (IPFS front-end ↔ Railway backend) ────────
+- Inject backend public URL into the front-end config so the IPFS site calls the right API.
+- Backend gets its own server-side secrets (Postgres connection string via Railway reference + user's keys) — NEVER in IPFS files.
+- Verify deployed front-end reaches its backend. STOP and report.
+
+──────── PHASE 4 — METERING + PER-APP CAPS ────────
+- Per app, poll on a schedule: compute/runtime, bandwidth, requests, Postgres DB size (Railway), IPFS pinned size (Pinata).
+- Enforce per-tier PER-APP caps (below). Tier 4 = unlimited NUMBER of apps; EVERY app still carries per-app caps.
+- 80% of any cap → notify. 100%: paid apps keep running + accrue overage; Free blocks new pins.
+- Usage dashboard per app vs caps. STOP and report.
+
+──────── PHASE 5 — DOLLAR-PEGGED PI BILLING ────────
+- Prices stored as DOLLAR amounts, digits sum to 8: Free $0, Builder $35, Pro $143, Tier 4 $350. Dollar number is the anchor AND the "8"; Pi floats.
+- Pi/USD price source (PI_PRICE_SOURCE). Each charge: Pi owed = (dollar price ÷ current Pi price) × 1.04 (~4% buffer for conversion slippage).
+- Charge via Pi payment flow with SERVER-SIDE approve/complete (SDK is front-end only; server holds my Pi app secret key, runs approval).
+- Monthly charge = subscription + accrued overage, in Pi at that day's rate. Apply my % fee on Pi the app earns (5%→0.5% by tier). STOP and report.
+
+──────── PHASE 6 — OVERAGE + UNPAID FLOW ────────
+- Cycle end: total = subscription + overage (Pi, pegged).
+- Paid → reset caps. Unpaid after grace window → PAUSE apps (stop Railway service; site stays pinned on IPFS). "Apps paused — settle balance to resume." Paid → resume.
+- Notify at: 80% cap, 100% cap, invoice due, paused. STOP and report.
+
+════════════════════════════════════════════════
+FIXES FOR KNOWN FLAGS — BUILD THESE, DON'T JUST WARN
+════════════════════════════════════════════════
+
+──────── PHASE 7 — IDLE DATABASE COST CONTROL (Flag #1: Railway DBs run 24/7) ────────
+Railway Postgres likely does NOT sleep — it bills continuously. At Tier 4, 20 idle apps = 20 always-on DBs draining me. Build real defenses:
+- INACTIVITY DETECTION: track last-request time per app. If an app's backend gets zero traffic for N days (default 7, configurable) → mark DORMANT.
+- DORMANT ACTION: snapshot/export the Postgres DB to cheap object storage (e.g. an IPFS/S3-style dump), then DELETE the live Railway DB so it stops billing. Keep the app's front-end live on IPFS.
+- WAKE ON DEMAND: if a dormant app gets a request, auto-restore the DB from the snapshot before serving. Show "waking up…" briefly. (This is the manual version of scale-to-zero for the DB.)
+- HARD CAP ON LIVE DBs: a configurable max number of simultaneously LIVE databases per account. Approaching it → alert me. This caps my absolute exposure no matter how many apps exist.
+- COST DASHBOARD (admin, me only): live count of running services + DBs, estimated current monthly Railway spend, and which apps are driving it. I must be able to see my real cost at any moment.
+- NEEDS APPROVAL: confirm Railway's snapshot/restore + delete APIs support this before building; if not, fall back to the hard cap on live DBs as the primary defense.
+
+──────── PHASE 8 — RECURRING BILLING REALITY (Flag #2: PiRC2 may not be live) ────────
+Pi's recurring-subscription standard (PiRC2) may NOT actually work yet (it showed "coming soon" in my own app). Do NOT assume auto-renew works.
+- NEEDS APPROVAL: web-search / check Pi's current docs and confirm whether PiRC2 recurring auto-renew is LIVE and functional. Report to me. Do not build auto-renew on an assumption.
+- IF PiRC2 works → use it for true auto-renew.
+- IF NOT (expected) → build MANUAL RENEWAL: 3 days before cycle end, notify the user "Your Cherri plan renews in 3 days — tap to pay [X Pi]." They tap, server runs approve/complete, plan renews. Repeat reminders at 3 days, 1 day, due date.
+- GRACE + PAUSE: if not paid by due date → grace window (default 3 days) → apps pause. Never silently lose their data or site; pausing is reversible on payment.
+- Build it so switching from manual to PiRC2 later is a single config flag, not a rewrite.
+
+──────── PHASE 9 — SECURITY: RUNNING STRANGERS' CODE (Flag #3: never raised, real risk) ────────
+Cherri builds and runs OTHER PEOPLE'S code on my infrastructure. That is a real attack surface. Build guards:
+- BUILD ISOLATION: run each user's npm install + build in an isolated, sandboxed environment (container/ephemeral), never on the main Cherri server. No user build can read Cherri's secrets, files, or other users' data.
+- SECRET ISOLATION: my keys (Railway token, Pinata JWT, Pi secret key, DB master creds) are NEVER exposed to user code, user builds, or the IPFS-pinned front-end. Server-side only, scoped per function.
+- RESOURCE LIMITS ON BUILDS: cap build time, memory, and CPU per build so a malicious/broken project can't hang or run up my compute. Kill builds that exceed limits; show the user the real reason.
+- DEPENDENCY SAFETY: block builds from running arbitrary post-install scripts that phone out or mine; flag suspicious package behavior. NEEDS APPROVAL on how aggressive to make this.
+- PER-APP DB CREDENTIALS: each app's Postgres gets its own isolated credentials; one app can never reach another app's database. STOP and report.
+
+──────── PHASE 10 — DATA SAFETY & PORTABILITY (Flag #4: never raised) ────────
+- BACKUPS: automatic periodic Postgres backups per app (so a Railway failure or a dormant-DB restore never loses user data). Show users their last backup time.
+- USER EXPORT (no lock-in — your brand promise): a user can export their full site (IPFS files) AND their database (Postgres dump) anytime. This is a selling point — say it plainly in the UI.
+- DELETION: when a user deletes an app, fully tear down its Railway service + DB so it stops billing me, and confirm removal. STOP and report.
+
+──────── PHASE 11 — RESILIENCE: LANDLORD OUTAGE (Flag #5: Railway's Google-Cloud outage risk) ────────
+Railway rides on Google Cloud and HAS gone fully down (8-hour outage). My users' backends depend on Railway uptime — I cannot prevent that, but I must handle it gracefully.
+- STATUS MONITORING: detect when Railway's API/services are unreachable. Show users an honest status ("Backend provider is experiencing an outage — your site on IPFS is still live; backend features are temporarily down") — NOT a generic error or a fake success.
+- IPFS STAYS UP: the front-end on IPFS is independent of Railway and stays live during a Railway outage. Make sure the UI reflects that the site is up even if the backend is down.
+- RETRY/QUEUE: provisioning or billing actions that fail due to a Railway outage queue and retry automatically when Railway returns, instead of failing permanently.
+- FUTURE OPTIMIZATION (code comment, don't build now): if idle Postgres cost or Railway reliability becomes a problem at scale, evaluate moving databases to Neon (scale-to-zero Postgres) and/or multi-provider failover. STOP and report.
+
+──────── PHASE 12 — LEGAL / ABUSE / OPERATIONS (Flag #6: never raised, will matter) ────────
+- ACCEPTABLE-USE: a basic terms gate — no illegal content, no crypto-mining backends, no malware. Needed because I'm hosting and running others' code on infrastructure I pay for.
+- ABUSE KILL-SWITCH: I (admin) can instantly suspend a specific app that's attacking, mining, or abusing resources, without taking down other users.
+- FORGOTTEN-DOMAIN / ORPHAN CLEANUP: detect provisioned services with no owner/payment and reclaim them so they don't bill me forever.
+- ADMIN PANEL (me only): see all apps, all running services/DBs, current spend, and suspend/resume/delete any of them. I must never be blind to what's running on my dime. STOP — final phase.
+
+────────────────── TIERS / CAPS / SUPPORTED ──────────────────
+Prices in dollars (sum to 8), charged in Pi (pegged). Caps hold my cost under ~40% of each app's revenue.
+- Free $0: front-end only on IPFS, NO backend. 500 MB site, bandwidth capped.
+- Builder $35: 1 app + 1 Postgres DB. 5 GB site, 1 GB DB, ~100 GB/mo bandwidth.
+- Pro $143: 5 apps + 5 DBs. 10 GB site/app, 2 GB DB/app, ~250 GB/mo bandwidth/app.
+- Tier 4 $350: UNLIMITED number of apps + DBs. Each app: 10 GB site, 2 GB DB, bandwidth capped per app; subject to the live-DB hard cap (Phase 7).
+Backends: Node/Express, Next.js (server), other Railway-detectable runtimes — each isolated on its own Railway service. Front-ends on IPFS.
