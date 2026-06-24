@@ -8,3 +8,4 @@
 - [Multi-package repo layout](monorepo-package-layout.md) — 3 package.json (root/client/server), no workspaces; install client/server deps in their own dir, NOT via root-installing tools.
 - [Staged deploy invariants](staged-deploy-invariants.md) — every upload path must shouldIgnoreFile before staging/pinning (preview is public by token); never pin unbuilt apps; pin claimed atomically.
 - [Pinata IPFS wiring](pinata-ipfs-wiring.md) — PINATA_JWT (Bearer) primary, key/secret fallback; trim in lockstep; both deploy poll paths must keep liveDeployment on FAILED to surface real errors.
+- [Railway landlord](railway-landlord.md) — per-app backend+Postgres provisioner; team token (no `me`), no Postgres mutation (serviceCreate+image), soft spend caps, never expose Railway publicly.

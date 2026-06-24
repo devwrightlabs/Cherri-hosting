@@ -31,6 +31,17 @@ export function isDatabaseConfigured(): boolean {
 }
 
 /**
+ * True when the Railway provisioning API token is configured. Railway is the
+ * "landlord" that runs per-app backend services + Postgres databases on the
+ * operator's account. This check is intentionally NOT included in the public
+ * `integrationStatus()` snapshot below — end users must never see that Cherri
+ * uses Railway. It is used server-side only (startup warning + provisioning).
+ */
+export function isRailwayConfigured(): boolean {
+  return Boolean(process.env.RAILWAY_API_TOKEN?.trim());
+}
+
+/**
  * True when the PiRC2 on-chain subscription standard is configured (required to
  * verify allowance approvals and draw recurring charges). PiRC2 is a Soroban
  * smart-contract standard; it needs the subscription contract id, a Soroban RPC

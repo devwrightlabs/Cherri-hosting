@@ -14,7 +14,7 @@ import { subscriptionsRouter } from './routes/subscriptions';
 import { pirc2Router } from './routes/pirc2';
 import { paymentsRouter } from './routes/payments';
 import { logger } from './utils/logger';
-import { integrationStatus } from './utils/integrations';
+import { integrationStatus, isRailwayConfigured } from './utils/integrations';
 import { startBillingScheduler } from './services/billingScheduler';
 
 // ---------------------------------------------------------------------------
@@ -52,6 +52,13 @@ if (!status.pirc2) {
     '[startup] PiRC2 is not configured (PIRC2_CONTRACT_ID, SOROBAN_RPC_URL, ' +
       'PIRC2_NETWORK_PASSPHRASE). Recurring subscriptions are disabled until ' +
       'configured (the app will continue running).',
+  );
+}
+if (!isRailwayConfigured()) {
+  console.warn(
+    '[startup] RAILWAY_API_TOKEN is not set. Backend/database provisioning ' +
+      '(the Railway landlord) is disabled until configured (the app will ' +
+      'continue running).',
   );
 }
 
