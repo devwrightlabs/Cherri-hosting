@@ -21,6 +21,15 @@ End users must NEVER see Railway — to them an app just "gets a backend + DB".
 - Usage/metering: `estimatedUsage`/`usage`/`projectServiceUsage` all require `measurements:[MetricMeasurement!]!` + date range + projectId/workspaceId.
 - Volume backups (for snapshot/restore cost defense): `volumeInstanceBackupCreate`/`Restore`, `volumeInstancePITRRestore`.
 
+## Provisioning requires a PAID Railway workspace (hard gate)
+Creating any new resource (project/service/Postgres) on a **Free-plan** workspace fails with the GraphQL error `"Free plan resource provision limit exceeded. Please upgrade to provision more resources!"`. Read-only queries (`projects`, `getProject`, `estimatedUsage`) still work on Free. **Why:** Phase 2+ provisioning is blocked until the operator upgrades the workspace (or supplies a token for a paid workspace) — verify provisioning capability with a disposable create+teardown before assuming it works.
+
+## Verified provisioning building blocks (schema, not yet live-run)
+- Public URL: `serviceDomainCreate(input:{environmentId!,serviceId!,targetPort})` → returns `ServiceDomain{ domain }` (the `*.up.railway.app` URL). Read existing via `domains(projectId!,environmentId!,serviceId!)`.
+- Scale-to-zero: `serviceInstanceUpdate(serviceId!,environmentId,input:{ sleepApplication:true, ... })` → Boolean.
+- Read injected env (e.g. DB connection vars): `variables(projectId!,environmentId!,serviceId,unrendered)` → EnvironmentVariables map.
+- Postgres volume: `volumeCreate(input:{mountPath!,projectId!,environmentId,serviceId,region})`. Official PG via `templateDeployV2(input:{templateId!,serializedConfig!,...})` or `template(code|id|owner|repo)`; a bare image likely won't auto-create DATABASE_URL (verify live once on a paid plan).
+
 ## Cost-control reality (drives the design)
 - Railway spend caps are **soft** (alerts, not hard stops) — Cherri must do its own metering + capping.
 - Postgres runs 24/7 and bills continuously; scale-to-zero "App Sleeping" is unreliable for a prod DB. **Why:** this is why teardown (snapshot volume → delete service → restore on demand) is the real defense against idle-app cost, not relying on Railway sleep.
