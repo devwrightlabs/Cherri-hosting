@@ -175,11 +175,26 @@ export interface IntegrationStatus {
   pirc2: boolean;
 }
 
-// System status — which external integrations are available on the server.
-// Public (no auth) and intended to be fetched once, not polled.
+/**
+ * Sanitized health of the backend provider that runs per-app backends. The
+ * server NEVER reveals which provider this is — only a generic operational/
+ * outage state + a safe, user-facing message.
+ */
+export interface BackendProviderHealth {
+  /** true = up, false = outage, null = not actively monitored. */
+  operational: boolean | null;
+  state: 'operational' | 'outage' | 'unknown';
+  message: string;
+}
+
+export interface SystemStatus {
+  integrations: IntegrationStatus;
+  backendProvider: BackendProviderHealth;
+  timestamp: string;
+}
+
+// System status — which external integrations are available on the server plus
+// the sanitized backend-provider health. Public (no auth); polled by the banner.
 export const statusApi = {
-  get: () =>
-    apiClient.get<{ integrations: IntegrationStatus; timestamp: string }>(
-      '/status',
-    ),
+  get: () => apiClient.get<SystemStatus>('/status'),
 };

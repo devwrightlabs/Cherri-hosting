@@ -26,6 +26,8 @@ import {
 } from './goLiveService';
 import { reserveProvisioningSlot } from './costControlService';
 import {
+  listProjects,
+  getProject,
   createProject,
   createService,
   provisionPostgres,
@@ -35,14 +37,55 @@ import {
   getLatestDeploymentStatus,
   deleteProject,
   RailwayApiError,
+  type RailwayDeploymentStatus,
 } from './railway';
+
+/**
+ * Test seam — the resumable workflow calls every Railway operation through this
+ * indirection so tests can simulate outages, adoption, and deploy states without
+ * touching the live provider. Production uses the real functions unchanged.
+ */
+interface ProvisioningRailwayFns {
+  listProjects: typeof listProjects;
+  getProject: typeof getProject;
+  createProject: typeof createProject;
+  createService: typeof createService;
+  provisionPostgres: typeof provisionPostgres;
+  upsertVariable: typeof upsertVariable;
+  deployServiceInstance: typeof deployServiceInstance;
+  createServiceDomain: typeof createServiceDomain;
+  getLatestDeploymentStatus: typeof getLatestDeploymentStatus;
+  deleteProject: typeof deleteProject;
+}
+const realRailwayFns: ProvisioningRailwayFns = {
+  listProjects,
+  getProject,
+  createProject,
+  createService,
+  provisionPostgres,
+  upsertVariable,
+  deployServiceInstance,
+  createServiceDomain,
+  getLatestDeploymentStatus,
+  deleteProject,
+};
+let railwayFns: ProvisioningRailwayFns = realRailwayFns;
+export function __setProvisioningRailwayFns(
+  fns: Partial<ProvisioningRailwayFns> | null,
+): void {
+  railwayFns = fns ? { ...realRailwayFns, ...fns } : realRailwayFns;
+}
 
 export type ProvisionOutcome =
   | 'PROVISIONED'
   | 'EXISTS'
   | 'BLOCKED'
   | 'CAP_REACHED'
-  | 'FAILED';
+  | 'FAILED'
+  /** Provider (Railway) outage/timeout, or a deploy not yet verified. The row
+   *  stays PROVISIONING with a scheduled retry — NEVER marked FAILED, NEVER torn
+   *  down — so it self-heals when the provider returns / the build finishes. */
+  | 'DEFERRED';
 
 export interface ProvisionResult {
   outcome: ProvisionOutcome;
@@ -63,6 +106,35 @@ const templateImage = (): string | undefined =>
 
 /** Name of the Postgres service created per app (used for the var reference). */
 const PG_SERVICE_NAME = 'postgres';
+/** Name of the backend service created per app (used for adoption-by-name). */
+const BACKEND_SERVICE_NAME = 'backend';
+
+/**
+ * Deterministic per-app Railway project name. Using a name derived ONLY from the
+ * projectId (no timestamp) is what makes provisioning resumable across a provider
+ * outage: if a `createProject` call timed out but actually created the project, a
+ * later retry finds it by this exact name and ADOPTS it instead of creating a
+ * second billable project. One Cherri app => at most one Railway project, ever.
+ */
+function deterministicProjectName(projectId: string): string {
+  return `cherri-app-${projectId}`;
+}
+
+// Capped exponential backoff for outage/deploy-pending retries. The retry
+// reconciler will not re-drive a row before provisioningNextRetryAt.
+const RETRY_BASE_MS = 60_000; // 1 min
+const RETRY_CAP_MS = 30 * 60_000; // 30 min
+function computeBackoffMs(attemptCount: number): number {
+  const exp = Math.min(Math.max(attemptCount, 0), 10);
+  return Math.min(RETRY_CAP_MS, RETRY_BASE_MS * 2 ** exp);
+}
+
+/** Deploy statuses that are a real, terminal FAILURE (never retried). */
+const TERMINAL_DEPLOY_FAILURE: readonly RailwayDeploymentStatus[] = [
+  'FAILED',
+  'CRASHED',
+  'REMOVED',
+];
 
 /** Sanitize a thrown error into an honest, operator-facing reason string. */
 function reasonFromError(err: unknown): string {
@@ -72,6 +144,40 @@ function reasonFromError(err: unknown): string {
       : err.message;
   }
   return (err as Error)?.message ?? 'Unknown provisioning error.';
+}
+
+/**
+ * Keep a provisioning row retryable after a provider outage OR a not-yet-verified
+ * deploy: status stays PROVISIONING, a backoff retry is scheduled, and an honest
+ * (sanitized) reason is recorded. NEVER marks FAILED and NEVER tears down — the
+ * resources (if any) may be fine, so we must not destroy them or stop billing
+ * blindly. Returns a DEFERRED result.
+ */
+async function deferProvisioning(
+  backendServiceId: string,
+  currentAttemptCount: number,
+  reason: string,
+): Promise<ProvisionResult> {
+  const attemptCount = currentAttemptCount + 1;
+  const nextRetryAt = new Date(Date.now() + computeBackoffMs(attemptCount));
+  await prisma.backendService
+    .update({
+      where: { id: backendServiceId },
+      data: {
+        status: 'PROVISIONING',
+        provisioningAttemptCount: attemptCount,
+        provisioningNextRetryAt: nextRetryAt,
+        failureReason: reason,
+      },
+    })
+    .catch(() => undefined);
+  logger.warn('Provisioning deferred; will retry', {
+    backendServiceId,
+    attemptCount,
+    nextRetryAt: nextRetryAt.toISOString(),
+    reason,
+  });
+  return { outcome: 'DEFERRED', backendServiceId, reason };
 }
 
 /**
@@ -141,6 +247,11 @@ export function assertPerAppDbIsolation(name: string, value: string): void {
  * Provision a backend (service + Postgres) for a project. Idempotent per
  * project. See module doc for the honesty guarantees. Returns a discriminated
  * result; the HTTP route maps it to an honest status (never leaks provider ids).
+ *
+ * This is the USER-INITIATED entry. It gates on the GO-LIVE capability, enforces
+ * the live-DB cap, reserves the PROVISIONING row, then hands off to the resumable
+ * workflow. A provider outage during the workflow returns DEFERRED (retryable) —
+ * the retry reconciler later re-drives it via {@link resumeProvisioning}.
  */
 export async function provisionBackend(
   projectId: string,
@@ -168,8 +279,12 @@ export async function provisionBackend(
       };
     }
     if (existing.status === 'PROVISIONING') {
+      // Already in flight (possibly mid-retry after an outage). The retry
+      // reconciler owns re-driving it — don't start a second concurrent driver.
+      // This is PENDING, NEVER active: returning DEFERRED keeps the route honest
+      // (a still-provisioning backend must never be reported as 'active').
       return {
-        outcome: 'EXISTS',
+        outcome: 'DEFERRED',
         backendServiceId: existing.id,
         reason: 'Provisioning is already in progress for this project.',
       };
@@ -201,150 +316,302 @@ export async function provisionBackend(
     throw err;
   }
 
-  let railwayProjectId: string | undefined;
+  return runProvisioningWorkflow(backendServiceId);
+}
+
+/**
+ * Re-drive a PROVISIONING row that was deferred by a provider outage or an
+ * in-progress deploy. Called ONLY by the retry reconciler (which gates on the
+ * backend lane being live + the provider being reachable). Safe to call on any
+ * row: it no-ops (EXISTS) when the row is already ACTIVE/terminal or gone.
+ */
+export async function resumeProvisioning(
+  backendServiceId: string,
+): Promise<ProvisionResult> {
+  const bs = await prisma.backendService.findUnique({
+    where: { id: backendServiceId },
+    select: { status: true },
+  });
+  if (!bs) {
+    return { outcome: 'FAILED', reason: 'Backend service row no longer exists.' };
+  }
+  if (bs.status !== 'PROVISIONING') {
+    return { outcome: 'EXISTS', backendServiceId };
+  }
+  return runProvisioningWorkflow(backendServiceId);
+}
+
+/**
+ * The resumable provisioning state machine. Reads the row's current Railway ids
+ * and continues ONLY the steps not yet done, adopting any orphaned Railway
+ * resources (project + services) by deterministic name so a timed-out call can
+ * never produce a duplicate billable project. Honesty guarantees:
+ *   - A provider OUTAGE (RailwayApiError.isOutage) at ANY step => DEFERRED:
+ *     status stays PROVISIONING, a retry is scheduled, NOTHING is torn down.
+ *   - A deploy that is not yet SUCCESS but not terminally failed => DEFERRED too
+ *     (the build may still finish) — never marked ACTIVE, never marked FAILED.
+ *   - A terminal deploy failure or any non-outage error => FAILED + best-effort
+ *     teardown (existing behavior) so a broken partial provision stops billing.
+ *   - ACTIVE is set ONLY after a verified SUCCESS deploy.
+ */
+async function runProvisioningWorkflow(
+  backendServiceId: string,
+): Promise<ProvisionResult> {
+  const bs = await prisma.backendService.findUnique({
+    where: { id: backendServiceId },
+  });
+  if (!bs) {
+    return { outcome: 'FAILED', reason: 'Backend service row vanished.' };
+  }
+  const { projectId } = bs;
+  const attemptCount = bs.provisioningAttemptCount;
+
+  // Track ids we resolve along the way (seed from the row for resumption).
+  let railwayProjectId = bs.railwayProjectId ?? undefined;
+  let railwayEnvironmentId = bs.railwayEnvironmentId ?? undefined;
+  let railwayDbServiceId = bs.railwayDbServiceId ?? undefined;
+  let railwayBackendServiceId = bs.railwayBackendServiceId ?? undefined;
+  let publicUrl = bs.publicUrl ?? undefined;
+
   try {
-    // 1. Create the per-app Railway project.
-    const proj = await createProject({
-      name: `cherri-${projectId.slice(0, 8)}-${Date.now().toString(36)}`,
-    });
-    railwayProjectId = proj.id;
-    const env =
-      proj.environments.find((e) => /prod/i.test(e.name)) ??
-      proj.environments[0];
-    if (!env) {
-      throw new Error('Railway project was created without an environment.');
+    // 1. Ensure the per-app Railway project exists (adopt orphan by name).
+    const desiredName = deterministicProjectName(projectId);
+    if (!railwayProjectId) {
+      const adopted = (await railwayFns.listProjects()).find(
+        (p) => p.name === desiredName,
+      );
+      if (adopted) {
+        railwayProjectId = adopted.id;
+        logger.info('Adopted existing Railway project by name', { backendServiceId });
+      } else {
+        const proj = await railwayFns.createProject({ name: desiredName });
+        railwayProjectId = proj.id;
+      }
+    }
+
+    // Always fetch the project so we can resolve its environment and adopt any
+    // services that already exist (from a partially-completed earlier attempt).
+    const project = await railwayFns.getProject(railwayProjectId);
+    if (!railwayEnvironmentId) {
+      const env =
+        project.environments.find((e) => /prod/i.test(e.name)) ??
+        project.environments[0];
+      if (!env) {
+        throw new Error('Railway project has no environment.');
+      }
+      railwayEnvironmentId = env.id;
     }
     await prisma.backendService.update({
       where: { id: backendServiceId },
-      data: { railwayProjectId: proj.id, railwayEnvironmentId: env.id },
+      data: { railwayProjectId, railwayEnvironmentId },
     });
 
-    // 2. Provision the managed Postgres database.
-    const db = await provisionPostgres({
-      projectId: proj.id,
-      environmentId: env.id,
-      name: PG_SERVICE_NAME,
-    });
-    await prisma.backendService.update({
-      where: { id: backendServiceId },
-      data: { railwayDbServiceId: db.id, dbLifecycleStatus: 'LIVE' },
-    });
+    // 2. Ensure the managed Postgres service (adopt by name, else create).
+    if (!railwayDbServiceId) {
+      const adopted = project.services.find((s) => s.name === PG_SERVICE_NAME);
+      if (adopted) {
+        railwayDbServiceId = adopted.id;
+      } else {
+        const db = await railwayFns.provisionPostgres({
+          projectId: railwayProjectId,
+          environmentId: railwayEnvironmentId,
+          name: PG_SERVICE_NAME,
+        });
+        railwayDbServiceId = db.id;
+      }
+      await prisma.backendService.update({
+        where: { id: backendServiceId },
+        data: { railwayDbServiceId, dbLifecycleStatus: 'LIVE' },
+      });
+    }
 
-    // 3. Create the backend service from the operator's template (repo|image).
-    const repo = templateRepo();
-    const image = templateImage();
-    const svc = await createService({
-      projectId: proj.id,
-      environmentId: env.id,
-      name: 'backend',
-      source: repo ? { repo } : { image: image! },
-      branch: repo ? templateBranch() : undefined,
-    });
-    await prisma.backendService.update({
-      where: { id: backendServiceId },
-      data: { railwayBackendServiceId: svc.id },
-    });
+    // 3. Ensure the backend service (adopt by name, else create from template).
+    if (!railwayBackendServiceId) {
+      const adopted = project.services.find(
+        (s) => s.name === BACKEND_SERVICE_NAME,
+      );
+      if (adopted) {
+        railwayBackendServiceId = adopted.id;
+      } else {
+        const repo = templateRepo();
+        const image = templateImage();
+        if (!repo && !image) {
+          throw new Error('No backend template (repo or image) is configured.');
+        }
+        const svc = await railwayFns.createService({
+          projectId: railwayProjectId,
+          environmentId: railwayEnvironmentId,
+          name: BACKEND_SERVICE_NAME,
+          source: repo ? { repo } : { image: image! },
+          branch: repo ? templateBranch() : undefined,
+        });
+        railwayBackendServiceId = svc.id;
+      }
+      await prisma.backendService.update({
+        where: { id: backendServiceId },
+        data: { railwayBackendServiceId },
+      });
+    }
 
-    // 4. Wire DATABASE_URL into the backend via a Railway variable reference to
-    //    the Postgres service. Resolved server-side at deploy — NEVER written
-    //    into IPFS files. skipDeploys so the explicit deploy below is the one
-    //    we verify.
+    // 4. Wire DATABASE_URL via a Railway variable reference to the app's own
+    //    Postgres. Idempotent upsert — safe to repeat on every resume. Resolved
+    //    server-side at deploy; NEVER written into IPFS files. skipDeploys so the
+    //    explicit deploy below is the one we verify.
     const dbVarValue = `\${{${PG_SERVICE_NAME}.DATABASE_URL}}`;
     assertPerAppDbIsolation('DATABASE_URL', dbVarValue);
-    await upsertVariable({
-      projectId: proj.id,
-      environmentId: env.id,
-      serviceId: svc.id,
+    await railwayFns.upsertVariable({
+      projectId: railwayProjectId,
+      environmentId: railwayEnvironmentId,
+      serviceId: railwayBackendServiceId,
       name: 'DATABASE_URL',
       value: dbVarValue,
       skipDeploys: true,
     });
 
-    // 5. Deploy the backend service.
-    await deployServiceInstance({
-      serviceId: svc.id,
-      environmentId: env.id,
+    // 5. Ensure a deployment exists. Only TRIGGER a deploy when there is none yet
+    //    — on a resume an in-flight deploy is left to finish (no duplicate
+    //    deploys, no duplicate billing).
+    let dep = await railwayFns.getLatestDeploymentStatus({
+      projectId: railwayProjectId,
+      serviceId: railwayBackendServiceId,
+      environmentId: railwayEnvironmentId,
     });
+    if (!dep) {
+      await railwayFns.deployServiceInstance({
+        serviceId: railwayBackendServiceId,
+        environmentId: railwayEnvironmentId,
+      });
+      dep = await railwayFns.getLatestDeploymentStatus({
+        projectId: railwayProjectId,
+        serviceId: railwayBackendServiceId,
+        environmentId: railwayEnvironmentId,
+      });
+    }
 
-    // 6. Create the public provider domain (operator-only URL).
-    const domain = await createServiceDomain({
-      serviceId: svc.id,
-      environmentId: env.id,
-    });
-    const publicUrl = `https://${domain.domain.replace(/^https?:\/\//, '')}`;
-    await prisma.backendService.update({
-      where: { id: backendServiceId },
-      data: { publicUrl },
-    });
+    // 6. Ensure the public provider domain (operator-only URL).
+    if (!publicUrl) {
+      const domain = await railwayFns.createServiceDomain({
+        serviceId: railwayBackendServiceId,
+        environmentId: railwayEnvironmentId,
+      });
+      publicUrl = `https://${domain.domain.replace(/^https?:\/\//, '')}`;
+      await prisma.backendService.update({
+        where: { id: backendServiceId },
+        data: { publicUrl },
+      });
+    }
 
-    // 7. VERIFY the deploy actually reached SUCCESS before marking ACTIVE.
-    const dep = await getLatestDeploymentStatus({
-      projectId: proj.id,
-      serviceId: svc.id,
-      environmentId: env.id,
-    });
-    if (!dep || dep.status !== 'SUCCESS') {
-      const reason = `Deploy not verified SUCCESS (status: ${dep?.status ?? 'NONE'}).`;
+    // 7. Classify the deploy. ACTIVE only on verified SUCCESS.
+    if (dep && dep.status === 'SUCCESS') {
       await prisma.backendService.update({
         where: { id: backendServiceId },
         data: {
-          status: 'FAILED',
-          failureReason: reason,
-          railwayDeploymentId: dep?.id ?? null,
+          status: 'ACTIVE',
+          railwayDeploymentId: dep.id,
+          failureReason: null,
+          provisioningNextRetryAt: null,
         },
       });
-      return { outcome: 'FAILED', backendServiceId, reason };
+      logger.info('Backend provisioned + verified ACTIVE', { backendServiceId });
+      return { outcome: 'PROVISIONED', backendServiceId, publicUrl };
     }
 
-    // 8. Verified deploy + public URL -> ACTIVE.
-    await prisma.backendService.update({
+    if (dep && TERMINAL_DEPLOY_FAILURE.includes(dep.status)) {
+      // A real, terminal build failure — NOT an outage. Fail + tear down.
+      return failAndTeardown(
+        backendServiceId,
+        railwayProjectId,
+        `Deploy failed terminally (status: ${dep.status}).`,
+        dep.id,
+      );
+    }
+
+    // Deploy is still in progress (or not visible yet). The build may still
+    // succeed, so this is NOT a failure: keep PROVISIONING and re-verify later.
+    if (dep?.id) {
+      await prisma.backendService
+        .update({
+          where: { id: backendServiceId },
+          data: { railwayDeploymentId: dep.id },
+        })
+        .catch(() => undefined);
+    }
+    return deferProvisioning(
+      backendServiceId,
+      attemptCount,
+      `Deploy not yet verified SUCCESS (status: ${dep?.status ?? 'NONE'}); will re-check.`,
+    );
+  } catch (err) {
+    // A provider outage at ANY step keeps the row retryable — never FAILED, never
+    // torn down (the resources may be fine; tearing down during an outage would
+    // also fail and could orphan billable resources).
+    if (err instanceof RailwayApiError && err.isOutage) {
+      return deferProvisioning(
+        backendServiceId,
+        attemptCount,
+        'Backend provider outage during provisioning; will retry automatically.',
+      );
+    }
+    // Any other (non-outage) error is a real failure: record it + tear down so a
+    // broken partial provision does not keep billing.
+    return failAndTeardown(
+      backendServiceId,
+      railwayProjectId,
+      reasonFromError(err),
+    );
+  }
+}
+
+/**
+ * Mark a provisioning row FAILED and best-effort tear down its Railway project
+ * so a broken partial provision stops billing. Used ONLY for terminal,
+ * non-outage failures — never during a provider outage.
+ */
+async function failAndTeardown(
+  backendServiceId: string,
+  railwayProjectId: string | undefined,
+  reason: string,
+  railwayDeploymentId?: string,
+): Promise<ProvisionResult> {
+  logger.error('Provisioning failed; recording FAILED + attempting teardown', {
+    backendServiceId,
+    reason,
+  });
+  await prisma.backendService
+    .update({
       where: { id: backendServiceId },
       data: {
-        status: 'ACTIVE',
-        railwayDeploymentId: dep.id,
-        failureReason: null,
+        status: 'FAILED',
+        failureReason: reason,
+        provisioningNextRetryAt: null,
+        ...(railwayDeploymentId ? { railwayDeploymentId } : {}),
       },
-    });
-    logger.info('Backend provisioned + verified ACTIVE', { backendServiceId });
-    return { outcome: 'PROVISIONED', backendServiceId, publicUrl };
-  } catch (err) {
-    const reason = reasonFromError(err);
-    logger.error('Provisioning failed; recording FAILED + attempting teardown', {
-      backendServiceId,
-      reason,
-    });
-    await prisma.backendService
-      .update({
-        where: { id: backendServiceId },
-        data: { status: 'FAILED', failureReason: reason },
-      })
-      .catch(() => undefined);
-    // Best-effort teardown so a partial provision does not keep billing.
-    if (railwayProjectId) {
-      try {
-        await deleteProject(railwayProjectId);
-        await prisma.backendService
-          .update({
-            where: { id: backendServiceId },
-            data: { dbLifecycleStatus: 'DELETED' },
-          })
-          .catch(() => undefined);
-      } catch (teardownErr) {
-        const tr = reasonFromError(teardownErr);
-        await prisma.backendService
-          .update({
-            where: { id: backendServiceId },
-            data: {
-              dbDeleteFailureReason: `Cleanup after failed provision did not complete (still billing): ${tr}`,
-            },
-          })
-          .catch(() => undefined);
-        logger.error('Provision cleanup (deleteProject) failed', {
-          backendServiceId,
-          reason: tr,
-        });
-      }
+    })
+    .catch(() => undefined);
+  if (railwayProjectId) {
+    try {
+      await railwayFns.deleteProject(railwayProjectId);
+      await prisma.backendService
+        .update({
+          where: { id: backendServiceId },
+          data: { dbLifecycleStatus: 'DELETED' },
+        })
+        .catch(() => undefined);
+    } catch (teardownErr) {
+      const tr = reasonFromError(teardownErr);
+      await prisma.backendService
+        .update({
+          where: { id: backendServiceId },
+          data: {
+            dbDeleteFailureReason: `Cleanup after failed provision did not complete (still billing): ${tr}`,
+          },
+        })
+        .catch(() => undefined);
+      logger.error('Provision cleanup (deleteProject) failed', {
+        backendServiceId,
+        reason: tr,
+      });
     }
-    return { outcome: 'FAILED', backendServiceId, reason };
   }
+  return { outcome: 'FAILED', backendServiceId, reason };
 }

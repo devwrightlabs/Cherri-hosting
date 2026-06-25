@@ -9,7 +9,7 @@ import Skeleton from '../components/ui/Skeleton';
 import EmptyState from '../components/ui/EmptyState';
 import DeploymentCard from '../components/dashboard/DeploymentCard';
 import { useToast } from '../components/ui/Toast';
-import { projectsApi, deploymentsApi } from '../lib/api';
+import { projectsApi, deploymentsApi, statusApi } from '../lib/api';
 import { Project, Deployment } from '../types';
 
 /** Trigger a browser download for a Blob payload. */
@@ -32,6 +32,8 @@ export default function ProjectDetail() {
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  // Sanitized backend-provider outage flag (never reveals the provider).
+  const [backendOutage, setBackendOutage] = useState(false);
 
   // Data & Portability + Danger Zone state.
   const [exportingSite, setExportingSite] = useState(false);
@@ -50,6 +52,27 @@ export default function ProjectDetail() {
       .catch(() => setError('We could not load this project.'))
       .finally(() => setIsLoading(false));
   }, [id]);
+
+  // Poll the sanitized backend-provider health so we can reassure the user that
+  // their IPFS site is unaffected during a backend outage. Best-effort: any
+  // failure simply leaves the flag false (no false outage shown).
+  useEffect(() => {
+    let active = true;
+    const load = () => {
+      statusApi
+        .get()
+        .then((res) => {
+          if (active) setBackendOutage(res.data.backendProvider.state === 'outage');
+        })
+        .catch(() => undefined);
+    };
+    load();
+    const intervalId = setInterval(load, 60_000);
+    return () => {
+      active = false;
+      clearInterval(intervalId);
+    };
+  }, []);
 
   // Parse a JSON error message out of an Axios blob-typed error response.
   async function readBlobError(err: unknown, fallback: string): Promise<string> {
@@ -203,6 +226,16 @@ export default function ProjectDetail() {
             <span className="w-2 h-2 rounded-full bg-live animate-pulse-slow" />
             <span className="text-sm font-medium text-ink">Live deployment</span>
           </div>
+          {backendOutage && (
+            <div
+              role="status"
+              className="mb-3 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300"
+            >
+              Site live on IPFS · backend features temporarily unavailable. Your
+              published site keeps serving from IPFS even while backend and
+              database features are down.
+            </div>
+          )}
           <div className="space-y-2 text-xs">
             <div className="flex items-start gap-2">
               <span className="text-ink-mut shrink-0 w-8">CID</span>

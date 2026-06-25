@@ -254,3 +254,64 @@ export async function resumeUserApps(userId: string): Promise<ResumeResult> {
   }
   return { attempted: services.length, resumed, pendingResume };
 }
+
+export interface RetryPendingResult {
+  /** PAUSE_PENDING rows re-driven. */
+  pauseRetried: number;
+  /** Of those, ones now verifiably PAUSED on the provider. */
+  pauseEffected: number;
+  /** RESUME_PENDING rows re-driven. */
+  resumeRetried: number;
+  /** Of those, ones now verifiably ACTIVE on the provider. */
+  resumeEffected: number;
+}
+
+/**
+ * Phase 11 — retry pause/resume actions that were recorded as *_PENDING because
+ * the provider was unreachable (or the live path was off) when first attempted.
+ * Reuses the EXACT per-row pause/resume logic, so it carries the same honesty
+ * guarantees: a row only becomes PAUSED/ACTIVE after a real, verified provider
+ * stop/start; anything else stays PENDING with an honest reason.
+ *
+ * Called by the outage retry reconciler, which only invokes it when the backend
+ * lane is live AND the provider is reachable. It self-skips (effecting nothing)
+ * when the live stop/resume path is not enabled, so it is always safe to call.
+ */
+export async function retryPendingProviderActions(): Promise<RetryPendingResult> {
+  const result: RetryPendingResult = {
+    pauseRetried: 0,
+    pauseEffected: 0,
+    resumeRetried: 0,
+    resumeEffected: 0,
+  };
+  const live = await liveStopResumeEnabled();
+  if (!live) return result;
+
+  // Re-drive pauses that were intended but never effected on the provider.
+  const pausePending = await prisma.backendService.findMany({
+    where: { status: 'PAUSE_PENDING' },
+    select: { ...SERVICE_SELECT, pauseReason: true },
+  });
+  for (const bs of pausePending) {
+    result.pauseRetried += 1;
+    const outcome = await pauseBackendService(
+      bs,
+      bs.pauseReason ?? 'Retrying deferred pause.',
+      live,
+    );
+    if (outcome === 'PAUSED') result.pauseEffected += 1;
+  }
+
+  // Re-drive resumes that were intended but never effected on the provider.
+  const resumePending = await prisma.backendService.findMany({
+    where: { status: 'RESUME_PENDING' },
+    select: SERVICE_SELECT,
+  });
+  for (const bs of resumePending) {
+    result.resumeRetried += 1;
+    const outcome = await resumeBackendService(bs, live);
+    if (outcome === 'ACTIVE') result.resumeEffected += 1;
+  }
+
+  return result;
+}

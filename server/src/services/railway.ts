@@ -22,6 +22,15 @@
  * (create/provision/deploy/variables/usage/stop/delete) are built against the
  * verified Railway schema but are first EXERCISED live in Phase 2+, because they
  * create real, billable resources on the operator's account.
+ *
+ * FUTURE OPTIMIZATION (Phase 11, requirement 4 — DO NOT BUILD NOW): if idle
+ * Postgres cost or Railway reliability becomes a problem at scale, evaluate
+ * moving each app's database to Neon (scale-to-zero Postgres, so an idle DB
+ * costs ~nothing without our snapshot/delete dance) and/or introducing
+ * multi-provider failover so a single-landlord outage cannot take every backend
+ * down at once. This is intentionally deferred — Phase 11 only makes the current
+ * single-landlord (Railway) outage path HONEST and self-healing, it does not add
+ * a second provider.
  */
 
 import { IntegrationUnavailableError } from '../utils/integrations';
@@ -87,6 +96,36 @@ interface GraphQLResponse<T> {
 }
 
 /**
+ * Phase 11 — health observer hook. The status monitor registers a callback here
+ * so EVERY real Railway call reports its outcome (reachable vs outage) without
+ * railway.ts importing the monitor (which would create an import cycle). A
+ * successful call or any HTTP/GraphQL error means Railway answered (reachable);
+ * only a network error/timeout (isOutage) means unreachable.
+ */
+type RailwayOutcomeObserver = (outcome: {
+  ok: boolean;
+  isOutage: boolean;
+  reason?: string;
+}) => void;
+
+let outcomeObserver: RailwayOutcomeObserver | null = null;
+
+export function setRailwayOutcomeObserver(
+  fn: RailwayOutcomeObserver | null,
+): void {
+  outcomeObserver = fn;
+}
+
+function reportOutcome(ok: boolean, isOutage: boolean, reason?: string): void {
+  if (!outcomeObserver) return;
+  try {
+    outcomeObserver({ ok, isOutage, reason });
+  } catch {
+    // The monitor must never break a real provider call.
+  }
+}
+
+/**
  * Execute a GraphQL operation against Railway. Throws `RailwayApiError` on any
  * non-success (HTTP error, GraphQL error, malformed body, network/timeout).
  * Never returns a partial/faked result.
@@ -116,12 +155,12 @@ async function railwayRequest<T>(
     });
   } catch (err) {
     const aborted = (err as Error)?.name === 'AbortError';
-    throw new RailwayApiError(
-      aborted
-        ? 'Railway API request timed out (backend provider may be experiencing an outage).'
-        : 'Railway API was unreachable (backend provider may be experiencing an outage).',
-      0,
-    );
+    const message = aborted
+      ? 'Railway API request timed out (backend provider may be experiencing an outage).'
+      : 'Railway API was unreachable (backend provider may be experiencing an outage).';
+    // Network error / timeout = the provider never answered = outage.
+    reportOutcome(false, true, message);
+    throw new RailwayApiError(message, 0);
   } finally {
     clearTimeout(timer);
   }
@@ -134,7 +173,10 @@ async function railwayRequest<T>(
     body = null;
   }
 
+  // Railway answered (any HTTP/GraphQL response) => the provider is REACHABLE,
+  // even when it returns an error. Only a network/timeout (above) is an outage.
   if (!resp.ok) {
+    reportOutcome(false, false);
     throw new RailwayApiError(
       `Railway API returned HTTP ${resp.status}: ${text.slice(0, 300)}`,
       resp.status,
@@ -142,6 +184,7 @@ async function railwayRequest<T>(
     );
   }
   if (body?.errors?.length) {
+    reportOutcome(false, false);
     throw new RailwayApiError(
       `Railway API error: ${body.errors.map((e) => e.message).join('; ')}`,
       resp.status,
@@ -149,12 +192,14 @@ async function railwayRequest<T>(
     );
   }
   if (!body || body.data === undefined || body.data === null) {
+    reportOutcome(false, false);
     throw new RailwayApiError(
       'Railway API returned an unexpected response (no data).',
       resp.status,
       body?.errors ?? [],
     );
   }
+  reportOutcome(true, false);
   return body.data;
 }
 

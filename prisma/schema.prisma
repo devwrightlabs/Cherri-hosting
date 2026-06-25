@@ -157,6 +157,16 @@ model BackendService {
   /// Honest detail when the most recent backup could not be effected.
   lastBackupFailureReason String?
 
+  // --- Phase 11: resilience to a backend-provider (Railway) outage ----------
+  /// When set (and status is still PROVISIONING), a provider OUTAGE deferred
+  /// provisioning and the retry reconciler should resume it no earlier than this
+  /// time (capped exponential backoff). Null when there is no pending retry. An
+  /// outage NEVER marks the service FAILED — it stays retryable so it self-heals
+  /// when the provider returns, instead of failing permanently.
+  provisioningNextRetryAt DateTime?
+  /// How many times provisioning has been (re)attempted, for backoff + insight.
+  provisioningAttemptCount Int     @default(0)
+
   snapshots               DbSnapshot[]
   backups                 DbBackup[]
   usageSamples            UsageSample[]
@@ -166,6 +176,8 @@ model BackendService {
 
   @@index([status])
   @@index([dbLifecycleStatus])
+  /// Lets the outage retry reconciler cheaply find due PROVISIONING rows.
+  @@index([status, provisioningNextRetryAt])
 }
 
 /// A point-in-time export of an app's Postgres database, taken before the live

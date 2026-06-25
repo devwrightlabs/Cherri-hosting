@@ -25,6 +25,11 @@ import { startBillingLifecycleReconciler } from './services/billingLifecycleReco
 import { startDormancyReconciler } from './services/dormancyReconciler';
 import { startMeteringSampler } from './services/meteringSampler';
 import { startBackupReconciler } from './services/backupReconciler';
+import {
+  startRailwayProbe,
+  getRailwayHealth,
+} from './services/railwayStatusMonitor';
+import { startRailwayActionReconciler } from './services/railwayActionReconciler';
 
 // ---------------------------------------------------------------------------
 // Startup environment check (non-fatal by design)
@@ -187,8 +192,15 @@ app.get('/health', (_req, res) => {
 
 // Integration status — lets the frontend show a clear "degraded mode" banner
 // when an optional external service (Pi Network, Pinata/IPFS) is not configured.
+// `backendProvider` (Phase 11) is the SANITIZED health of the landlord that runs
+// per-app backends: it carries a generic operational/outage state + message and
+// NEVER reveals the provider name, hostnames, or ids.
 app.get('/api/status', (_req, res) => {
-  res.json({ integrations: integrationStatus(), timestamp: new Date().toISOString() });
+  res.json({
+    integrations: integrationStatus(),
+    backendProvider: getRailwayHealth(),
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // Routes
@@ -259,6 +271,15 @@ app.listen(PORT, () => {
   // backend lane is live + databaseBackups is enabled, and createBackup blocks
   // honestly with no live DB, so it is always safe to start and stays inert today.
   startBackupReconciler();
+  // Start the Phase 11 backend-provider (Railway) health monitor. It only wires
+  // the call observer + a read-only probe that self-skips unless the backend lane
+  // is live, so it makes no external calls and reports `unknown` today.
+  startRailwayProbe();
+  // Start the Phase 11 outage retry reconciler. It re-drives provisioning + pause/
+  // resume actions that were deferred by a provider outage. Gated on the backend
+  // lane being live, the provisioning capability, and the provider being reachable,
+  // so it is always safe to start and stays inert today.
+  startRailwayActionReconciler();
 });
 
 export default app;

@@ -966,6 +966,23 @@ deploymentsRouter.post(
           });
           return;
         }
+        case 'DEFERRED':
+          // A provider outage (or a not-yet-verified deploy) left the backend in
+          // a retryable PROVISIONING state. We NEVER report this as active — it is
+          // honestly pending and the retry reconciler will finish it automatically.
+          // No provider (Railway) identity is leaked.
+          logger.info('Backend provisioning deferred (pending/retryable)', {
+            projectId,
+            reason: result.reason,
+          });
+          res.status(202).json({
+            ok: false,
+            status: 'pending',
+            error:
+              "Your backend is still being set up and will be ready shortly — we'll keep retrying automatically. Your front-end is already live on IPFS.",
+            kind: 'backend_pending',
+          });
+          return;
         case 'CAP_REACHED':
           logger.warn('Backend provisioning blocked by live-DB cap', { projectId });
           res.status(503).json({
