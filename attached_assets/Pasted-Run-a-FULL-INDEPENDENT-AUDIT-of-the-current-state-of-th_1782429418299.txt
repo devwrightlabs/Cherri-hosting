@@ -1,0 +1,32 @@
+Run a FULL, INDEPENDENT AUDIT of the current state of the app. Be skeptical — do NOT trust the previous session's completion summary. Read the actual code and report what is REALLY there. Do not fix anything yet; report first.
+
+Verify each claim from the last run, and flag anything that was claimed-done but is actually incomplete, broken, or faked:
+
+STAGE 1 (bug fixes) — confirm in the real code:
+1. projects.ts DB-export catch actually logs the error object now.
+2. Projects.tsx surfaces the real server error (not a hardcoded string).
+3. All 4 .catch(console.error) loops (Deploy/Pricing/Dashboard/Projects) now show real user-facing error states with retry — confirm none are still silent.
+4. usePiEnvSwitch.ts surfaces a failed rollback instead of swallowing it.
+
+STAGE 2 (new screens) — confirm they actually WORK, not just exist:
+5. /account: is it a real, separate Account page (NOT the Pricing page)? Does it load real profile/plan/usage data, edit profile via PATCH /api/auth/me, and handle loading/error/empty states without crashing?
+6. /billing: does it actually fetch and display invoices, with a working empty state when there are none?
+7. Notification bell: does it call the real read/read-all routes and clear correctly? What happens with zero notifications?
+
+STAGE 3 — confirm:
+8. The .pi DNSLink stale-warning actually shows after a redeploy with a new CID, with a working copy button.
+9. GitHub private-repo 403 reason now reaches the user in the Deploy UI.
+10. Legacy POST /api/deploy is fully removed (no leftover references).
+
+STAGE 4 (the redesign) — be honest about depth:
+11. CRITICAL: did the UI actually get REDESIGNED, or were only the color values swapped under the old class names? Report which screens have genuinely improved layout/spacing/hierarchy vs. which are just the same old structure recolored teal.
+12. Was the signature deploy-to-live moment (animated reveal: sealed shield/checkmark + glow + URL slide-up + QR) actually built, or is it still the old plain success screen?
+13. Are 4B–4G actually reflected (restyled components, redesigned dashboard, deploy flow, account/pricing, empty states), or did the redesign stop at the color palette?
+14. Check mobile at 320/390/430px: any horizontal scroll, clipping, crooked nav, or unstyled default elements?
+
+ALSO CHECK:
+15. Any NEW bugs or type issues introduced by this run.
+16. Any console errors on load, broken links, or buttons that do nothing.
+17. Confirm the inert backend lane (snapshot store, PiRC2, provisioning) is still correctly gated and untouched.
+
+Give me a prioritized list: what's genuinely done, what was claimed-done but is incomplete or faked, and what's newly broken. Report only — no fixes yet.
