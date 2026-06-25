@@ -34,6 +34,11 @@ export const authApi = {
 };
 
 // Projects
+export interface SiteExportInfo {
+  cid: string;
+  gatewayUrls: string[];
+}
+
 export const projectsApi = {
   list: () => apiClient.get('/projects'),
   get: (id: string) => apiClient.get(`/projects/${id}`),
@@ -42,6 +47,24 @@ export const projectsApi = {
   update: (id: string, data: { name?: string; description?: string; customDomain?: string }) =>
     apiClient.patch(`/projects/${id}`, data),
   delete: (id: string) => apiClient.delete(`/projects/${id}`),
+  // The CID + public gateway links — the inherent no-lock-in guarantee.
+  exportSiteInfo: (id: string) =>
+    apiClient.get<SiteExportInfo>(`/projects/${id}/export/site`),
+  // Best-effort CAR archive. Returns a Blob (CAR) OR a JSON fallback payload;
+  // inspect the response content-type to tell them apart.
+  exportSiteArchive: (id: string) =>
+    apiClient.get(`/projects/${id}/export/site`, {
+      params: { archive: 1 },
+      responseType: 'blob',
+      timeout: 60000,
+    }),
+  // Direct pg_dump stream of the owner's database. Blob download; honest 503 when
+  // there is no live database to export.
+  exportDatabase: (id: string) =>
+    apiClient.get(`/projects/${id}/export/database`, {
+      responseType: 'blob',
+      timeout: 60000,
+    }),
 };
 
 // Deployments

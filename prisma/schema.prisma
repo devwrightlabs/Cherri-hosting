@@ -34,6 +34,16 @@ model Project {
   name         String
   description  String?
   customDomain String?
+  /// App-deletion lifecycle (Phase 10). ACTIVE | DELETING | DELETED. A delete
+  /// first marks DELETING, tears down provider resources + IPFS pins + private
+  /// backups, and only marks DELETED after every teardown step is confirmed. If
+  /// the provider/store is unreachable while resources still exist it STAYS
+  /// DELETING with deletionFailureReason for retry — we never fake removal.
+  lifecycleStatus      String   @default("ACTIVE")
+  /// Honest detail when a teardown step could not be completed.
+  deletionFailureReason String?
+  /// When the app was fully, verifiably torn down.
+  deletedAt            DateTime?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
   userId       String
@@ -42,6 +52,7 @@ model Project {
   backendService BackendService?
 
   @@index([userId])
+  @@index([lifecycleStatus])
 }
 
 model Deployment {
@@ -135,7 +146,19 @@ model BackendService {
   /// be effected (provider not live, snapshot store not configured, etc.).
   dbDeleteFailureReason   String?
   dbRestoreFailureReason  String?
+
+  // --- Phase 10: data safety (user-facing periodic backups) ----------------
+  /// When the most recent DB backup was verifiably STORED. Null until a real,
+  /// checksum-verified backup to a configured PRIVATE store has happened — never
+  /// set on a deferred/blocked path. Surfaced to the owner as "last backup time".
+  lastBackupAt            DateTime?
+  /// Outcome of the most recent backup attempt: STORED | FAILED | PENDING.
+  lastBackupStatus        String?
+  /// Honest detail when the most recent backup could not be effected.
+  lastBackupFailureReason String?
+
   snapshots               DbSnapshot[]
+  backups                 DbBackup[]
   usageSamples            UsageSample[]
 
   createdAt               DateTime @default(now())
@@ -166,6 +189,38 @@ model DbSnapshot {
   /// Whether the stored dump was encrypted at rest (required before any upload).
   encrypted        Boolean        @default(false)
   /// Honest detail when a snapshot/restore could not be effected.
+  failureReason    String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([backendServiceId, createdAt])
+}
+
+/// A user-facing, NON-destructive point-in-time backup of an app's Postgres
+/// database (Phase 10 data safety). Distinct from DbSnapshot: a snapshot is the
+/// cost-control path that deletes the live DB afterward, whereas a backup only
+/// preserves data and never deletes anything. Like snapshots, a backup is only
+/// ever STORED after a real, checksum-verified export to a configured PRIVATE,
+/// encrypted store — raw dumps are NEVER placed on public IPFS. Operator-only
+/// pointers; the owner only ever sees timestamps/status/size, never locationRef.
+model DbBackup {
+  id               String         @id @default(uuid())
+  backendServiceId String
+  backendService   BackendService @relation(fields: [backendServiceId], references: [id], onDelete: Cascade)
+  /// PENDING | EXPORTING | STORED | FAILED.
+  status           String         @default("PENDING")
+  /// AUTO (scheduler) | MANUAL (owner-triggered).
+  kind             String         @default("AUTO")
+  /// Opaque pointer to the configured private store + location; null until a
+  /// real export to a real store has happened. Never exposed to end users.
+  storageProvider  String?
+  locationRef      String?
+  /// Integrity check of the (encrypted) dump; set only when STORED.
+  checksum         String?
+  sizeBytes        BigInt?
+  /// Whether the stored dump was encrypted at rest (required before any upload).
+  encrypted        Boolean        @default(false)
+  /// Honest detail when a backup could not be effected.
   failureReason    String?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt

@@ -15,3 +15,4 @@
 - [Phase 7 idle-DB cost control](phase7-idle-db-cost-control.md) — hard cap = primary defense (no native Railway snapshot); inert honest dormancy/snapshot seams; dormancy from activityBaselineAt never createdAt; operator = OPERATOR_PI_USER_IDS allowlist.
 - [GO-LIVE master switch](go-live-switch.md) — backend lane ships inert; flip GoLiveConfig.goLiveEnabled + per-capability keys (Railway token/template/snapshot store+key); honest degrade when off, never fake; isBackendLaneLive() gates billing loops.
 - [Build security](build-security.md) — untrusted builds run on a hardened LOCAL runner (no container on this host); allowlisted-pkg rebuild trust comes from LOCKFILE registry provenance, never package.json.
+- [Phase 10 data safety](phase10-data-safety.md) — backups never delete the live DB; Railway delete booleans: false≠confirmed (treat as throw); owner-facing failure reasons stay generic; DB export never on IPFS, site export CID-first.

@@ -24,6 +24,7 @@ import { startBillingScheduler } from './services/billingScheduler';
 import { startBillingLifecycleReconciler } from './services/billingLifecycleReconciler';
 import { startDormancyReconciler } from './services/dormancyReconciler';
 import { startMeteringSampler } from './services/meteringSampler';
+import { startBackupReconciler } from './services/backupReconciler';
 
 // ---------------------------------------------------------------------------
 // Startup environment check (non-fatal by design)
@@ -254,6 +255,10 @@ app.listen(PORT, () => {
   // metering capability is off or Railway is unconfigured, so it is always safe
   // to start and writes no samples until GO-LIVE + metering keys are present.
   startMeteringSampler();
+  // Start the Phase 10 non-destructive backup reconciler. It self-skips until the
+  // backend lane is live + databaseBackups is enabled, and createBackup blocks
+  // honestly with no live DB, so it is always safe to start and stays inert today.
+  startBackupReconciler();
 });
 
 export default app;

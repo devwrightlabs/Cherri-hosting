@@ -18,15 +18,27 @@ export interface User {
   createdAt: string;
 }
 
+/** Operator-safe backend backup status. NEVER carries Railway ids/domains. */
+export interface BackendBackupStatus {
+  status: string;
+  lastBackupAt?: string | null;
+  lastBackupStatus?: string | null;
+  lastBackupFailureReason?: string | null;
+}
+
 export interface Project {
   id: string;
   name: string;
   description?: string;
   userId: string;
   customDomain?: string;
+  lifecycleStatus?: string;
+  deletionFailureReason?: string | null;
   createdAt: string;
   updatedAt: string;
   deployments: Deployment[];
+  /** Present only when the project has a provisioned backend. */
+  backendService?: BackendBackupStatus | null;
   _count?: { deployments: number };
 }
 

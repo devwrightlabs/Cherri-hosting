@@ -20,6 +20,7 @@ import {
   isBackendTemplateConfigured,
   isSnapshotStoreConfigured,
   isSnapshotEncryptionConfigured,
+  isPinataConfigured,
 } from '../utils/integrations';
 import { getCostControlConfig } from './costControlService';
 
@@ -30,7 +31,16 @@ export type CapabilityKey =
   | 'envWiring'
   | 'metering'
   | 'dormancyDetection'
-  | 'dormancySnapshotDelete';
+  | 'dormancySnapshotDelete'
+  // Phase 10: non-destructive periodic DB backups (data safety). Needs a private
+  // encrypted store + a live DB to dump, but NOT the destructive operator
+  // snapshotDeleteEnabled flag, a backend template, or paid attestation.
+  | 'databaseBackups'
+  // Phase 10: tearing down provider resources on app deletion. Needs only the
+  // cleanup credentials (Railway token + Pinata) — deliberately NOT gated on
+  // provisioning's template/paid-attestation, so an owner can always delete
+  // their app and stop billing the operator even if provisioning is off.
+  | 'providerTeardown';
 
 export interface CapabilityReadiness {
   enabled: boolean;
@@ -164,6 +174,24 @@ export async function goLiveReadiness(): Promise<GoLiveReadiness> {
     { label: 'SNAPSHOT_ENCRYPTION_KEY', ok: isSnapshotEncryptionConfigured() },
   ]);
 
+  // Non-destructive backups: a private encrypted store + a way to reach the live
+  // DB (Railway token). NOT gated on the destructive snapshotDeleteEnabled flag,
+  // a backend template, or paid attestation — preserving data must never depend
+  // on the operator having enabled deletion.
+  const databaseBackups = evalCapability(masterEnabled, hardDisabled, [
+    { label: 'RAILWAY_API_TOKEN', ok: railwayOk },
+    { label: 'SNAPSHOT_STORE_PROVIDER (private store)', ok: isSnapshotStoreConfigured() },
+    { label: 'SNAPSHOT_ENCRYPTION_KEY', ok: isSnapshotEncryptionConfigured() },
+  ]);
+
+  // Provider teardown for deletion: only the cleanup credentials. Deliberately
+  // NOT gated on template/paid attestation so an owner can always delete their
+  // app and stop billing the operator, regardless of provisioning state.
+  const providerTeardown = evalCapability(masterEnabled, hardDisabled, [
+    { label: 'RAILWAY_API_TOKEN', ok: railwayOk },
+    { label: 'Pinata/IPFS credentials', ok: isPinataConfigured() },
+  ]);
+
   return {
     masterEnabled,
     hardDisabled,
@@ -174,6 +202,8 @@ export async function goLiveReadiness(): Promise<GoLiveReadiness> {
       metering,
       dormancyDetection,
       dormancySnapshotDelete,
+      databaseBackups,
+      providerTeardown,
     },
   };
 }

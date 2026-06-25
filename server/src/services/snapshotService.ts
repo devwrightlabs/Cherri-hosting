@@ -21,7 +21,6 @@
  */
 import crypto from 'crypto';
 import { spawn } from 'child_process';
-import type { BackendService } from '@prisma/client';
 import { prisma } from '../utils/prismaClient';
 import { logger } from '../utils/logger';
 import { getCapabilityReadiness } from './goLiveService';
@@ -30,6 +29,7 @@ import {
   resolveSnapshotStore,
   type SnapshotStore,
 } from './snapshotStore';
+import { resolveLiveDbUri, resolveRestoreTargetUri } from './dbConnectionSeam';
 
 export interface SeamResult {
   effected: boolean;
@@ -114,23 +114,8 @@ export async function verifyDbConnection(uri: string): Promise<void> {
 }
 
 // ─── DB connection seams (populated by the live provisioning path) ────────────
-
-/**
- * The live Postgres URI to export for a provisioned DB. Wiring SEAM: the GO-LIVE
- * provisioning path will surface the provider's DB credentials here. Until it
- * does there is no URI, so this returns null and the snapshot path stays inert.
- */
-async function resolveDbConnectionUri(_svc: BackendService): Promise<string | null> {
-  return null;
-}
-
-/**
- * The target Postgres URI to restore INTO when waking a DB. Wiring SEAM: waking
- * re-provisions a fresh DB and exposes its URI here. Null until that exists.
- */
-async function resolveRestoreTargetUri(_svc: BackendService): Promise<string | null> {
-  return null;
-}
+// Resolved through the shared dbConnectionSeam module so snapshots and Phase 10
+// backups always read the DB from the exact same source and can never diverge.
 
 // ─── Honest blocked-path recorders ───────────────────────────────────────────
 
@@ -203,7 +188,7 @@ export async function snapshotAndDelete(serviceId: string): Promise<SeamResult> 
     );
   }
 
-  const dbUri = await resolveDbConnectionUri(svc);
+  const dbUri = await resolveLiveDbUri(svc);
   if (!dbUri) {
     return recordSnapshotBlocked(
       serviceId,
