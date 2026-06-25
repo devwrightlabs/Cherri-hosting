@@ -49,7 +49,7 @@ interface Tab {
 const tabs: Tab[] = [
   { to: '/dashboard', label: 'Home',     icon: HomeIcon,     match: (p) => p === '/dashboard' },
   { to: '/projects',  label: 'Projects', icon: ProjectsIcon, match: (p) => p.startsWith('/projects') },
-  { to: '/account',   label: 'Account',  icon: AccountIcon,  match: (p) => p === '/account' || p === '/pricing' },
+  { to: '/account',   label: 'Account',  icon: AccountIcon,  match: (p) => p === '/account' || p === '/billing' },
 ];
 
 /**

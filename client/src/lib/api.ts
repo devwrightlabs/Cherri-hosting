@@ -198,3 +198,57 @@ export interface SystemStatus {
 export const statusApi = {
   get: () => apiClient.get<SystemStatus>('/status'),
 };
+
+// Invoices
+export interface Invoice {
+  id: string;
+  plan: string;
+  status: string;
+  currency: string;
+  subscriptionCents: number;
+  overageCents: number;
+  overageSource: string;
+  totalCents: number;
+  cycleStart: string;
+  cycleEnd: string;
+  dueAt: string;
+  graceUntil: string;
+  paidAt: string | null;
+  createdAt: string;
+}
+
+export const invoicesApi = {
+  list: () => apiClient.get<{ invoices: Invoice[] }>('/invoices'),
+  get: (id: string) => apiClient.get<{ invoice: Invoice }>(`/invoices/${id}`),
+};
+
+// Notifications
+export interface AppNotification {
+  id: string;
+  type: string;
+  message: string;
+  invoiceId: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export const notificationsApi = {
+  list: () => apiClient.get<{ notifications: AppNotification[] }>('/notifications'),
+  markRead: (id: string) => apiClient.post(`/notifications/${id}/read`),
+  markAllRead: () => apiClient.post('/notifications/read-all'),
+};
+
+/**
+ * Extract a human-readable error message from an Axios error response.
+ * Falls back to `fallback` when the response has no structured error field.
+ */
+export function extractApiError(err: unknown, fallback: string): string {
+  if (err && typeof err === 'object' && 'response' in err) {
+    const data = (err as { response?: { data?: unknown } }).response?.data;
+    if (data && typeof data === 'object' && 'error' in data) {
+      const msg = (data as { error?: unknown }).error;
+      if (typeof msg === 'string' && msg.length > 0) return msg;
+    }
+  }
+  return fallback;
+}

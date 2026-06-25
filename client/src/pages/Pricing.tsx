@@ -7,7 +7,7 @@ import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import Spinner from '../components/ui/Spinner';
 import { useToast } from '../components/ui/Toast';
-import { subscriptionsApi } from '../lib/api';
+import { subscriptionsApi, extractApiError } from '../lib/api';
 import { getEnv } from '../lib/piEnv';
 import { useAuth } from '../providers/AuthProvider';
 import { Subscription } from '../types';
@@ -177,9 +177,11 @@ export default function Pricing() {
     subscriptionsApi
       .current()
       .then((res) => setSubData(res.data as SubscriptionData))
-      .catch(console.error)
+      .catch((err) => {
+        toastError(extractApiError(err, 'Could not load your plan. Please refresh.'));
+      })
       .finally(() => setIsLoading(false));
-  }, [isAuthenticated]);
+  }, [isAuthenticated, toastError]);
 
   const currentTier = subData?.user?.tier ?? user?.tier ?? 'FREE';
 

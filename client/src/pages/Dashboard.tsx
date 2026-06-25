@@ -15,8 +15,9 @@ import DomainGateway from '../components/dashboard/DomainGateway';
 import Spinner from '../components/ui/Spinner';
 import Skeleton from '../components/ui/Skeleton';
 import SystemStatusBanner from '../components/SystemStatusBanner';
+import { useToast } from '../components/ui/Toast';
 import { useAuth } from '../providers/AuthProvider';
-import { projectsApi } from '../lib/api';
+import { projectsApi, extractApiError } from '../lib/api';
 import { Deployment, Project } from '../types';
 import { formatBytes } from '../lib/format';
 
@@ -24,13 +25,21 @@ export default function Dashboard() {
   const { user, refreshUser } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [projectsError, setProjectsError] = useState('');
+  const { error: toastError } = useToast();
 
   const loadProjects = useCallback(() => {
+    setProjectsError('');
     projectsApi
       .list()
       .then((res) => setProjects((res.data as { projects: Project[] }).projects))
-      .catch(console.error)
+      .catch((err) => {
+        const msg = extractApiError(err, 'Could not load your projects. Please refresh.');
+        setProjectsError(msg);
+        toastError(msg);
+      })
       .finally(() => setIsLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -58,6 +67,13 @@ export default function Dashboard() {
   return (
     <AppShell>
       <SystemStatusBanner />
+
+      {projectsError && (
+        <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-400 flex items-center justify-between gap-3">
+          <span>{projectsError}</span>
+          <button className="shrink-0 text-xs underline" onClick={loadProjects}>Retry</button>
+        </div>
+      )}
 
       {/* Greeting */}
       <div>

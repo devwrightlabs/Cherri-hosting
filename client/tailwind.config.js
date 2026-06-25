@@ -5,76 +5,74 @@ export default {
     extend: {
       colors: {
         /**
-         * Enterprise gold accent palette, anchored on the brand accent
-         * #F0C040. The palette name `cherry` is preserved for backwards
-         * compatibility with existing utility classes (e.g. `text-cherry-400`,
-         * `bg-cherry-500`); the values map to gold shades so the rendered UI
-         * matches the #0A0A0F / #F0C040 enterprise dark theme.
+         * Teal accent palette — Cherri's premium identity colour.
+         * The palette key `cherry` is preserved so all existing utility
+         * classes (e.g. `text-cherry-400`, `bg-cherry-500`) continue to work
+         * without a codebase-wide rename; values map to teal shades.
          */
         cherry: {
-          50: '#fdf8e8',
-          100: '#fbf0c8',
-          200: '#f7e394',
-          300: '#f3d566',
-          400: '#f0c040', // primary accent
-          500: '#e0aa1e',
-          600: '#b88815',
-          700: '#8c6610',
-          800: '#66490b',
-          900: '#3d2b06',
-          950: '#1f1503',
+          50: '#f0fffe',
+          100: '#ccfffe',
+          200: '#99f9f6',
+          300: '#5cf2ee',
+          400: '#0fb5ae', // primary teal
+          500: '#0c9a94', // hover teal
+          600: '#0a8580',
+          700: '#086f6a',
+          800: '#065a56',
+          900: '#044845',
+          950: '#022825',
         },
-        /** Direct semantic alias for the brand accent. */
+        /** Direct semantic alias — exact same values as cherry. */
         accent: {
-          DEFAULT: '#f0c040',
-          50: '#fdf8e8',
-          100: '#fbf0c8',
-          200: '#f7e394',
-          300: '#f3d566',
-          400: '#f0c040',
-          500: '#e0aa1e',
-          600: '#b88815',
-          700: '#8c6610',
-          800: '#66490b',
-          900: '#3d2b06',
-          950: '#1f1503',
+          DEFAULT: '#0fb5ae',
+          50: '#f0fffe',
+          100: '#ccfffe',
+          200: '#99f9f6',
+          300: '#5cf2ee',
+          400: '#0fb5ae',
+          500: '#0c9a94',
+          600: '#0a8580',
+          700: '#086f6a',
+          800: '#065a56',
+          900: '#044845',
+          950: '#022825',
         },
         /**
-         * Spec design tokens (Sherry Hosting master prompt §2).
-         * Gold = primary action, used at most once per screen.
+         * Semantic action token — maps to the primary teal accent.
+         * Use `text-gold`, `bg-gold`, `border-gold`, etc.
          */
         gold: {
-          DEFAULT: '#f0c040',
-          dim: '#b8923a', // pressed / disabled gold
+          DEFAULT: '#0fb5ae',
+          dim: '#0a8580', // pressed / disabled
         },
-        /** Live / success state (deploy is live, connected). */
+        /** Live / success state (deploy is live, service connected). */
         live: {
-          DEFAULT: '#3ddc84',
+          DEFAULT: '#10b981',
         },
         /** Text tokens. */
         ink: {
-          DEFAULT: '#ececf2', // primary text
-          mut: '#8a8a99', // muted text
+          DEFAULT: '#f4f5f7', // primary text
+          mut: '#9ca0ad',     // muted text
         },
-        /** Hairline border token (#22222E). */
-        hairline: '#22222e',
+        /** Hairline border token. */
+        hairline: '#2a2f3a',
         /**
-         * Surface scale aligned to the spec tokens:
-         *   950 = --bg        #0A0A0F
-         *   900 = --surface    #101018
-         *   800 = --surface-2  #16161F
-         *   700 = --border     #22222E
-         * Numeric keys preserved for backwards compatibility with existing
-         * utility usages; DEFAULT/2 added as semantic aliases.
+         * Dark-premium surface scale:
+         *   950 = --bg          #0F1117  (page background)
+         *   900 = --surface     #181B23  (card background)
+         *   800 = --surface-2   #20242E  (input / inner card)
+         *   700 = --border      #2A2F3A  (dividers)
+         *   600                 #373D4C  (strong dividers / inactive)
          */
         surface: {
-          DEFAULT: '#101018',
-          2: '#16161f',
-          950: '#0a0a0f', // --bg
-          900: '#101018', // --surface
-          800: '#16161f', // --surface-2
-          700: '#22222e', // --border
-          600: '#2e2e44',
+          DEFAULT: '#181b23',
+          2: '#20242e',
+          950: '#0f1117',
+          900: '#181b23',
+          800: '#20242e',
+          700: '#2a2f3a',
+          600: '#373d4c',
         },
       },
       fontFamily: {
@@ -84,54 +82,56 @@ export default {
       },
       backgroundImage: {
         /**
-         * Gold accent gradient. Kept under the `cherry-gradient` key so
-         * existing `bg-cherry-gradient` utility usages continue to work.
+         * Teal accent gradient — retained under both old and new key names
+         * so existing `bg-cherry-gradient`, `bg-gold-gradient` classes work.
          */
-        'cherry-gradient': 'linear-gradient(135deg, #f4cb55 0%, #e0b43c 100%)',
-        'accent-gradient': 'linear-gradient(135deg, #f4cb55 0%, #e0b43c 100%)',
-        'gold-gradient': 'linear-gradient(135deg, #f4cb55 0%, #e0b43c 100%)',
-        'dark-gradient': 'linear-gradient(180deg, #101018 0%, #0a0a0f 100%)',
+        'cherry-gradient': 'linear-gradient(135deg, #16c4bd 0%, #0c9a94 100%)',
+        'accent-gradient': 'linear-gradient(135deg, #16c4bd 0%, #0c9a94 100%)',
+        'gold-gradient':   'linear-gradient(135deg, #16c4bd 0%, #0c9a94 100%)',
+        'dark-gradient':   'linear-gradient(180deg, #181b23 0%, #0f1117 100%)',
+        /** Hero splash gradient — teal → indigo. */
+        'hero-gradient':   'linear-gradient(135deg, #0fb5ae 0%, #5b5bd6 100%)',
       },
       boxShadow: {
-        gold: '0 8px 28px -6px rgba(240, 192, 64, 0.45)',
-        'gold-sm': '0 3px 14px -4px rgba(240, 192, 64, 0.4)',
-        live: '0 8px 28px -6px rgba(61, 220, 132, 0.4)',
-        card: '0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -16px rgba(0, 0, 0, 0.8)',
-        sheet: '0 -8px 40px -8px rgba(0, 0, 0, 0.6)',
+        gold:    '0 8px 28px -6px rgba(15, 181, 174, 0.45)',
+        'gold-sm': '0 3px 14px -4px rgba(15, 181, 174, 0.4)',
+        live:    '0 8px 28px -6px rgba(16, 185, 129, 0.4)',
+        card:    '0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 24px -16px rgba(0, 0, 0, 0.9)',
+        sheet:   '0 -8px 40px -8px rgba(0, 0, 0, 0.7)',
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-        'fade-in': 'fadeIn 0.3s ease-in-out',
-        'fade-up': 'fadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-        'scale-in': 'scaleIn 0.45s cubic-bezier(0.16, 1, 0.3, 1)',
-        'stamp-in': 'stampIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
-        shimmer: 'shimmer 1.6s linear infinite',
-        'ring-spin': 'ringSpin 1s linear infinite',
+        'fade-in':    'fadeIn 0.3s ease-in-out',
+        'fade-up':    'fadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+        'scale-in':   'scaleIn 0.45s cubic-bezier(0.16, 1, 0.3, 1)',
+        'stamp-in':   'stampIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        shimmer:      'shimmer 1.6s linear infinite',
+        'ring-spin':  'ringSpin 1s linear infinite',
       },
       keyframes: {
         fadeIn: {
-          '0%': { opacity: '0', transform: 'translateY(8px)' },
+          '0%':   { opacity: '0', transform: 'translateY(8px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
         fadeUp: {
-          '0%': { opacity: '0', transform: 'translateY(16px)' },
+          '0%':   { opacity: '0', transform: 'translateY(16px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
         scaleIn: {
-          '0%': { opacity: '0', transform: 'scale(0.92)' },
+          '0%':   { opacity: '0', transform: 'scale(0.92)' },
           '100%': { opacity: '1', transform: 'scale(1)' },
         },
         stampIn: {
-          '0%': { opacity: '0', transform: 'scale(1.6) rotate(-12deg)' },
-          '60%': { opacity: '1' },
+          '0%':   { opacity: '0', transform: 'scale(1.6) rotate(-12deg)' },
+          '60%':  { opacity: '1' },
           '100%': { opacity: '1', transform: 'scale(1) rotate(-8deg)' },
         },
         shimmer: {
-          '0%': { backgroundPosition: '-200% 0' },
+          '0%':   { backgroundPosition: '-200% 0' },
           '100%': { backgroundPosition: '200% 0' },
         },
         ringSpin: {
-          '0%': { transform: 'rotate(0deg)' },
+          '0%':   { transform: 'rotate(0deg)' },
           '100%': { transform: 'rotate(360deg)' },
         },
       },

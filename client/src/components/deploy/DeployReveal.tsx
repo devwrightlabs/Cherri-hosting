@@ -15,6 +15,8 @@ interface DeployRevealProps {
   startedAt: number | null;
   onRetry: () => void;
   onReset: () => void;
+  /** If the project has a .pi custom domain, show a DNSLink stale warning after redeploy. */
+  customDomain?: string;
 }
 
 const STEPS = [
@@ -60,6 +62,7 @@ export default function DeployReveal({
   startedAt,
   onRetry,
   onReset,
+  customDomain,
 }: DeployRevealProps) {
   const { success } = useToast();
   const [phase, setPhase] = useState<Phase>('uploading');
@@ -131,7 +134,7 @@ export default function DeployReveal({
               className="mt-5 w-full bg-white p-2.5 rounded-xl reveal-item"
               style={{ animationDelay: '0.65s', maxWidth: 168 }}
             >
-              <QRCodeSVG value={gateway} size={144} bgColor="#ffffff" fgColor="#0a0a0f" level="M" className="w-full h-auto" />
+              <QRCodeSVG value={gateway} size={144} bgColor="#ffffff" fgColor="#0f1117" level="M" className="w-full h-auto" />
             </div>
 
             <div
@@ -160,6 +163,36 @@ export default function DeployReveal({
         >
           {deployment.cid}
         </p>
+
+        {customDomain && (
+          <div
+            className="mt-4 w-full rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-left reveal-item"
+            style={{ animationDelay: '0.85s' }}
+          >
+            <p className="text-xs font-semibold text-amber-400 mb-1">
+              DNSLink record stale
+            </p>
+            <p className="text-xs text-ink-mut mb-2">
+              Your <span className="font-mono text-ink">{customDomain}</span> domain
+              still points to the old CID. Update your DNSLink TXT record to:
+            </p>
+            <div className="flex items-stretch gap-2">
+              <code className="flex-1 min-w-0 font-mono text-[11px] bg-surface-800 border border-hairline rounded-lg px-2 py-1.5 text-ink break-all">
+                dnslink=/ipfs/{deployment.cid}
+              </code>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  void navigator.clipboard.writeText(`dnslink=/ipfs/${deployment.cid}`);
+                  success('Copied');
+                }}
+              >
+                Copy
+              </Button>
+            </div>
+          </div>
+        )}
 
         <div className="mt-5 w-full space-y-2 reveal-item" style={{ animationDelay: '0.9s' }}>
           {gateway && (

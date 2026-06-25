@@ -1,0 +1,51 @@
+CHERRI HOSTING — FIX + FINISH + REDESIGN MASTER PROMPT (run straight through, in this exact order)
+
+OPERATING RULES:
+- Do ALL stages below in order, start to finish, in one continuous run. Do NOT stop to ask me between stages or sections — keep going until the whole prompt is complete.
+- Do the items within each stage in order. Do not start the UI redesign (Stage 4) until Stages 1–3 are actually done in the code.
+- RULE FOR EVERYTHING: real errors must always surface to the user and the logs. No swallowed catches, no hardcoded "check your connection," no silent failures.
+- Do NOT touch the inert/gated backend lane (snapshot store, PiRC2, Railway provisioning) except where listed — those stay deferred until GO-LIVE.
+- Mobile-first (Pi Browser). Verify at 320–430px.
+- When the entire prompt is finished, give me ONE summary of everything you changed, stage by stage.
+
+══════════ STAGE 1 — P1 REAL BUGS (do first; these hide failures) ══════════
+1. server/src/routes/projects.ts:238 — DB export catch logs no error. Add the real error object: logger.error('Database export failed', { projectId, error }).
+2. client/src/pages/Projects.tsx:39–40 — create-project shows "Check your connection" for every failure. Surface the server's real message (400 name taken, 413 storage quota exceeded, etc.); only fall back to a generic message if there is truly no response.
+3. Deploy.tsx:68, Pricing.tsx:180, Dashboard.tsx:32, Projects.tsx:103 — replace the 4 fire-and-forget .catch(console.error) polling loops with real user-facing error states (visible message + retry). A failed poll must never leave the user stuck on an infinite spinner.
+4. client/src/hooks/usePiEnvSwitch.ts:42 — env rollback is silently swallowed. If rollback fails, surface it to the user and show the app's real current env state.
+
+══════════ STAGE 2 — P2 FINISH THE UNFINISHED SCREENS ══════════
+5. /account currently renders <Pricing /> (App.tsx:17). Build a REAL, separate Account page: current plan, usage stats, profile info, link to billing, manage-subscription. Wire the existing PATCH /api/auth/me + api.updateProfile() for profile editing (resolves orphaned route #8).
+6. Build a billing history page using the existing GET /api/invoices and /api/invoices/:id — list past charges + an invoice viewer.
+7. If a notification bell exists, wire it to the existing POST /api/notifications/read-all and /:id/read so notifications can be cleared.
+
+══════════ STAGE 3 — P3 REAL UX FIXES + CLEANUP ══════════
+8. After a successful redeploy with a new CID, notify the user their .pi domain DNSLink now points to the OLD CID and must be updated — show the new record ready to copy.
+9. GitHub private-repo deploys: ensure the server's honest 403 reason reaches the user in the Deploy UI (currently lost in the silent catch from #3 — confirm it now displays).
+10. Cleanup: remove the dead legacy POST /api/deploy route (index.ts:210). Remove PATCH /api/auth/me only if Stage 2's Account page didn't use it. Add a startup warning if VITE_PI_DOMAIN_PORTAL_URL is misconfigured.
+DO NOT TOUCH (correct as-is, deferred until GO-LIVE): build isolation (#9), snapshot store S3 config (#10), PiRC2 contract config (#11).
+
+══════════ STAGE 4 — UI REDESIGN (LAST — only after 1–3 are done in code) ══════════
+VISUAL redesign only. Do NOT change backend logic, routes, gating, or the inert lane. Do all sections 4A–4G in order, continuously.
+
+DIRECTION: premium, modern SaaS — Stripe/Linear-level polish. Clean, confident, lots of breathing room, ONE accent color doing the talking. Native to the Pi ecosystem WITHOUT copying Pi's purple/gold. Unique, intentional, human-designed — never templated.
+
+4A — DESIGN TOKENS (build globally first):
+COLORS (dark mode default): Background #0F1117 ; Surface/cards #181B23 ; Raised/hover #20242E ; Border #2A2F3A ; PRIMARY ACCENT (only bright color for actions) teal #0FB5AE, hover #0C9A94, pressed #0A8580 ; Success/live emerald #10B981 ; Warning #F59E0B ; Error #EF4444 ; Text primary #F4F5F7, secondary #9CA0AD (cool gray faint violet tint), muted #6B6F7B ; Hero gradient (sparingly) teal #0FB5AE → indigo #5B5BD6.
+RULE: teal is the ONLY bright fill for actions — one primary action per screen; everything else neutral. No gold, no Pi-purple fills.
+TYPOGRAPHY: headings = geometric sans (Space Grotesk, or closest available Google Font); body/UI = Inter; monospace (CIDs/URLs/Pi amounts) = JetBrains Mono. Fluid clamp() sizing; body min 16px. If a font can't load, use the nearest Google Font — do not stall.
+SHAPE/SPACING: 8pt scale, generous whitespace; radius 14–16px cards / 10px buttons / pill tags; soft shadows not harsh borders; thin-stroke icons (Lucide).
+
+4B — COMPONENTS: restyle globally — Button (teal primary / outline / ghost), Card, Input/Select (teal focus ring), Tag/Badge (pill), Toast, Skeleton, Modal, Bottom sheet, TEST/LIVE toggle (sleek segmented pill); 150ms transitions, subtle card hover-lift, button press states, respect prefers-reduced-motion.
+
+4C — TOP BAR + BOTTOM NAV: top bar = Cherri logo left, network badge + TEST|LIVE toggle right, sticky, minimal. Bottom nav = 4 equal columns (Home/Projects/Deploy/Account), thin icons, teal active state, raised circular teal Deploy button with soft glow, safe-area padding, never crooked.
+
+4D — DASHBOARD: greeting header; stat cards (Projects/Deployments/Plan/Storage) in a clean grid, big numbers in display font, muted labels, generous padding, thin teal storage bar; "Quick deploy" as the primary focus; scannable, breathing room.
+
+4E — DEPLOY FLOW + SIGNATURE MOMENT: upload card with 3 buttons (Select Folder/Select ZIP/Clear) + drop zone; file tree in a scrollable card, monospace paths; build states (Analyzing→Installing→Building→Done) as an elegant teal stepper. THE DEPLOY-TO-LIVE MOMENT (the emotional peak — make it special): on success, progress fills → a teal/emerald "sealed" shield/checkmark animates in with an accent glow → the live URL slides up in a monospace copy-field + QR code + "View live site." Premium enough that people screenshot it.
+
+4F — PROJECTS / ACCOUNT / PRICING / EMPTY STATES: Projects = clean cards (name, status dot, last deploy, .pi domain). Account = the real Stage 2 page, fully styled (plan card, usage bars in teal, profile, billing link). Pricing = 4 tier cards (Free/Builder/Pro/Business), Pro highlighted with teal border + "Most popular," fee line per tier, clear CTA. Empty states = friendly icon + one line + one teal button; never blank.
+
+4G — FINAL POLISH: sweep every screen for consistent spacing/alignment, no leftover default styles, all loading/error/empty states styled, tap targets ≥44px; verify 320/390/430px with no horizontal scroll or clipping; one teal primary action per screen.
+
+When all of Stage 4 is done, give me the single full summary of everything changed across all four stages.

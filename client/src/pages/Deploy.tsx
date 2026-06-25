@@ -7,7 +7,7 @@ import StagePanel from '../components/deploy/StagePanel';
 import BuildLogPanel from '../components/deploy/BuildLogPanel';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
-import { projectsApi } from '../lib/api';
+import { projectsApi, extractApiError } from '../lib/api';
 import {
   buildStage,
   getBuild,
@@ -33,6 +33,7 @@ export default function Deploy() {
   );
   const [files, setFiles] = useState<File[]>([]);
   const [filePaths, setFilePaths] = useState<string[]>([]);
+  const [projectsLoadError, setProjectsLoadError] = useState('');
 
   // GitHub import inputs (an alternate ingestion path into the same pipeline)
   const [repoUrl, setRepoUrl] = useState('');
@@ -65,7 +66,9 @@ export default function Deploy() {
         setProjects(p);
         setSelectedProjectId((prev) => prev || (p.length > 0 ? p[0].id : ''));
       })
-      .catch(console.error);
+      .catch((err) => {
+        setProjectsLoadError(extractApiError(err, 'Could not load your projects. Please refresh.'));
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -255,7 +258,17 @@ export default function Deploy() {
       {/* Project selector */}
       <Card>
         <h2 className="text-sm font-semibold text-ink mb-3">Project</h2>
-        {projects.length === 0 ? (
+        {projectsLoadError ? (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-red-400 text-sm">{projectsLoadError}</p>
+            <button
+              className="shrink-0 text-xs underline text-red-400"
+              onClick={() => window.location.reload()}
+            >
+              Retry
+            </button>
+          </div>
+        ) : projects.length === 0 ? (
           <p className="text-ink-mut text-sm">
             You have no projects yet.{' '}
             <button onClick={() => navigate('/projects')} className="text-gold underline">
@@ -377,6 +390,7 @@ export default function Deploy() {
           startedAt={deployStartedAt}
           onRetry={() => void handlePin()}
           onReset={reset}
+          customDomain={projects.find((p) => p.id === selectedProjectId)?.customDomain}
         />
       )}
 

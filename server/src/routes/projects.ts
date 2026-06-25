@@ -234,8 +234,9 @@ projectsRouter.get(
         res.status(503).json({ error: err.message, integration: err.integration });
         return;
       }
-      // Do NOT include the error detail here — it could echo the connection string.
-      logger.error('Database export failed', { projectId });
+      // Log the real error for diagnostics; never surface connection strings to
+      // the client (the generic message is intentional).
+      logger.error('Database export failed', { projectId, error: (err as Error).message ?? err });
       res.status(500).json({ error: 'Failed to export database' });
     }
   },

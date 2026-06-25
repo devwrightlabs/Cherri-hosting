@@ -9,7 +9,7 @@ import { authRouter } from './routes/auth';
 import { projectsRouter } from './routes/projects';
 import { deploymentsRouter } from './routes/deployments';
 import { previewRouter } from './routes/preview';
-import { deployRouter } from './routes/deploy';
+// deployRouter removed — legacy POST /api/deploy superseded by staged pipeline
 import { subscriptionsRouter } from './routes/subscriptions';
 import { pirc2Router } from './routes/pirc2';
 import { paymentsRouter } from './routes/payments';
@@ -207,7 +207,8 @@ app.get('/api/status', (_req, res) => {
 app.use('/api/auth', authRouter);
 app.use('/api/projects', projectsRouter);
 app.use('/api/deployments', deploymentsRouter);
-app.use('/api/deploy', deployRouter);
+// Legacy POST /api/deploy route removed — superseded by the staged
+// upload→pin pipeline at POST /api/projects/:id/stage and POST /api/projects/:id/pin.
 app.use('/api/subscriptions', subscriptionsRouter);
 app.use('/api/subscriptions/pirc2', pirc2Router);
 app.use('/api/payments', paymentsRouter);

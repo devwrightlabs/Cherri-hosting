@@ -17,3 +17,4 @@
 - [Build security](build-security.md) — untrusted builds run on a hardened LOCAL runner (no container on this host); allowlisted-pkg rebuild trust comes from LOCKFILE registry provenance, never package.json.
 - [Phase 10 data safety](phase10-data-safety.md) — backups never delete the live DB; Railway delete booleans: false≠confirmed (treat as throw); owner-facing failure reasons stay generic; DB export never on IPFS, site export CID-first.
 - [Provider outage resilience](phase11-provider-outage-resilience.md) — in-memory tri-state health monitor (no DB singleton); deterministic project name enables adoption; outage⇒stay PROVISIONING (never FAILED/teardown); every ProvisionOutcome must route explicitly — in-flight ≠ active.
+- [Teal redesign token strategy](teal-redesign-tokens.md) — kept `cherry`/`gold` palette key names, swapped values to teal; zero component changes needed; `extractApiError` helper in api.ts replaces .catch(console.error) pattern.

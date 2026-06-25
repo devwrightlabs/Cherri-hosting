@@ -39,8 +39,16 @@ export function usePiEnvSwitch() {
       } catch {
         // Never leave a half-switched state — roll the env + SDK back together.
         setEnv(previous);
-        await reinit(previous).catch(() => {});
-        error('Could not switch environment. Back on testnet.');
+        const rollbackOk = await reinit(previous).then(() => true).catch(() => false);
+        if (!rollbackOk) {
+          // Rollback itself failed — the user must reload to recover a clean state.
+          error(
+            `Switch failed and rollback also failed. Please reload the page. ` +
+              `(env stored as: ${previous})`,
+          );
+        } else {
+          error(`Could not switch to ${next}. Reverted to ${previous}.`);
+        }
       } finally {
         setSwitching(false);
       }

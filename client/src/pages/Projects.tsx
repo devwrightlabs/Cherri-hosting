@@ -7,7 +7,7 @@ import Button from '../components/ui/Button';
 import Skeleton from '../components/ui/Skeleton';
 import EmptyState from '../components/ui/EmptyState';
 import { useToast } from '../components/ui/Toast';
-import { projectsApi } from '../lib/api';
+import { projectsApi, extractApiError } from '../lib/api';
 import { Project } from '../types';
 
 function CreateProjectSheet({
@@ -36,8 +36,8 @@ function CreateProjectSheet({
       onCreate((res.data as { project: Project }).project);
       success('Project created');
       onClose();
-    } catch {
-      setError('We could not create the project. Check your connection and try again.');
+    } catch (err) {
+      setError(extractApiError(err, 'We could not create the project. Try again.'));
     } finally {
       setIsLoading(false);
     }
@@ -94,14 +94,21 @@ function CreateProjectSheet({
 export default function Projects() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [listError, setListError] = useState('');
   const [showSheet, setShowSheet] = useState(false);
+  const { error: toastError } = useToast();
 
   useEffect(() => {
     projectsApi
       .list()
       .then((res) => setProjects((res.data as { projects: Project[] }).projects))
-      .catch(console.error)
+      .catch((err) => {
+        const msg = extractApiError(err, 'Could not load your projects. Please refresh.');
+        setListError(msg);
+        toastError(msg);
+      })
       .finally(() => setIsLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -113,6 +120,18 @@ export default function Projects() {
         </Button>
       </div>
 
+      {listError && !isLoading && (
+        <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-400 flex items-center justify-between gap-3">
+          <span>{listError}</span>
+          <button
+            className="shrink-0 text-xs underline"
+            onClick={() => { setListError(''); window.location.reload(); }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="space-y-3">
           {Array.from({ length: 3 }).map((_, i) => (
@@ -123,7 +142,7 @@ export default function Projects() {
             </Card>
           ))}
         </div>
-      ) : projects.length === 0 ? (
+      ) : listError ? null : projects.length === 0 ? (
         <EmptyState
           icon={
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

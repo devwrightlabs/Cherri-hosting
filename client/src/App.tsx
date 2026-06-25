@@ -7,6 +7,8 @@ import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
 import Deploy from './pages/Deploy';
 import Pricing from './pages/Pricing';
+import Account from './pages/Account';
+import Billing from './pages/Billing';
 import ProjectDetail from './pages/ProjectDetail';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -17,7 +19,15 @@ const router = createBrowserRouter([
     path: '/account',
     element: (
       <ProtectedRoute>
-        <Pricing />
+        <Account />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/billing',
+    element: (
+      <ProtectedRoute>
+        <Billing />
       </ProtectedRoute>
     ),
   },
