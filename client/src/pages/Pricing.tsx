@@ -5,6 +5,7 @@ import LogoMark from '../components/ui/LogoMark';
 import Card from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
+import PageHeader from '../components/ui/PageHeader';
 import Spinner from '../components/ui/Spinner';
 import { useToast } from '../components/ui/Toast';
 import { subscriptionsApi, extractApiError } from '../lib/api';
@@ -270,14 +271,10 @@ export default function Pricing() {
         </Card>
       )}
 
-      <div>
-        <h1 className="text-xl font-bold text-ink font-display tracking-tight">
-          {isAuthenticated ? 'Plans' : 'Simple, Pi-powered pricing'}
-        </h1>
-        <p className="text-ink-mut text-sm mt-0.5">
-          Pay with Pi. No credit cards. Cancel anytime.
-        </p>
-      </div>
+      <PageHeader
+        title={isAuthenticated ? 'Plans' : 'Simple, Pi-powered pricing'}
+        subtitle="Pay with Pi. No credit cards. Cancel anytime."
+      />
 
       {isAuthenticated && isLoading && (
         <div className="flex justify-center py-4">
@@ -410,7 +407,7 @@ export default function Pricing() {
           </Link>
         </div>
       </header>
-      <main className="max-w-screen-sm mx-auto px-4 pt-4 pb-12 space-y-5 animate-fade-in">
+      <main className="max-w-screen-sm mx-auto px-5 pt-7 pb-14 space-y-7 animate-fade-in">
         {body}
       </main>
     </div>
@@ -459,13 +456,13 @@ function TierCardContent({
           {tier.eyebrow}
         </p>
         <h2 className="text-lg font-bold text-ink font-display mt-0.5">{tier.name}</h2>
-        <div className="flex items-baseline gap-1 mt-1.5">
+        <div className="flex items-baseline gap-1 mt-2">
           {tier.price === 0 ? (
-            <span className="text-3xl font-bold text-ink font-display">Free</span>
+            <span className="text-4xl font-bold text-ink font-display tracking-tight">Free</span>
           ) : (
             <>
-              <span className="text-3xl font-bold text-ink font-display">{displayPrice}</span>
-              <span className="text-lg font-mono text-ink">π</span>
+              <span className="text-4xl font-bold text-ink font-display tracking-tight">{displayPrice}</span>
+              <span className="text-xl font-mono text-ink">π</span>
               <span className="text-ink-mut text-sm ml-0.5">{periodSuffix}</span>
             </>
           )}
@@ -478,7 +475,7 @@ function TierCardContent({
         <p className="text-ink-mut text-sm mt-2 leading-snug">{tier.headline}</p>
       </div>
 
-      <ul className="space-y-2 flex-1">
+      <ul className="space-y-2.5 flex-1">
         {tier.features.map((f) => (
           <li key={f.label} className="flex items-center gap-2 text-sm">
             <span className={`shrink-0 ${f.soon ? 'text-ink-mut' : 'text-live'}`}>
@@ -497,7 +494,7 @@ function TierCardContent({
       </ul>
 
       {/* Fee line — the upgrade driver, always shown */}
-      <div className="flex items-center gap-2 rounded-lg border border-hairline bg-surface-800/60 px-3 py-2">
+      <div className="flex items-center gap-2 rounded-xl border border-hairline bg-surface-800/60 px-3.5 py-2.5">
         <span className={`shrink-0 ${feeClass}`}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <line x1="19" y1="5" x2="5" y2="19" />

@@ -40,9 +40,9 @@ export default function BuildLogPanel({ info, onReset }: BuildLogPanelProps) {
           {running && (
             <span className="w-2 h-2 rounded-full bg-gold animate-pulse flex-shrink-0" />
           )}
-          {failed && <span className="text-red-400 flex-shrink-0">✖</span>}
+          {failed && <span className="w-2 h-2 rounded-full bg-red-400 flex-shrink-0" />}
           {info.status === 'DONE' && (
-            <span className="text-emerald-400 flex-shrink-0">✓</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
           )}
           <h2 className="text-sm font-semibold text-ink truncate">
             {STATUS_LABEL[info.status]}
@@ -60,7 +60,7 @@ export default function BuildLogPanel({ info, onReset }: BuildLogPanelProps) {
 
       <pre
         ref={logRef}
-        className="bg-black/60 border border-hairline rounded-lg p-3 text-[11px] leading-relaxed text-surface-300 font-mono overflow-auto max-h-72 whitespace-pre-wrap break-words"
+        className="bg-black/60 border border-hairline rounded-xl p-3.5 text-[11px] leading-relaxed text-ink-mut font-mono overflow-auto max-h-72 whitespace-pre-wrap break-words"
       >
         {info.logs || 'Starting…'}
       </pre>

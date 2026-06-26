@@ -4,43 +4,48 @@ interface StatTileProps {
   label: string;
   /** Pre-formatted value. Pass `undefined` while loading to show a skeleton. */
   value?: React.ReactNode;
-  /** Optional secondary line under the value. */
+  /** Optional secondary line under the label. */
   sub?: React.ReactNode;
   /** Render the value in JetBrains Mono (for π amounts, counts, sizes). */
   mono?: boolean;
+  /** Optional small icon shown top-right of the tile. */
+  icon?: React.ReactNode;
   isLoading?: boolean;
   className?: string;
 }
 
 /**
- * Compact metric tile for dashboard stat rows. Never renders NaN/undefined —
- * shows a skeleton while loading and an em dash when a value is missing.
+ * Metric tile: a big confident number first, a small muted label beneath, and
+ * generous padding. Never renders NaN/undefined — shows a skeleton while
+ * loading and an em dash when a value is missing.
  */
 export default function StatTile({
   label,
   value,
   sub,
   mono = false,
+  icon,
   isLoading = false,
   className = '',
 }: StatTileProps) {
   return (
     <div
-      className={`rounded-xl bg-surface-900 border border-hairline p-3.5 ${className}`}
+      className={`rounded-2xl bg-surface-900 border border-hairline shadow-card p-5 ${className}`}
     >
-      <p className="text-ink-mut text-[11px] uppercase tracking-wider">{label}</p>
+      {icon && <div className="flex justify-between mb-3 text-ink-mut">{icon}</div>}
       {isLoading ? (
-        <div className="skeleton h-6 w-16 mt-2" />
+        <div className="skeleton h-8 w-20" />
       ) : (
         <p
-          className={`text-ink font-semibold mt-1 leading-tight ${
-            mono ? 'font-mono text-lg' : 'text-2xl font-display'
+          className={`text-ink font-bold leading-none ${
+            mono ? 'font-mono text-2xl' : 'text-[2rem] font-display'
           }`}
         >
           {value ?? '—'}
         </p>
       )}
-      {sub && !isLoading && <div className="mt-1 text-xs text-ink-mut">{sub}</div>}
+      <p className="text-ink-mut text-xs mt-2.5">{label}</p>
+      {sub && !isLoading && <div className="mt-1.5 text-xs text-ink-mut">{sub}</div>}
     </div>
   );
 }

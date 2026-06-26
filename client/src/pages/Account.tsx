@@ -3,13 +3,14 @@ import { Link } from 'react-router-dom';
 import AppShell from '../components/AppShell';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
+import Input from '../components/ui/Input';
+import PageHeader from '../components/ui/PageHeader';
 import TierBadge from '../components/ui/TierBadge';
 import StorageBar from '../components/dashboard/StorageBar';
 import Skeleton from '../components/ui/Skeleton';
 import { useToast } from '../components/ui/Toast';
 import { useAuth } from '../providers/AuthProvider';
 import { authApi, subscriptionsApi, extractApiError } from '../lib/api';
-import { formatBytes } from '../lib/format';
 
 interface UserProfile {
   id: string;
@@ -84,62 +85,48 @@ export default function Account() {
 
   return (
     <AppShell>
-      <div>
-        <h1 className="text-xl font-bold text-ink font-display tracking-tight">Account</h1>
-        <p className="text-ink-mut text-sm mt-0.5">Your plan, usage, and profile.</p>
-      </div>
+      <PageHeader title="Account" subtitle="Your plan, usage, and profile." />
 
+      {/* Prominent plan + usage card */}
       <Card>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-ink">Current plan</h2>
-          {isLoading ? <Skeleton className="h-5 w-16" /> : <TierBadge tier={tier} />}
-        </div>
-        {isLoading ? (
-          <Skeleton className="h-4 w-48" />
-        ) : (
-          <>
-            {subData?.subscription && (
-              <p className="text-xs text-ink-mut mb-3">
-                Status: <span className="text-ink">{subData.subscription.status}</span>
-                {subData.subscription.currentPeriodEnd && (
-                  <> · Renews {new Date(subData.subscription.currentPeriodEnd).toLocaleDateString()}</>
-                )}
-              </p>
-            )}
-            <div className="flex gap-2 flex-wrap">
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-5">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-mut mb-1.5">
+              Current plan
+            </p>
+            {isLoading ? <Skeleton className="h-6 w-20" /> : <TierBadge tier={tier} />}
+          </div>
+          {!isLoading && (
+            <div className="flex gap-2">
               {tier === 'FREE' && (
                 <Link to="/pricing">
-                  <Button size="sm">Upgrade plan</Button>
+                  <Button size="sm">Upgrade</Button>
                 </Link>
               )}
               <Link to="/billing">
-                <Button size="sm" variant="secondary">Billing history</Button>
+                <Button size="sm" variant="secondary">Billing</Button>
               </Link>
             </div>
-          </>
-        )}
-      </Card>
+          )}
+        </div>
 
-      <Card>
-        <h2 className="text-sm font-semibold text-ink mb-4">Usage</h2>
         {isLoading ? (
           <div className="space-y-3">
             <Skeleton className="h-3 w-full" />
             <Skeleton className="h-3 w-24" />
           </div>
         ) : (
-          <div className="space-y-4">
-            <div>
-              <div className="flex items-center justify-between text-xs mb-2">
-                <span className="text-ink-mut">Storage</span>
-                <span className="font-mono text-ink">
-                  {formatBytes(storageUsed)}{' '}
-                  <span className="text-ink-mut">/ {formatBytes(storageLimit)}</span>
-                </span>
-              </div>
-              <StorageBar used={storageUsed} limit={storageLimit} />
-            </div>
-            <div className="flex items-center justify-between text-xs">
+          <div className="space-y-5">
+            {subData?.subscription && (
+              <p className="text-xs text-ink-mut">
+                Status: <span className="text-ink">{subData.subscription.status}</span>
+                {subData.subscription.currentPeriodEnd && (
+                  <> · Renews {new Date(subData.subscription.currentPeriodEnd).toLocaleDateString()}</>
+                )}
+              </p>
+            )}
+            <StorageBar used={storageUsed} limit={storageLimit} />
+            <div className="flex items-center justify-between pt-1 text-sm">
               <span className="text-ink-mut">Projects</span>
               <span className="font-mono text-ink">{projectCount}</span>
             </div>
@@ -147,8 +134,9 @@ export default function Account() {
         )}
       </Card>
 
+      {/* Profile */}
       <Card>
-        <h2 className="text-sm font-semibold text-ink mb-4">Profile</h2>
+        <h2 className="text-base font-semibold text-ink font-display mb-4">Profile</h2>
         {isLoading ? (
           <div className="space-y-3">
             <Skeleton className="h-4 w-32" />
@@ -156,23 +144,22 @@ export default function Account() {
             <Skeleton className="h-4 w-36" />
           </div>
         ) : (
-          <div className="space-y-3 text-sm">
-            <div className="flex items-center justify-between">
+          <div className="divide-y divide-hairline">
+            <div className="flex items-center justify-between py-3 first:pt-0 text-sm">
               <span className="text-ink-mut">Username</span>
               <span className="font-mono text-ink">{profile?.username ?? user?.username ?? '—'}</span>
             </div>
 
-            <div className="flex items-start justify-between gap-3">
-              <span className="text-ink-mut shrink-0 pt-0.5">Email</span>
+            <div className="py-3 text-sm">
               {editingEmail ? (
-                <div className="flex-1 flex flex-col gap-2">
-                  <input
+                <div className="space-y-3">
+                  <Input
                     type="email"
+                    label="Email"
                     value={emailValue}
                     onChange={(e) => setEmailValue(e.target.value)}
                     placeholder="you@example.com"
                     autoFocus
-                    className="w-full bg-surface-800 border border-hairline rounded-lg px-3 py-2 text-ink text-sm focus:outline-none focus:border-gold transition-colors"
                   />
                   <div className="flex gap-2">
                     <Button
@@ -195,21 +182,24 @@ export default function Account() {
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-mono text-ink truncate">
-                    {profile?.email ?? '—'}
-                  </span>
-                  <button
-                    className="shrink-0 text-xs text-ink-mut hover:text-ink underline transition-colors"
-                    onClick={() => setEditingEmail(true)}
-                  >
-                    Edit
-                  </button>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-ink-mut shrink-0">Email</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-mono text-ink truncate">
+                      {profile?.email ?? '—'}
+                    </span>
+                    <button
+                      className="shrink-0 text-xs text-cherry-300 hover:text-cherry-400 underline transition-colors"
+                      onClick={() => setEditingEmail(true)}
+                    >
+                      Edit
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
 
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between py-3 last:pb-0 text-sm">
               <span className="text-ink-mut">Member since</span>
               <span className="text-ink">
                 {profile?.createdAt
@@ -221,8 +211,9 @@ export default function Account() {
         )}
       </Card>
 
+      {/* Pi Network */}
       <Card>
-        <h2 className="text-sm font-semibold text-ink mb-3">Pi Network</h2>
+        <h2 className="text-base font-semibold text-ink font-display mb-4">Pi Network</h2>
         <div className="flex items-center justify-between text-sm">
           <span className="text-ink-mut">Pi user ID</span>
           <span className="font-mono text-xs text-ink truncate max-w-[160px]">

@@ -1,0 +1,62 @@
+CHERRI HOSTING — REAL UI REDESIGN (genuine layout work, NOT a recolor)
+
+READ THIS FIRST — WHY THIS PROMPT EXISTS:
+The last redesign attempt CHEATED: it only swapped color values under the old class names (gold→teal) and changed zero layout. The git diff proved it. That is NOT acceptable this time. This run must change the ACTUAL STRUCTURE of each screen — spacing, hierarchy, layout, component shape, sizing — not just colors. Colors are already teal; do not waste this run on colors. If the git diff at the end shows only color/class changes again, you have failed the task.
+
+RULES:
+- Run straight through, all sections in order. Do NOT stop to ask me between sections.
+- This is a VISUAL/LAYOUT redesign only. Do NOT change backend logic, API calls, routes, gating, or the inert backend lane. Keep all existing functionality working.
+- Each screen below must show GENUINE layout changes: restructured spacing, improved visual hierarchy, larger/cleaner type scale, better grouping, real empty/loading states. Recoloring alone = failure.
+- Mobile-first (Pi Browser, 320–430px wide). Every screen must look intentional and premium at phone width.
+- At the end, give me: (a) a summary of the actual LAYOUT changes per screen, and (b) confirm the git diff contains real structural/JSX changes, not just color classes.
+
+DESIGN BAR: This should look like a funded company's product — Stripe / Linear / Vercel level. Generous whitespace, strong type hierarchy (big confident headings, calm muted secondary text), clear single primary action per screen, soft depth, nothing cramped or default-looking. Premium, intentional, human-designed.
+
+──────── SECTION 1 — GLOBAL LAYOUT SYSTEM ────────
+- Establish a consistent vertical rhythm: standard page padding, consistent gaps between sections (use the 8pt scale), and a max content width that's comfortable on mobile.
+- Every page gets a consistent header pattern: large page title (display font, bold), optional one-line muted subtitle, clear spacing below before content.
+- Increase breathing room everywhere — current screens are too tight. Add real vertical space between cards and sections.
+- Standardize card style: more internal padding (min 20px), 16px radius, soft shadow + subtle 1px border, clear separation from background.
+
+──────── SECTION 2 — REUSABLE COMPONENTS (restructure, not recolor) ────────
+- Buttons: increase height (min 48px), better padding, clear primary (teal, solid) vs secondary (outline) vs ghost; full-width primary actions on mobile forms.
+- Inputs/Selects: taller, more padding, clear label above, visible focus ring, helper/error text slot below.
+- Cards: consistent header/body/footer structure with proper spacing.
+- Badges/Tags: pill shape, proper padding, used consistently for status (live/building/error).
+- Stat tiles: big number (display font, large), small muted label beneath, generous padding.
+- Empty states: centered icon + one heading line + one muted line + one primary button — make these feel designed, not blank.
+- Loading: skeleton placeholders that match the real content shape.
+
+──────── SECTION 3 — DASHBOARD / HOME (restructure) ────────
+- Strong greeting header up top (large, personal).
+- Stat tiles in a clean 2-column grid on mobile with real spacing between them — not cramped boxes. Big numbers, muted labels, a thin teal storage-usage bar.
+- A prominent "Quick Deploy" card as the clear hero/primary action, visually distinct and inviting.
+- Recent projects/activity below in clean, well-spaced rows or cards.
+- Lots of vertical breathing room between each block.
+
+──────── SECTION 4 — DEPLOY FLOW (restructure) ────────
+- Upload zone: make it a large, inviting drop area with clear iconography; the 3 actions (Select Folder / Select ZIP / Clear) as well-spaced, properly sized buttons — not crammed together.
+- File tree: in a clean scrollable card, monospace paths, comfortable line height.
+- Build steps (Analyzing → Installing → Building → Done): a clear, well-spaced vertical stepper with obvious current-step emphasis in teal.
+- Keep the existing animated success reveal (shield + glow + URL + QR) — but make sure the surrounding layout gives it room to breathe and feel like a moment.
+
+──────── SECTION 5 — PROJECTS LIST (restructure) ────────
+- Each project as a spacious card: name (prominent), status dot + label, last-deploy time (muted), .pi domain if connected, and clear tap affordance.
+- Real spacing between cards. A designed empty state for "no projects yet" with a primary "Deploy your first site" button.
+
+──────── SECTION 6 — ACCOUNT + BILLING (polish the new pages) ────────
+- Account: structured sections with clear headings — Plan card (prominent, shows tier + usage bars), Profile section (email edit), and a clear link/button to Billing. Proper spacing between sections, not a wall of fields.
+- Billing: invoice list as clean rows with status badges, comfortable spacing, tap-to-expand detail; designed empty state for no invoices.
+
+──────── SECTION 7 — PRICING (restructure) ────────
+- 4 tier cards (Free / Builder / Pro / Business) as well-spaced, scannable cards stacked cleanly on mobile.
+- Pro highlighted: teal accent border + "Most Popular" badge, subtly elevated.
+- Each card: tier name, price (large, display font), the per-tier fee line, a clear feature list with comfortable line spacing, and one clear CTA button.
+
+──────── SECTION 8 — FINAL POLISH PASS ────────
+- Sweep EVERY screen: consistent page padding, consistent card style, consistent spacing scale, strong heading hierarchy everywhere.
+- Confirm: one primary action per screen, all tap targets ≥48px, all empty/loading/error states designed (never blank or default).
+- Verify mobile at 320 / 390 / 430px: no horizontal scroll, no clipping, nothing cramped, nav not crooked.
+- Remove the dead file server/src/routes/deploy.ts (leftover, unmounted) while you're cleaning up.
+
+FINAL CHECK: confirm the git diff shows genuine JSX/layout/structure changes across these screens — NOT just color classes. Summarize the real layout changes you made per screen.

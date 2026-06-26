@@ -18,5 +18,10 @@ When doing a brand-color overhaul, keep all Tailwind palette **key names** (`che
 - Hairline: `#2A2F3A` · Ink: `#F4F5F7` · Ink-mut: `#9CA0AD`
 - Live/success: `#10B981`
 
+## Gotcha: undefined Tailwind shades render nothing
+The `surface` scale only defines `950/900/800/700/600` (+ `DEFAULT`/`2`). There is **no** `surface-300/400/500`, and `ink` has only `DEFAULT` + `mut` (no numeric ink ramp). Using an undefined shade (e.g. `text-surface-300`) emits no class at all — no error, the element just falls back to inherited/transparent color and looks subtly broken. Earlier code shipped `text-surface-300/400/500` that silently did nothing.
+
+**How to apply:** for muted text use `text-ink-mut`, for primary text `text-ink`; before using any `surface-NNN` shade, confirm it exists in tailwind.config.js. Prefer semantic tokens (`ink`, `ink-mut`, `hairline`, `live`) over inventing numeric shades.
+
 ## extractApiError helper
 Added `extractApiError(err: unknown, fallback: string): string` to `client/src/lib/api.ts`. Extracts `response.data.error` string from Axios errors; falls back to `fallback`. Replace any `.catch(console.error)` with a proper error state + this helper.

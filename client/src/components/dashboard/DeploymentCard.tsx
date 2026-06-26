@@ -30,47 +30,37 @@ export default function DeploymentCard({ deployment }: DeploymentCardProps) {
 
   return (
     <Card className="animate-fade-in">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <Badge variant={variant}>{deployment.status}</Badge>
-            <span className="text-surface-500 text-xs">
-              {new Date(deployment.createdAt).toLocaleDateString()}
-            </span>
-          </div>
-
-          {deployment.cid && (
-            <p className="font-mono text-xs text-surface-400 truncate mb-2">
-              ipfs://{deployment.cid}
-            </p>
-          )}
-
-          {deployment.gateway && (
-            <a
-              href={deployment.gateway}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-cherry-400 hover:text-cherry-300 text-sm truncate block transition-colors"
-            >
-              {deployment.gateway}
-            </a>
-          )}
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <Badge variant={variant} dot>
+            {deployment.status}
+          </Badge>
+          <span className="text-ink-mut text-xs">
+            {new Date(deployment.createdAt).toLocaleDateString()}
+          </span>
         </div>
-
-        <div className="text-right shrink-0">
-          <p className="text-surface-400 text-xs">{formatBytes(deployment.size)}</p>
-          {deployment.status === 'ACTIVE' && deployment.gateway && (
-            <a
-              href={deployment.gateway}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-1 inline-flex items-center gap-1 text-xs text-cherry-500 hover:text-cherry-400 transition-colors"
-            >
-              Visit ↗
-            </a>
-          )}
-        </div>
+        <span className="text-ink-mut text-xs font-mono shrink-0">
+          {formatBytes(deployment.size)}
+        </span>
       </div>
+
+      {deployment.cid && (
+        <p className="font-mono text-xs text-ink-mut truncate mb-3">
+          ipfs://{deployment.cid}
+        </p>
+      )}
+
+      {deployment.gateway && (
+        <a
+          href={deployment.gateway}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-sm text-cherry-300 hover:text-cherry-200 transition-colors max-w-full"
+        >
+          <span className="truncate">{deployment.gateway}</span>
+          <span className="shrink-0">↗</span>
+        </a>
+      )}
     </Card>
   );
 }

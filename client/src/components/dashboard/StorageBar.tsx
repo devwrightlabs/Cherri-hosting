@@ -19,20 +19,20 @@ export default function StorageBar({ used, limit }: StorageBarProps) {
     : 'bg-cherry-gradient';
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex justify-between text-xs text-surface-400">
-        <span>Storage used</span>
-        <span>
-          {formatBytes(u)} / {l > 0 ? formatBytes(l) : '—'}
+    <div className="space-y-2.5">
+      <div className="flex items-baseline justify-between">
+        <span className="text-xs text-ink-mut">Storage</span>
+        <span className="text-sm font-mono text-ink">
+          {formatBytes(u)} <span className="text-ink-mut">/ {l > 0 ? formatBytes(l) : '—'}</span>
         </span>
       </div>
-      <div className="h-2 rounded-full bg-surface-700 overflow-hidden">
+      <div className="h-2.5 rounded-full bg-surface-800 overflow-hidden">
         <div
           className={`h-full rounded-full transition-all duration-500 ${barColor}`}
           style={{ width: `${percent}%` }}
         />
       </div>
-      <p className="text-xs text-surface-500">{percent.toFixed(1)}% used</p>
+      <p className="text-xs text-ink-mut">{percent.toFixed(1)}% used</p>
     </div>
   );
 }

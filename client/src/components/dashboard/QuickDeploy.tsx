@@ -123,8 +123,8 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
     <div className="space-y-5">
       {/* Project selector */}
       {projects.length === 0 ? (
-        <div className="p-4 bg-surface-800 rounded-lg border border-hairline text-center">
-          <p className="text-ink-mut text-sm mb-3">
+        <div className="p-5 bg-surface-800 rounded-xl border border-hairline text-center">
+          <p className="text-ink-mut text-sm mb-4">
             You need a project before you can deploy.
           </p>
           <Button size="sm" onClick={() => navigate('/projects')}>
@@ -133,12 +133,12 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
         </div>
       ) : (
         <div>
-          <label className="block text-xs font-medium text-ink-mut mb-1.5">Project</label>
+          <label className="block text-xs font-medium text-ink-mut mb-2">Project</label>
           <select
             value={selectedProjectId}
             onChange={(e) => setSelectedProjectId(e.target.value)}
             disabled={deploymentStatus !== null}
-            className="w-full bg-surface-800 border border-hairline rounded-lg px-3 py-2.5 text-ink text-sm focus:outline-none focus:border-gold disabled:opacity-50"
+            className="w-full min-h-[48px] bg-surface-800 border border-surface-600 rounded-xl px-4 text-ink text-sm focus:outline-none focus:border-cherry-500/50 focus:ring-2 focus:ring-cherry-500 focus:ring-offset-2 focus:ring-offset-surface-950 disabled:opacity-50 transition-colors"
           >
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
@@ -187,7 +187,7 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
 
       {deployError && (
         <div
-          className={`p-3 rounded-lg border text-sm ${
+          className={`p-4 rounded-xl border text-sm ${
             isUpgradeError(deployError.kind)
               ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
               : 'bg-red-500/10 border-red-500/30 text-red-400'

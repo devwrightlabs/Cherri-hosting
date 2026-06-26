@@ -4,6 +4,7 @@ import AppShell from '../components/AppShell';
 import Card from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
+import PageHeader from '../components/ui/PageHeader';
 import EmptyState from '../components/ui/EmptyState';
 import Skeleton from '../components/ui/Skeleton';
 import { useToast } from '../components/ui/Toast';
@@ -123,15 +124,15 @@ export default function Billing() {
 
   return (
     <AppShell>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-ink font-display tracking-tight">Billing</h1>
-          <p className="text-ink-mut text-sm mt-0.5">Past invoices and charges.</p>
-        </div>
-        <Link to="/account">
-          <Button size="sm" variant="secondary">← Account</Button>
-        </Link>
-      </div>
+      <PageHeader
+        title="Billing"
+        subtitle="Past invoices and charges."
+        action={
+          <Link to="/account">
+            <Button size="sm" variant="secondary">Account</Button>
+          </Link>
+        }
+      />
 
       {isLoading ? (
         <div className="space-y-3">
@@ -177,21 +178,17 @@ export default function Billing() {
               className="w-full text-left"
               onClick={() => setSelected(inv)}
             >
-              <Card className="hover:border-gold/40 transition-colors cursor-pointer">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-ink">{inv.plan}</p>
-                    <p className="text-xs text-ink-mut mt-0.5">
-                      {new Date(inv.cycleStart).toLocaleDateString()} –{' '}
-                      {new Date(inv.cycleEnd).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <p className="font-mono text-sm text-ink">{formatCents(inv.totalCents)}</p>
-                    <Badge variant={statusVariant(inv.status)} className="mt-1">
-                      {inv.status}
-                    </Badge>
-                  </div>
+              <Card className="hover:border-cherry-500/40 transition-colors cursor-pointer">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-ink truncate">{inv.plan}</p>
+                  <p className="font-mono text-sm text-ink shrink-0">{formatCents(inv.totalCents)}</p>
+                </div>
+                <div className="flex items-center justify-between gap-2 mt-2">
+                  <p className="text-xs text-ink-mut">
+                    {new Date(inv.cycleStart).toLocaleDateString()} –{' '}
+                    {new Date(inv.cycleEnd).toLocaleDateString()}
+                  </p>
+                  <Badge variant={statusVariant(inv.status)}>{inv.status}</Badge>
                 </div>
               </Card>
             </button>

@@ -332,13 +332,13 @@ export default function DropZone({ onFilesAccepted }: DropZoneProps) {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={(e) => void handleDrop(e)}
-          className={`flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-xl px-4 py-8 text-center transition-colors duration-150 ${
-            isDragging ? 'border-gold bg-gold/10' : 'border-surface-700 bg-surface-800/40'
+          className={`flex flex-col items-center justify-center gap-4 border-2 border-dashed rounded-2xl px-5 py-14 text-center transition-colors duration-150 ${
+            isDragging ? 'border-gold bg-gold/10' : 'border-surface-600 bg-surface-800/40'
           }`}
         >
           {isProcessing ? (
             <>
-              <span className="text-gold animate-pulse">
+              <span className="flex items-center justify-center w-16 h-16 rounded-2xl border border-gold/40 bg-gold/10 text-gold animate-pulse">
                 <UploadIcon />
               </span>
               <p className="text-ink text-sm font-medium">Reading folder…</p>
@@ -350,14 +350,20 @@ export default function DropZone({ onFilesAccepted }: DropZoneProps) {
             </>
           ) : (
             <>
-              <span className={isDragging ? 'text-gold' : 'text-ink-mut'}>
+              <span
+                className={`flex items-center justify-center w-16 h-16 rounded-2xl border transition-colors ${
+                  isDragging
+                    ? 'border-gold/40 bg-gold/10 text-gold'
+                    : 'border-hairline bg-surface-800 text-ink-mut'
+                }`}
+              >
                 <UploadIcon />
               </span>
               <div>
-                <p className="text-ink font-medium text-sm">
+                <p className="text-ink font-semibold text-base">
                   {isDragging ? 'Drop your project folder' : 'Drop your folder or ZIP'}
                 </p>
-                <p className="text-ink-mut text-xs mt-1">
+                <p className="text-ink-mut text-xs mt-1.5">
                   Structure is preserved · node_modules &amp; .git ignored
                 </p>
               </div>
@@ -365,14 +371,14 @@ export default function DropZone({ onFilesAccepted }: DropZoneProps) {
                 <button
                   type="button"
                   onClick={() => folderInputRef.current?.click()}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 min-h-[40px] px-3 text-xs font-medium rounded-lg bg-surface-700 hover:bg-surface-600 text-ink transition-colors"
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 min-h-[48px] px-3 text-xs font-medium rounded-xl bg-surface-700 hover:bg-surface-600 text-ink transition-colors"
                 >
                   <FolderIcon /> Select folder
                 </button>
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 min-h-[40px] px-3 text-xs font-medium rounded-lg bg-surface-700 hover:bg-surface-600 text-ink transition-colors"
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 min-h-[48px] px-3 text-xs font-medium rounded-xl bg-surface-700 hover:bg-surface-600 text-ink transition-colors"
                 >
                   ZIP or files
                 </button>
@@ -402,7 +408,7 @@ export default function DropZone({ onFilesAccepted }: DropZoneProps) {
               <button
                 type="button"
                 onClick={reset}
-                className="text-ink-mut hover:text-ink text-xs shrink-0 transition-colors"
+                className="text-ink-mut hover:text-ink text-xs font-medium shrink-0 px-3 py-2 -mr-1 rounded-lg hover:bg-surface-700 transition-colors"
               >
                 Clear
               </button>

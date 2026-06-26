@@ -7,6 +7,9 @@ import StagePanel from '../components/deploy/StagePanel';
 import BuildLogPanel from '../components/deploy/BuildLogPanel';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
+import PageHeader from '../components/ui/PageHeader';
+import Input from '../components/ui/Input';
+import DeployStepper from '../components/deploy/DeployStepper';
 import { projectsApi, extractApiError } from '../lib/api';
 import {
   buildStage,
@@ -246,18 +249,32 @@ export default function Deploy() {
   const isUpgradeError = (kind: DeployError['kind']) =>
     kind === 'storage_limit' || kind === 'upload_too_large';
 
+  const currentStep =
+    deploymentStatus !== null
+      ? 3
+      : showStage
+        ? 2
+        : showBuild || isStaging || isImporting
+          ? 1
+          : 0;
+  const flowComplete = deploymentStatus === 'ACTIVE';
+
   return (
     <AppShell>
-      <div>
-        <h1 className="text-xl font-bold text-ink font-display tracking-tight">Deploy</h1>
-        <p className="text-ink-mut text-sm mt-0.5">
-          Upload a static site, or an app Cherri builds for you — then deploy to IPFS.
-        </p>
-      </div>
+      <PageHeader
+        title="Deploy"
+        subtitle="Upload a static site, or an app Cherri builds for you — then publish to IPFS."
+      />
+
+      <DeployStepper
+        steps={['Upload files', 'Build & validate', 'Preview', 'Publish to IPFS']}
+        current={currentStep}
+        complete={flowComplete}
+      />
 
       {/* Project selector */}
       <Card>
-        <h2 className="text-sm font-semibold text-ink mb-3">Project</h2>
+        <label className="block text-xs font-medium text-ink-mut mb-2">Project</label>
         {projectsLoadError ? (
           <div className="flex items-center justify-between gap-3">
             <p className="text-red-400 text-sm">{projectsLoadError}</p>
@@ -271,7 +288,7 @@ export default function Deploy() {
         ) : projects.length === 0 ? (
           <p className="text-ink-mut text-sm">
             You have no projects yet.{' '}
-            <button onClick={() => navigate('/projects')} className="text-gold underline">
+            <button onClick={() => navigate('/projects')} className="text-cherry-300 underline">
               Create one first.
             </button>
           </p>
@@ -280,7 +297,7 @@ export default function Deploy() {
             value={selectedProjectId}
             onChange={(e) => setSelectedProjectId(e.target.value)}
             disabled={!showUpload}
-            className="w-full bg-surface-800 border border-hairline rounded-lg px-3 py-2.5 text-ink text-sm focus:outline-none focus:border-gold disabled:opacity-50"
+            className="w-full min-h-[48px] bg-surface-800 border border-surface-600 rounded-xl px-4 text-ink text-sm focus:outline-none focus:border-cherry-500/50 focus:ring-2 focus:ring-cherry-500 focus:ring-offset-2 focus:ring-offset-surface-950 disabled:opacity-50 transition-colors"
           >
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
@@ -327,36 +344,36 @@ export default function Deploy() {
             <span className="text-[10px] uppercase tracking-wider text-ink-mut">or</span>
             <span className="h-px flex-1 bg-hairline" />
           </div>
-          <h2 className="text-sm font-semibold text-ink mb-1">Import from GitHub</h2>
-          <p className="text-ink-mut text-xs mb-3">
+          <h2 className="text-base font-semibold text-ink font-display mb-1">Import from GitHub</h2>
+          <p className="text-ink-mut text-xs mb-4 leading-relaxed">
             Paste a public repository URL. Cherri downloads it, builds it if needed,
             then stages it for preview — no faked steps.
           </p>
-          <input
-            type="url"
-            inputMode="url"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            value={repoUrl}
-            onChange={(e) => setRepoUrl(e.target.value)}
-            placeholder="https://github.com/owner/repo"
-            className="w-full bg-surface-800 border border-hairline rounded-lg px-3 py-2.5 text-ink text-sm focus:outline-none focus:border-gold mb-2"
-          />
-          <input
-            type="text"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            value={branch}
-            onChange={(e) => setBranch(e.target.value)}
-            placeholder="branch, tag, or commit (optional)"
-            className="w-full bg-surface-800 border border-hairline rounded-lg px-3 py-2.5 text-ink text-sm focus:outline-none focus:border-gold mb-3"
-          />
+          <div className="space-y-3 mb-4">
+            <Input
+              type="url"
+              inputMode="url"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              value={repoUrl}
+              onChange={(e) => setRepoUrl(e.target.value)}
+              placeholder="https://github.com/owner/repo"
+            />
+            <Input
+              type="text"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              value={branch}
+              onChange={(e) => setBranch(e.target.value)}
+              placeholder="branch, tag, or commit (optional)"
+            />
+          </div>
           <Button
             variant="secondary"
             size="lg"
-            className="w-full justify-center"
+            className="w-full"
             disabled={!selectedProjectId || !repoUrl.trim() || isImporting}
             isLoading={isImporting}
             onClick={() => void handleImport()}
@@ -396,7 +413,7 @@ export default function Deploy() {
 
       {deployError && (
         <div
-          className={`p-4 rounded-lg border text-sm ${
+          className={`p-4 rounded-xl border text-sm ${
             isUpgradeError(deployError.kind)
               ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
               : 'bg-red-500/10 border-red-500/30 text-red-400'

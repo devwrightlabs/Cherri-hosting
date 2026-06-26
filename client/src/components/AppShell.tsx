@@ -29,7 +29,7 @@ export default function AppShell({ children, topRight, title, bare = false }: Ap
         {bare ? (
           children
         ) : (
-          <div className="mx-auto w-full max-w-screen-sm px-4 pt-4 pb-8 space-y-5 animate-fade-in">
+          <div className="mx-auto w-full max-w-screen-sm px-5 pt-7 pb-14 space-y-7 animate-fade-in">
             {children}
           </div>
         )}
