@@ -187,7 +187,7 @@ export function augmentInstallArgs(
  * lifecycle scripts run; absent packages are silently skipped by the manager.
  */
 export function rebuildArgs(
-  pm: 'npm' | 'pnpm' | 'yarn',
+  pm: 'npm' | 'pnpm' | 'yarn' | 'bun',
   packages: readonly string[],
 ): string[] | null {
   if (packages.length === 0) return null;
@@ -198,6 +198,9 @@ export function rebuildArgs(
       return ['rebuild', ...packages];
     case 'yarn':
       // yarn classic has no targeted rebuild; skip rather than rerun everything.
+      return null;
+    case 'bun':
+      // bun has no targeted rebuild equivalent; skip rather than rerun all.
       return null;
     default:
       return null;

@@ -43,7 +43,7 @@ import {
   type BuildSecurityPolicy,
 } from './buildSecurity';
 
-export type PackageManager = 'npm' | 'pnpm' | 'yarn';
+export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
 
 export type BuildStatus =
   | 'QUEUED'
@@ -168,6 +168,8 @@ export function detectPackageManager(files: DeployFile[]): PackageManager {
   const has = (name: string) => files.some((f) => f.path === name);
   if (has('pnpm-lock.yaml')) return 'pnpm';
   if (has('yarn.lock')) return 'yarn';
+  // Bun's binary lockfile is bun.lockb; newer Bun also emits a text bun.lock.
+  if (has('bun.lockb') || has('bun.lock')) return 'bun';
   return 'npm';
 }
 
@@ -349,6 +351,9 @@ function installArgs(pm: PackageManager, hasLockfile: boolean): string[] {
       return ['install', '--prod=false'];
     case 'yarn':
       return ['install', '--production=false'];
+    case 'bun':
+      // Bun installs devDependencies by default; no extra flag needed.
+      return ['install'];
     default:
       // npm: include dev deps explicitly; `ci` needs a clean lockfile so prefer
       // the more forgiving `install` to avoid brittle failures.
@@ -359,7 +364,7 @@ function installArgs(pm: PackageManager, hasLockfile: boolean): string[] {
 }
 
 function buildArgs(pm: PackageManager): string[] {
-  // npm/pnpm/yarn all accept `run build`.
+  // npm/pnpm/yarn/bun all accept `run build`.
   return ['run', 'build'];
 }
 
