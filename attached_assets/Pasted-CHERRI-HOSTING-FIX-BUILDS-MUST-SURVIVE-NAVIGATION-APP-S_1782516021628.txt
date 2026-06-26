@@ -1,0 +1,31 @@
+CHERRI HOSTING — FIX: BUILDS MUST SURVIVE NAVIGATION / APP-SWITCHING (resume in-progress builds)
+
+THE BUG: When a user starts a build on the deploy page and then navigates away (to Home, another tab, or backgrounds the app / switches to Pi Browser), the build state is lost. Returning to the deploy page shows a fresh empty page and the user has to start the entire upload+build over. The build job actually runs on the SERVER with a job ID (GET /builds/:jobId already exists), but the client forgets the job ID and stops polling.
+
+THE FIX: Persist the in-progress build's job ID so the deploy page can RECONNECT to a still-running (or finished) build when the user returns — instead of restarting. Do NOT change the build engine or the pipeline; this is client-side persistence + reconnect, plus a small server confirmation if needed.
+
+Run straight through. At the end run both TypeScript checks (zero errors) and report.
+
+REQUIREMENTS:
+1. PERSIST THE ACTIVE BUILD: when a build is enqueued and returns a jobId, save it so it survives leaving the page. Since localStorage is the natural place but confirm what's allowed in this codebase — if localStorage is available use it; store { jobId, projectId, stage, startedAt }. Persist enough to restore the deploy page's stage state (which project, that a build is running, and the jobId to poll).
+
+2. RECONNECT ON RETURN: when the Deploy page mounts, check for a persisted active build. If one exists:
+   - Immediately resume polling GET /builds/:jobId for that job.
+   - Restore the UI to the correct stage: if still building → show the streamed logs and "building" state; if it finished while away → show the verified Stage 1 result (build ✓, validation-key, preview) ready for Stage 2; if it failed → show the real error.
+   - The user should see "Resuming your build…" briefly, then land exactly where the build actually is — never a blank restart.
+
+3. HANDLE BUILD COMPLETION WHILE AWAY: if the build finished (success or failure) while the user was on another page, reconnecting must reflect the FINAL result, not restart. Pull the final status + logs from GET /builds/:jobId.
+
+4. CLEAR PERSISTENCE CORRECTLY: once the build is consumed (user moves to Stage 2 / pins, or explicitly resets, or the job is terminal and acknowledged), clear the persisted active-build record so it doesn't wrongly resurrect on a future visit.
+
+5. EXPIRY / SAFETY: if the persisted jobId is older than a reasonable window (e.g. the server no longer knows the job, or it's stale beyond the build timeout), clear it gracefully and show the normal empty deploy page — never get stuck trying to resume a dead job. If GET /builds/:jobId returns not-found, clear and reset cleanly.
+
+6. SERVER (only if needed): confirm GET /builds/:jobId returns a job's status + logs even after some time / for a reconnecting client. If the server discards finished jobs too quickly to reconnect, retain a completed build's result/logs for a short window (e.g. long enough for a user to return) — without changing the build engine itself.
+
+CONSTRAINTS:
+- Do NOT rebuild the build engine or change the build pipeline.
+- Do NOT touch the gated backend lane.
+- localStorage/sessionStorage: if this environment disallows them, use the app's existing client-state persistence approach instead — confirm what's available before choosing.
+- Real errors always surface.
+
+FINAL: Run both TypeScript checks (zero errors). Explain how an in-progress build now survives navigating to Home and back, and survives backgrounding the app / switching to Pi Browser and returning. Confirm a build started, then interrupted by leaving the page, resumes correctly on return.

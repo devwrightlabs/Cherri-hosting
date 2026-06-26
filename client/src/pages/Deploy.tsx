@@ -19,11 +19,18 @@ import {
   previewUrl,
   getDeployment,
   extractDeployError,
+  isBuildGoneError,
   DeployError,
   StageResult,
   BuildJobInfo,
   BuildStageResult,
 } from '../api/deployApi';
+import {
+  loadActiveBuild,
+  saveActiveBuild,
+  clearActiveBuild,
+  ACTIVE_BUILD_MAX_AGE_MS,
+} from '../lib/activeBuild';
 import { Project, Deployment, DeploymentStatus } from '../types';
 
 type PillTone = 'mut' | 'live' | 'amber' | 'red' | 'cherry';
@@ -129,6 +136,9 @@ export default function Deploy() {
   const [buildInfo, setBuildInfo] = useState<BuildJobInfo | null>(null);
   const buildPollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // True while we reconnect to a build the user started before leaving the page.
+  const [isResuming, setIsResuming] = useState(false);
+
   // Stage 2 — pinning (the reveal sequence)
   const [isPinning, setIsPinning] = useState(false);
   const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus | null>(null);
@@ -191,6 +201,8 @@ export default function Deploy() {
     const poll = async () => {
       try {
         const info = await getBuild(jobId);
+        // First successful response — we're reconnected, drop the resume banner.
+        setIsResuming(false);
         setBuildInfo(info);
         if (info.status === 'DONE' && info.stage) {
           setStageResult({
@@ -205,14 +217,33 @@ export default function Deploy() {
             hasValidationKey: info.stage.hasValidationKey,
             previewPath: info.stage.previewPath,
           });
+          // Keep the persisted record until the stage is consumed (pin/reset) so
+          // a finished-but-unpinned build also survives navigating away.
           if (buildPollRef.current !== null) clearTimeout(buildPollRef.current);
           return;
         }
         if (info.status === 'FAILED') {
+          // Keep persisted so returning still shows the real failure until reset.
           if (buildPollRef.current !== null) clearTimeout(buildPollRef.current);
           return;
         }
-      } catch {
+      } catch (err: unknown) {
+        // A vanished/expired job (404) is terminal: clear persistence and return
+        // to a clean page instead of polling a dead job forever. Transient
+        // network errors fall through and are retried.
+        if (isBuildGoneError(err)) {
+          clearActiveBuild();
+          if (buildPollRef.current !== null) clearTimeout(buildPollRef.current);
+          setIsResuming(false);
+          setBuildInfo(null);
+          setStageResult(null);
+          setDeployError({
+            kind: 'generic',
+            message:
+              'That build is no longer available — it may have expired. Please start a new one.',
+          });
+          return;
+        }
         // ignore transient polling errors
       }
       buildPollRef.current = setTimeout(() => void poll(), 1500);
@@ -221,12 +252,37 @@ export default function Deploy() {
     void poll();
   }, []);
 
+  // Reconnect to a build the user started before leaving the page (navigating
+  // away, backgrounding the app, or switching to the Pi Browser and returning).
+  // The job runs server-side under a persisted jobId — we resume polling and let
+  // the real status decide where to land, instead of forcing a fresh restart.
+  useEffect(() => {
+    const record = loadActiveBuild();
+    if (!record) return;
+    // Stale beyond any window the server could still answer — drop it cleanly.
+    if (Date.now() - record.startedAt > ACTIVE_BUILD_MAX_AGE_MS) {
+      clearActiveBuild();
+      return;
+    }
+    setSelectedProjectId(record.projectId);
+    setIsResuming(true);
+    pollBuild(record.jobId);
+  }, [pollBuild]);
+
   // Route a stage-or-build response into the right phase: a queued build streams
   // its logs; an immediate stage drops straight into the preview + verify panel.
   const applyBuildResult = useCallback(
-    (result: BuildStageResult) => {
+    (result: BuildStageResult, projectId: string) => {
       if (result.needsBuild) {
         setBuildInfo({ status: 'QUEUED', packageManager: result.packageManager, logs: '' });
+        // Persist the job so the build survives navigation / app-switching and
+        // can be reconnected on return (the job runs server-side under jobId).
+        saveActiveBuild({
+          jobId: result.jobId,
+          projectId,
+          stage: 'building',
+          startedAt: Date.now(),
+        });
         pollBuild(result.jobId);
       } else {
         setStageResult(result);
@@ -248,6 +304,7 @@ export default function Deploy() {
     try {
       applyBuildResult(
         await buildStage(selectedProjectId, files, filePaths, setStageProgress),
+        selectedProjectId,
       );
     } catch (err: unknown) {
       setDeployError(extractDeployError(err));
@@ -265,7 +322,10 @@ export default function Deploy() {
     setBuildInfo(null);
 
     try {
-      applyBuildResult(await importGitHub(selectedProjectId, repoUrl.trim(), branch));
+      applyBuildResult(
+        await importGitHub(selectedProjectId, repoUrl.trim(), branch),
+        selectedProjectId,
+      );
     } catch (err: unknown) {
       setDeployError(extractDeployError(err));
     } finally {
@@ -276,6 +336,9 @@ export default function Deploy() {
   // Stage 2 — pin the staged upload to IPFS and run the reveal.
   const handlePin = useCallback(async () => {
     if (!stageResult?.stageId) return;
+    // The build is now consumed — moving to Stage 2 means it should no longer
+    // resurrect as an "in-progress build" on a future visit.
+    clearActiveBuild();
     setIsPinning(true);
     setDeployError(null);
     setDeploymentStatus('PENDING');
@@ -298,17 +361,20 @@ export default function Deploy() {
   // zone. Clearing files matters: otherwise the old upload stays silently armed
   // and "Build & verify" could re-submit it before the user picks new files.
   const resetStage = () => {
+    clearActiveBuild();
     setFiles([]);
     setFilePaths([]);
     setStageResult(null);
     setStageProgress(0);
     setDeployError(null);
     setBuildInfo(null);
+    setIsResuming(false);
     if (buildPollRef.current !== null) clearTimeout(buildPollRef.current);
   };
 
   // Full reset — clear files and start over.
   const reset = () => {
+    clearActiveBuild();
     setFiles([]);
     setFilePaths([]);
     setStageResult(null);
@@ -318,12 +384,13 @@ export default function Deploy() {
     setDeployError(null);
     setDeployStartedAt(null);
     setBuildInfo(null);
+    setIsResuming(false);
     if (buildPollRef.current !== null) clearTimeout(buildPollRef.current);
   };
 
   // ── Derived flow state ───────────────────────────────────────────────────────
   const isDeploying = deploymentStatus !== null;
-  const inUploadState = !stageResult && buildInfo === null && !isDeploying;
+  const inUploadState = !stageResult && buildInfo === null && !isDeploying && !isResuming;
   const isBuilding = !stageResult && buildInfo !== null && !isDeploying;
   const hasVerifiedStage = !!(stageResult?.deployable && stageResult.stageId);
   const canStage =
@@ -397,8 +464,21 @@ export default function Deploy() {
         title="Build & Verify"
         subtitle="Upload your site, let Cherri build it if needed, then preview and check it before going live."
         pill={stage1Pill}
-        active={inUploadState || isBuilding || (!!stageResult && !isDeploying)}
+        active={inUploadState || isBuilding || isResuming || (!!stageResult && !isDeploying)}
       >
+        {/* Resuming — reconnecting to a build started before leaving the page */}
+        {isResuming && !buildInfo && !stageResult && !isDeploying && (
+          <div className="rounded-xl bg-surface-800 border border-hairline p-5 flex items-center gap-3">
+            <span className="w-5 h-5 border-2 border-cherry-300 border-t-transparent rounded-full animate-spin shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-ink">Resuming your build…</p>
+              <p className="text-ink-mut text-xs mt-0.5 leading-relaxed">
+                Reconnecting to a build you started earlier — you'll land right where it is.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Built & verified — compact summary once we've moved on to deploying */}
         {isDeploying && stageResult?.deployable && (
           <div className="rounded-xl bg-surface-800 border border-live/30 p-4">

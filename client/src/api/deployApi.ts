@@ -230,6 +230,16 @@ export async function getBuild(jobId: string): Promise<BuildJobInfo> {
 }
 
 /**
+ * True when a build poll failed because the job is gone — not found or expired
+ * (server returns 404). This is terminal for a reconnect: the persisted job no
+ * longer exists, so the client must clear it and stop polling rather than retry
+ * a dead job forever. Distinct from transient network errors, which are retried.
+ */
+export function isBuildGoneError(err: unknown): boolean {
+  return axios.isAxiosError(err) && err.response?.status === 404;
+}
+
+/**
  * POST /api/deployments/import-github — import a PUBLIC GitHub repo by URL and
  * run it through the same stage-or-build pipeline. Returns the same result shape
  * as buildStage (immediate stage, or a queued build to poll). Private/not-found
