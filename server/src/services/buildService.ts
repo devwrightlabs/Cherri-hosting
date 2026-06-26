@@ -71,6 +71,8 @@ export interface BuildStageInfo {
   fileCount: number;
   totalBytes: number;
   sdk: { scriptDetected: boolean; initDetected: boolean; ready: boolean };
+  /** Pi domain verification: validation-key.txt present at the served root. */
+  hasValidationKey: boolean;
 }
 
 /**

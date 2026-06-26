@@ -97,6 +97,13 @@ export interface StageResult {
   totalBytes: number;
   fileTree: FileTreeEntry[];
   sdk?: PiSdkScan;
+  /**
+   * Whether a `validation-key.txt` was found at the served root. Pi Network
+   * needs this file to verify `.pi` domain ownership. Advisory only — its
+   * absence never blocks a deploy, but the UI surfaces a warning. Present on
+   * deployable stages; undefined on halt responses.
+   */
+  hasValidationKey?: boolean;
   /** Server path of the sandboxed preview, e.g. "/preview/<id>/". */
   previewPath?: string;
 }
@@ -177,6 +184,7 @@ export interface BuildJobInfo {
     fileCount: number;
     totalBytes: number;
     sdk: PiSdkScan;
+    hasValidationKey: boolean;
   };
 }
 

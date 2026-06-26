@@ -23,6 +23,7 @@ import {
   detectBackendNeed,
   resolveDeployable,
   scanPiSdk,
+  hasValidationKey,
   shouldIgnoreFile,
   UploadTooLargeError,
 } from '../utils/deployFiles';
@@ -199,6 +200,7 @@ async function respondBuildOrStage(
         .slice(0, 50)
         .map((f) => ({ path: f.path, size: f.buffer.length })),
       sdk,
+      hasValidationKey: hasValidationKey(resolution.files),
       needsBackend: backend.needsBackend,
       backendEligible,
       previewPath: `/preview/${stage.id}/`,
@@ -273,6 +275,7 @@ async function respondBuildOrStage(
         fileCount: resolved.files.length,
         totalBytes: deployBytes,
         sdk,
+        hasValidationKey: hasValidationKey(resolved.files),
       },
     };
   };
@@ -784,6 +787,7 @@ deploymentsRouter.post(
           .slice(0, 50)
           .map((f) => ({ path: f.path, size: f.buffer.length })),
         sdk,
+        hasValidationKey: hasValidationKey(resolution.files),
         previewPath: `/preview/${stage.id}/`,
       });
     } catch (err) {

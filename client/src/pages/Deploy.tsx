@@ -1,15 +1,15 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import AppShell from '../components/AppShell';
 import DropZone from '../components/deploy/DropZone';
 import DeployReveal from '../components/deploy/DeployReveal';
 import StagePanel from '../components/deploy/StagePanel';
+import DeployDomainPanel from '../components/deploy/DeployDomainPanel';
 import BuildLogPanel from '../components/deploy/BuildLogPanel';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import PageHeader from '../components/ui/PageHeader';
 import Input from '../components/ui/Input';
-import DeployStepper from '../components/deploy/DeployStepper';
 import { projectsApi, extractApiError } from '../lib/api';
 import {
   buildStage,
@@ -25,6 +25,83 @@ import {
   BuildStageResult,
 } from '../api/deployApi';
 import { Project, Deployment, DeploymentStatus } from '../types';
+
+type PillTone = 'mut' | 'live' | 'amber' | 'red' | 'cherry';
+
+const PILL_TONES: Record<PillTone, string> = {
+  mut: 'bg-surface-800 text-ink-mut border-hairline',
+  live: 'bg-live/15 text-live border-live/30',
+  amber: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+  red: 'bg-red-500/10 text-red-400 border-red-500/30',
+  cherry: 'bg-cherry-500/10 text-cherry-300 border-cherry-500/30',
+};
+
+function Pill({ tone, children }: { tone: PillTone; children: ReactNode }) {
+  return (
+    <span
+      className={`shrink-0 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${PILL_TONES[tone]}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+function StageCard({
+  n,
+  title,
+  subtitle,
+  pill,
+  locked = false,
+  active = false,
+  children,
+}: {
+  n: number;
+  title: string;
+  subtitle: string;
+  pill: ReactNode;
+  locked?: boolean;
+  active?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      className={`rounded-2xl border p-5 transition-colors ${
+        locked
+          ? 'border-hairline bg-surface-900/40'
+          : active
+            ? 'border-cherry-500/30 bg-surface-900 ring-1 ring-cherry-500/10'
+            : 'border-hairline bg-surface-900'
+      }`}
+    >
+      <header className="flex items-start gap-3 mb-4">
+        <span
+          className={`shrink-0 flex items-center justify-center w-8 h-8 rounded-xl text-sm font-bold ${
+            locked
+              ? 'bg-surface-800 text-ink-mut border border-hairline'
+              : 'bg-cherry-gradient text-surface-950'
+          }`}
+        >
+          {n}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-semibold text-ink font-display">{title}</h2>
+            {pill}
+          </div>
+          <p className="text-ink-mut text-xs mt-0.5 leading-relaxed">{subtitle}</p>
+        </div>
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  return `${(kb / 1024).toFixed(2)} MB`;
+}
 
 export default function Deploy() {
   const [searchParams] = useSearchParams();
@@ -43,16 +120,16 @@ export default function Deploy() {
   const [branch, setBranch] = useState('');
   const [isImporting, setIsImporting] = useState(false);
 
-  // Phase 1 — staging (upload + validate + preview, no pin yet)
+  // Stage 1 — staging (upload + validate + preview, no pin yet)
   const [isStaging, setIsStaging] = useState(false);
   const [stageProgress, setStageProgress] = useState(0);
   const [stageResult, setStageResult] = useState<StageResult | null>(null);
 
-  // Phase 1b — server-side build (when the upload needs building first)
+  // Stage 1b — server-side build (when the upload needs building first)
   const [buildInfo, setBuildInfo] = useState<BuildJobInfo | null>(null);
   const buildPollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Phase 2 — pinning (the reveal sequence)
+  // Stage 2 — pinning (the reveal sequence)
   const [isPinning, setIsPinning] = useState(false);
   const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus | null>(null);
   const [liveDeployment, setLiveDeployment] = useState<Deployment | null>(null);
@@ -106,7 +183,7 @@ export default function Deploy() {
   }, []);
 
   // Poll a server-side build for streamed logs. On success, convert its stage so
-  // the existing preview + pin panel takes over; on failure the BuildLogPanel
+  // the existing preview + verify panel takes over; on failure the BuildLogPanel
   // keeps the real error + log on screen.
   const pollBuild = useCallback((jobId: string) => {
     if (buildPollRef.current !== null) clearTimeout(buildPollRef.current);
@@ -125,6 +202,7 @@ export default function Deploy() {
             totalBytes: info.stage.totalBytes,
             fileTree: [],
             sdk: info.stage.sdk,
+            hasValidationKey: info.stage.hasValidationKey,
             previewPath: info.stage.previewPath,
           });
           if (buildPollRef.current !== null) clearTimeout(buildPollRef.current);
@@ -144,7 +222,7 @@ export default function Deploy() {
   }, []);
 
   // Route a stage-or-build response into the right phase: a queued build streams
-  // its logs; an immediate stage drops straight into the preview + pin panel.
+  // its logs; an immediate stage drops straight into the preview + verify panel.
   const applyBuildResult = useCallback(
     (result: BuildStageResult) => {
       if (result.needsBuild) {
@@ -157,7 +235,7 @@ export default function Deploy() {
     [pollBuild],
   );
 
-  // Phase 1 — upload + validate. If the project needs building, run a REAL
+  // Stage 1 — upload + validate. If the project needs building, run a REAL
   // server-side build first; otherwise show a sandboxed preview (no pin yet).
   const handleStage = useCallback(async () => {
     if (!selectedProjectId || files.length === 0 || filePaths.length === 0) return;
@@ -178,7 +256,7 @@ export default function Deploy() {
     }
   }, [selectedProjectId, files, filePaths, applyBuildResult]);
 
-  // Phase 1 (GitHub) — import a public repo, then the same stage-or-build flow.
+  // Stage 1 (GitHub) — import a public repo, then the same stage-or-build flow.
   const handleImport = useCallback(async () => {
     if (!selectedProjectId || !repoUrl.trim()) return;
     setIsImporting(true);
@@ -195,7 +273,7 @@ export default function Deploy() {
     }
   }, [selectedProjectId, repoUrl, branch, applyBuildResult]);
 
-  // Phase 2 — pin the staged upload to IPFS and run the reveal.
+  // Stage 2 — pin the staged upload to IPFS and run the reveal.
   const handlePin = useCallback(async () => {
     if (!stageResult?.stageId) return;
     setIsPinning(true);
@@ -216,8 +294,12 @@ export default function Deploy() {
     }
   }, [stageResult, pollStatus]);
 
-  // Discard the staged upload and return to the drop zone (keeps selection).
+  // Discard the staged upload AND the chosen files, returning to a clean drop
+  // zone. Clearing files matters: otherwise the old upload stays silently armed
+  // and "Build & verify" could re-submit it before the user picks new files.
   const resetStage = () => {
+    setFiles([]);
+    setFilePaths([]);
     setStageResult(null);
     setStageProgress(0);
     setDeployError(null);
@@ -239,37 +321,38 @@ export default function Deploy() {
     if (buildPollRef.current !== null) clearTimeout(buildPollRef.current);
   };
 
-  const showBuild =
-    deploymentStatus === null && stageResult === null && buildInfo !== null;
-  const showUpload =
-    deploymentStatus === null && stageResult === null && buildInfo === null;
-  const showStage = deploymentStatus === null && stageResult !== null;
+  // ── Derived flow state ───────────────────────────────────────────────────────
+  const isDeploying = deploymentStatus !== null;
+  const inUploadState = !stageResult && buildInfo === null && !isDeploying;
+  const isBuilding = !stageResult && buildInfo !== null && !isDeploying;
+  const hasVerifiedStage = !!(stageResult?.deployable && stageResult.stageId);
   const canStage =
     !!selectedProjectId && files.length > 0 && filePaths.length > 0 && !isStaging;
   const isUpgradeError = (kind: DeployError['kind']) =>
     kind === 'storage_limit' || kind === 'upload_too_large';
 
-  const currentStep =
-    deploymentStatus !== null
-      ? 3
-      : showStage
-        ? 2
-        : showBuild || isStaging || isImporting
-          ? 1
-          : 0;
-  const flowComplete = deploymentStatus === 'ACTIVE';
+  // ── Per-stage status pills ───────────────────────────────────────────────────
+  const stage1Pill: ReactNode = (() => {
+    if (stageResult?.deployable) return <Pill tone="live">Verified</Pill>;
+    if (stageResult && !stageResult.deployable) return <Pill tone="amber">Action needed</Pill>;
+    if (buildInfo?.status === 'FAILED') return <Pill tone="red">Build failed</Pill>;
+    if (isBuilding) return <Pill tone="amber">Building…</Pill>;
+    return <Pill tone="mut">Start here</Pill>;
+  })();
+
+  const stage2Pill: ReactNode = (() => {
+    if (deploymentStatus === 'ACTIVE') return <Pill tone="live">Live</Pill>;
+    if (deploymentStatus === 'FAILED') return <Pill tone="red">Failed</Pill>;
+    if (isDeploying) return <Pill tone="amber">Deploying…</Pill>;
+    if (hasVerifiedStage) return <Pill tone="cherry">Ready</Pill>;
+    return <Pill tone="mut">Locked</Pill>;
+  })();
 
   return (
     <AppShell>
       <PageHeader
         title="Deploy"
-        subtitle="Upload a static site, or an app Cherri builds for you — then publish to IPFS."
-      />
-
-      <DeployStepper
-        steps={['Upload files', 'Build & validate', 'Preview', 'Publish to IPFS']}
-        current={currentStep}
-        complete={flowComplete}
+        subtitle="Two steps: build & verify your site, then deploy it live to IPFS."
       />
 
       {/* Project selector */}
@@ -296,7 +379,7 @@ export default function Deploy() {
           <select
             value={selectedProjectId}
             onChange={(e) => setSelectedProjectId(e.target.value)}
-            disabled={!showUpload}
+            disabled={!inUploadState}
             className="w-full min-h-[48px] bg-surface-800 border border-surface-600 rounded-xl px-4 text-ink text-sm focus:outline-none focus:border-cherry-500/50 focus:ring-2 focus:ring-cherry-500 focus:ring-offset-2 focus:ring-offset-surface-950 disabled:opacity-50 transition-colors"
           >
             {projects.map((p) => (
@@ -308,108 +391,192 @@ export default function Deploy() {
         )}
       </Card>
 
-      {/* Drop zone */}
-      {showUpload && (
-        <Card>
-          <h2 className="text-sm font-semibold text-ink mb-3">Files</h2>
-          <DropZone
-            onFilesAccepted={(acceptedFiles, acceptedPaths) => {
-              setFiles(acceptedFiles);
-              setFilePaths(acceptedPaths);
-            }}
+      {/* ─── STAGE 1 — Build & Verify ───────────────────────────────────────── */}
+      <StageCard
+        n={1}
+        title="Build & Verify"
+        subtitle="Upload your site, let Cherri build it if needed, then preview and check it before going live."
+        pill={stage1Pill}
+        active={inUploadState || isBuilding || (!!stageResult && !isDeploying)}
+      >
+        {/* Built & verified — compact summary once we've moved on to deploying */}
+        {isDeploying && stageResult?.deployable && (
+          <div className="rounded-xl bg-surface-800 border border-live/30 p-4">
+            <div className="flex items-center gap-2.5">
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-live/15 text-live">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+              </span>
+              <p className="text-sm font-medium text-ink">Built &amp; verified</p>
+            </div>
+            <div className="mt-3 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-ink-mut">Entry</span>
+                <span className="font-mono text-ink truncate">{stageResult.entryPoint}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-ink-mut">Files</span>
+                <span className="text-ink">
+                  {stageResult.fileCount}{' '}
+                  <span className="text-ink-mut">· {formatBytes(stageResult.totalBytes)}</span>
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-ink-mut">Pi validation key</span>
+                <span className={stageResult.hasValidationKey ? 'text-live' : 'text-amber-400'}>
+                  {stageResult.hasValidationKey ? '✓ Present' : '⚠ Missing'}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Verified / halt — the preview + verification panel */}
+        {!isDeploying && stageResult && (
+          <StagePanel
+            result={stageResult}
+            previewSrc={stageResult.previewPath ? previewUrl(stageResult.previewPath) : null}
+            onCancel={resetStage}
           />
-        </Card>
-      )}
+        )}
 
-      {/* Validate & preview button */}
-      {showUpload && (
-        <Button
-          size="lg"
-          className="w-full justify-center"
-          disabled={!canStage}
-          isLoading={isStaging}
-          onClick={() => void handleStage()}
-        >
-          {isStaging && stageProgress > 0
-            ? `Uploading… ${stageProgress}%`
-            : 'Validate & preview'}
-        </Button>
-      )}
+        {/* Building — real streamed build logs */}
+        {isBuilding && buildInfo && <BuildLogPanel info={buildInfo} onReset={reset} />}
 
-      {/* GitHub import — an alternate path into the same build/stage pipeline */}
-      {showUpload && (
-        <Card>
-          <div className="flex items-center gap-3 mb-3">
-            <span className="h-px flex-1 bg-hairline" />
-            <span className="text-[10px] uppercase tracking-wider text-ink-mut">or</span>
-            <span className="h-px flex-1 bg-hairline" />
-          </div>
-          <h2 className="text-base font-semibold text-ink font-display mb-1">Import from GitHub</h2>
-          <p className="text-ink-mut text-xs mb-4 leading-relaxed">
-            Paste a public repository URL. Cherri downloads it, builds it if needed,
-            then stages it for preview — no faked steps.
-          </p>
-          <div className="space-y-3 mb-4">
-            <Input
-              type="url"
-              inputMode="url"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              value={repoUrl}
-              onChange={(e) => setRepoUrl(e.target.value)}
-              placeholder="https://github.com/owner/repo"
+        {/* Upload — drop zone, build button, GitHub import */}
+        {inUploadState && (
+          <div className="space-y-4">
+            <DropZone
+              onFilesAccepted={(acceptedFiles, acceptedPaths) => {
+                setFiles(acceptedFiles);
+                setFilePaths(acceptedPaths);
+              }}
             />
-            <Input
-              type="text"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              value={branch}
-              onChange={(e) => setBranch(e.target.value)}
-              placeholder="branch, tag, or commit (optional)"
-            />
+
+            <Button
+              size="lg"
+              className="w-full justify-center"
+              disabled={!canStage}
+              isLoading={isStaging}
+              onClick={() => void handleStage()}
+            >
+              {isStaging && stageProgress > 0 ? `Uploading… ${stageProgress}%` : 'Build & verify'}
+            </Button>
+
+            {/* GitHub import — an alternate path into the same build/stage pipeline */}
+            <div className="pt-1">
+              <div className="flex items-center gap-3 mb-3">
+                <span className="h-px flex-1 bg-hairline" />
+                <span className="text-[10px] uppercase tracking-wider text-ink-mut">or</span>
+                <span className="h-px flex-1 bg-hairline" />
+              </div>
+              <h3 className="text-sm font-semibold text-ink mb-1">Import from GitHub</h3>
+              <p className="text-ink-mut text-xs mb-3 leading-relaxed">
+                Paste a public repository URL. Cherri downloads it, builds it if needed, then stages
+                it for preview — no faked steps.
+              </p>
+              <div className="space-y-2.5 mb-3">
+                <Input
+                  type="url"
+                  inputMode="url"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  value={repoUrl}
+                  onChange={(e) => setRepoUrl(e.target.value)}
+                  placeholder="https://github.com/owner/repo"
+                />
+                <Input
+                  type="text"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  value={branch}
+                  onChange={(e) => setBranch(e.target.value)}
+                  placeholder="branch, tag, or commit (optional)"
+                />
+              </div>
+              <Button
+                variant="secondary"
+                size="lg"
+                className="w-full"
+                disabled={!selectedProjectId || !repoUrl.trim() || isImporting}
+                isLoading={isImporting}
+                onClick={() => void handleImport()}
+              >
+                {isImporting ? 'Importing…' : 'Import from GitHub'}
+              </Button>
+            </div>
           </div>
-          <Button
-            variant="secondary"
-            size="lg"
-            className="w-full"
-            disabled={!selectedProjectId || !repoUrl.trim() || isImporting}
-            isLoading={isImporting}
-            onClick={() => void handleImport()}
-          >
-            {isImporting ? 'Importing…' : 'Import from GitHub'}
-          </Button>
-        </Card>
-      )}
+        )}
+      </StageCard>
 
-      {/* Server-side build console (real streamed logs) */}
-      {showBuild && buildInfo && <BuildLogPanel info={buildInfo} onReset={reset} />}
+      {/* ─── STAGE 2 — Deploy & Go Live ─────────────────────────────────────── */}
+      <StageCard
+        n={2}
+        title="Deploy & Go Live"
+        subtitle="Pin your verified site to IPFS, then optionally point a .pi domain at it."
+        pill={stage2Pill}
+        locked={!hasVerifiedStage && !isDeploying}
+        active={(hasVerifiedStage && !isDeploying) || isDeploying}
+      >
+        {/* Locked — Stage 1 not finished */}
+        {!hasVerifiedStage && !isDeploying && (
+          <div className="rounded-xl bg-surface-800/60 border border-dashed border-hairline p-6 text-center">
+            <span className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-surface-800 text-ink-mut">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+            </span>
+            <p className="text-ink text-sm font-medium mt-3">Finish step 1 first</p>
+            <p className="text-ink-mut text-xs mt-1 leading-relaxed">
+              Build &amp; verify your site above. Once it previews cleanly, deploying unlocks here.
+            </p>
+          </div>
+        )}
 
-      {/* Staged preview / halt-with-guidance */}
-      {showStage && stageResult && (
-        <StagePanel
-          result={stageResult}
-          previewSrc={stageResult.previewPath ? previewUrl(stageResult.previewPath) : null}
-          isPinning={isPinning}
-          onPin={() => void handlePin()}
-          onCancel={resetStage}
-        />
-      )}
+        {/* Ready — verified stage, not yet pinned */}
+        {hasVerifiedStage && !isDeploying && (
+          <div className="space-y-3">
+            <div className="rounded-xl bg-surface-800 border border-hairline p-4">
+              <p className="text-ink-mut text-xs leading-relaxed">
+                Pinning publishes your site to IPFS permanently — once it's live, it can't be taken
+                down. You'll get a content address (CID) and a shareable gateway link.
+              </p>
+            </div>
+            <Button
+              size="lg"
+              className="w-full justify-center"
+              isLoading={isPinning}
+              onClick={() => void handlePin()}
+            >
+              Deploy to IPFS
+            </Button>
+          </div>
+        )}
 
-      {/* The reveal sequence */}
-      {deploymentStatus && (
-        <DeployReveal
-          status={deploymentStatus}
-          isUploading={false}
-          uploadProgress={100}
-          deployment={liveDeployment}
-          startedAt={deployStartedAt}
-          onRetry={() => void handlePin()}
-          onReset={reset}
-          customDomain={projects.find((p) => p.id === selectedProjectId)?.customDomain}
-        />
-      )}
+        {/* Deploying / live — the reveal sequence, then the .pi domain panel */}
+        {isDeploying && deploymentStatus && (
+          <div className="space-y-4">
+            <DeployReveal
+              status={deploymentStatus}
+              isUploading={false}
+              uploadProgress={100}
+              deployment={liveDeployment}
+              startedAt={deployStartedAt}
+              onRetry={() => void handlePin()}
+              onReset={reset}
+              customDomain={projects.find((p) => p.id === selectedProjectId)?.customDomain}
+            />
+
+            {deploymentStatus === 'ACTIVE' && liveDeployment && (
+              <DeployDomainPanel deployment={liveDeployment} />
+            )}
+          </div>
+        )}
+      </StageCard>
 
       {deployError && (
         <div

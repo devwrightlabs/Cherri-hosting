@@ -1,0 +1,50 @@
+CHERRI HOSTING — TWO-STAGE DEPLOY UI (Build & Verify → Deploy to IPFS) + Pi validation-key check
+
+THE VISION: The deploy page must show TWO clearly separate stages on one page, not one cramped stepper. The backend ALREADY separates these (POST /stage and /build-stage do upload+build+validate WITHOUT pinning; POST /:stageId/pin pins to IPFS; a route returns the CID + DNSLink record). This task is mostly a UI restructure to expose that separation, PLUS one new validation check. Do NOT rebuild the build engine or the pin logic — they exist and work. Do NOT touch the gated backend lane.
+
+Run straight through. At the end run both TypeScript checks (zero errors) and report.
+
+═══ PART 1 — ADD THE PI VALIDATION-KEY CHECK (new, small) ═══
+Pi Network apps must serve a validation file (validation-key.txt) at their root so Pi can verify domain ownership. Add this check to the BUILD/VALIDATE stage (server-side, in the stage/validation logic — NOT a new pin step):
+- After a build/stage produces output, check whether validation-key.txt exists at the root of the output.
+- This is a WARNING, not a hard block: the user can still preview and even deploy, but the UI must clearly flag "⚠ validation-key.txt not found — your .pi domain won't verify until you add it." Explain in one line what it is and that Pi requires it for domain verification.
+- If it IS present, show a green "✓ Pi validation key found."
+- Expose this in the stage/validation API response (e.g. hasValidationKey: boolean) so the client can show it.
+
+═══ PART 2 — RESTRUCTURE THE DEPLOY PAGE INTO TWO VISIBLE STAGES ═══
+Redesign client/src/pages/Deploy.tsx (and its deploy components) into TWO clearly separated, visually distinct sections on the same page. Use the EXISTING backend routes — do not change the pipeline, just present it as two stages.
+
+┌─ STAGE 1 — BUILD & VERIFY (the workshop) ─┐
+A clearly-labeled section (e.g. a card titled "1 · Build & Verify") containing:
+- The redesigned DropZone (drag/drop folder or ZIP) — already teal, keep it.
+- On submit → call the existing build-stage flow (build in sandbox if needed, stream real logs in the BuildLogPanel).
+- Show the build steps WITHIN this section (Analyzing → Installing → Building → Done) — not as a global top-of-page stepper.
+- When the build/stage succeeds, show a VERIFICATION panel inside Stage 1:
+   • ✓/✗ Build succeeded (with real errors shown clearly if it failed)
+   • ✓/⚠ Pi validation-key.txt found or missing (from Part 1)
+   • The CID (shown in monospace, with a copy button)
+   • A "Preview" button → opens the staged/built site so the user can VIEW and TEST it before going live
+- Stage 1 is about MAKING + CHECKING. Nothing is pinned/live yet. Make that clear ("Not live yet — preview and verify, then deploy below").
+
+┌─ STAGE 2 — DEPLOY TO IPFS & DOMAIN (the launch) ─┐
+A second clearly-labeled section (e.g. a card titled "2 · Deploy & Go Live"), VISUALLY distinct from Stage 1 and disabled/greyed until Stage 1 has a verified stage with a CID:
+- A clear "Deploy to IPFS" primary (teal) button → calls the existing POST /:stageId/pin to pin the verified build to IPFS.
+- On successful pin → show the DeployReveal moment (sealed shield + glow + live gateway URL + QR) — it already exists, give it room here.
+- A ".pi domain" input field: the user enters their Pi domain.
+- On entering the domain → show the EXISTING DNSLink record (dnslink=/ipfs/<cid>) and the gateway URL, each with a copy button, plus the existing "open the official Pi domain portal" action (never Google). Use the existing route that returns the CID + DNSLink record.
+- Show the existing REAL gateway check ("✓ Your site is being served at this CID") so the user knows it's actually live.
+- If they redeploy later (new CID), show the existing stale-domain warning that the DNSLink must be updated.
+
+UI REQUIREMENTS:
+- Two distinct sections/cards, clearly numbered, with their own headers and breathing room — NOT one merged stepper. The user should visually understand: "first I build & verify, then I deploy & point my domain."
+- Stage 2 stays locked until Stage 1 produces a verified CID.
+- Teal accent, consistent with the rest (cherry-400 primary, surface/hairline, live green for success). One primary action per stage.
+- Mobile-first (Pi Browser, 320–430px): no horizontal scroll, tap targets ≥48px, both sections readable stacked.
+- Every state designed: building, build-failed (real error + retry), verified, pinning, pinned/live, domain-pending. No blank or generic states.
+
+RULES:
+- Use the EXISTING routes (/stage, /build-stage, /builds/:jobId, /:stageId/pin, the CID+DNSLink route, the gateway-verify route). Do NOT rebuild the pipeline.
+- Do NOT rebuild the build engine. Do NOT touch the gated backend lane.
+- Real errors always surface.
+
+FINAL: Run both TypeScript checks (zero errors). Report: the validation-key check you added, and how the deploy page now shows the two separate stages, screen by screen.
