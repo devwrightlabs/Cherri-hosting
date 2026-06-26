@@ -1,0 +1,51 @@
+CHERRI HOSTING — FINAL INTEGRATION + FULL POLISH PASS (no new features, no engine rebuild)
+
+READ FIRST — WHAT THIS IS AND ISN'T:
+- This is a POLISH + INTEGRATION job. Do NOT build a new build engine — the server-side build engine in buildService.ts/buildSecurity.ts already exists and works (sandboxed install + build for npm/pnpm/yarn/bun → output collection → IPFS pin). Leave its logic intact.
+- Do NOT add new features or new infrastructure. Do NOT touch the gated backend lane (provisioning/billing scheduler/snapshot/PiRC2) — it stays inert until GO-LIVE.
+- I have uploaded replaced files. Your job: integrate them cleanly, fix anything they touched, and make the WHOLE app look and feel like one finished, professional product.
+- Run straight through. Do NOT stop to ask between steps. At the very end: run BOTH client and server TypeScript checks, confirm zero errors, and give me one summary of everything changed.
+
+═══════════ STEP 1 — INTEGRATE THE REPLACED FILES ═══════════
+I replaced these files. Confirm they're in place, imports resolve, and nothing else broke:
+- client/src/pages/Pricing.tsx, client/src/pages/Landing.tsx, client/src/lib/constants.ts, client/src/lib/api.ts  → pricing now reads the dollar-pegged engine (/api/billing/catalog + /api/billing/quote); anchors Builder $35 / Pro $143 / Business $350, Pi floats live. Keep PREMIUM_PRICE_PI (legacy).
+- server/src/services/buildService.ts + server/src/services/buildSecurity.ts → adds bun package-manager support to the existing engine. Confirm it still detects npm/pnpm/yarn/bun and runs sandboxed install+build. Do NOT rewrite it.
+- server/src/utils/deployFiles.ts → comment/intent now matches Option A server-side building. Logic unchanged.
+- client/src/components/deploy/DropZone.tsx → redesigned upload drop zone (teal). client/src/components/EnvToggle.tsx → TEST/LIVE toggle recolored to teal.
+Run the TypeScript checks now and fix any type/import mismatches caused by the swaps WITHOUT reverting the intent of these files.
+
+═══════════ STEP 2 — FINISH THE TEAL REDESIGN EVERYWHERE (kill leftover gold) ═══════════
+The redesign swapped palette values but some screens/components still use old styling. Sweep the ENTIRE client and make it visually consistent:
+- Find every remaining hardcoded gold/amber/cherry-as-gold usage and any leftover old hex (e.g. #F0C040, #0A0A0F) and replace with the existing teal tokens (cherry-400 primary, cherry-500 hover, cherry-600 pressed) and surface tokens (surface-950 bg, surface-900 cards, surface-800 inner, hairline borders). One accent color: teal. Success = live green (#10B981).
+- Apply this consistently across ALL pages and components: Dashboard, Projects, ProjectDetail, Account, Billing, Deploy, Landing, and every component in components/ (TopBar, BottomTabBar, Sidebar, NotificationBell, SystemStatusBanner, all ui/* and deploy/* and dashboard/*).
+- One primary (teal) action per screen; everything else neutral. No two competing accent colors on a screen.
+
+═══════════ STEP 3 — CONSISTENCY & SPACING POLISH (make it feel finished) ═══════════
+Sweep every screen for a cohesive, premium feel (Stripe/Linear/Vercel level):
+- Consistent page padding and consistent vertical spacing between sections (8pt scale). Add breathing room where screens feel cramped.
+- Consistent card style everywhere: same radius (14–16px), same internal padding (min 20px), soft shadow + hairline border.
+- Consistent heading hierarchy: page titles in the display font (Space Grotesk), muted secondary text, readable body (min 16px).
+- Consistent buttons: min 48px height, clear primary/secondary/ghost, full-width primary actions on mobile forms.
+- Consistent badges/tags: pill shape, used the same way for status everywhere (live / building / error / soon).
+
+═══════════ STEP 4 — EVERY STATE LOOKS DESIGNED (no blank/ugly states) ═══════════
+For EVERY screen and list, make sure these states are styled, never blank or default:
+- Empty states: centered icon + one heading line + one muted line + one teal action button (e.g. Projects with no projects → "Deploy your first site").
+- Loading states: skeleton placeholders that match the real content shape (not just a spinner where possible).
+- Error states: real, specific messages with a retry action — never a generic "something went wrong", never a silent failure.
+
+═══════════ STEP 5 — DEPLOY FLOW IS THE HERO (polish the main journey) ═══════════
+The upload → build → live journey is the most important screen. Make it shine:
+- The redesigned DropZone should look inviting and obvious; confirm the teal drag/hover states work.
+- The build stepper / build-log panel: clean, well-spaced, with the current step clearly emphasized in teal; real streamed logs readable in monospace.
+- The deploy success reveal (DeployReveal — sealed shield + glow + live URL + QR): make sure it has room to breathe and feels like a rewarding moment. Don't rebuild it; just ensure the surrounding layout showcases it.
+- Make sure build failures show the real reason clearly in the UI (the engine already surfaces real errors — confirm the UI displays them well).
+
+═══════════ STEP 6 — MOBILE CORRECTNESS (Pi Browser) ═══════════
+- Verify every screen at 320 / 390 / 430px: no horizontal scroll, no clipping, nothing cramped, bottom nav never crooked (equal columns, teal active state, raised center Deploy button).
+- All tap targets ≥ 48px. Safe-area padding top and bottom.
+
+═══════════ STEP 7 — BUILD RESILIENCE ON MOBILE (the one real UX fix) ═══════════
+Persist in-progress build state so a deploy that's mid-build SURVIVES a page reload / app backgrounding, and the deploy screen reconnects to the running build instead of restarting from zero. This is the #1 reason a Pi Browser user thinks a build "failed" — they navigated away and it reset. (This is wiring the existing build job to survive a reload — not a new feature.)
+
+FINAL: Run both TypeScript checks (zero errors), confirm the gated backend lane is still untouched/inert, and give me one summary of every visual + consistency change you made, screen by screen. Do NOT report it as "done" until the whole app is visually consistent teal, every state is styled, and the deploy flow looks finished.
