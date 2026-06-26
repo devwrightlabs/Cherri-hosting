@@ -1,0 +1,39 @@
+CHERRI HOSTING — AUDIT THE UPLOADED FILES + REPAIR ANYTHING MISSING (build on top of what exists, don't restart)
+
+CONTEXT: I uploaded several replacement files at once. Some may have integrated cleanly, some may not have, and some changes may be partial. Your job: AUDIT what's actually in the code right now, then REPAIR anything missing or broken by building it correctly ON TOP OF the existing code — do NOT rebuild from scratch, do NOT rewrite working files, do NOT touch the gated backend lane (provisioning/billing scheduler/snapshot/PiRC2 stays inert).
+
+Run straight through, don't stop to ask. Report findings AND fix in the same run. At the end, run BOTH client and server TypeScript checks and confirm zero errors.
+
+═══ PART 1 — AUDIT: verify each expected change is actually present in the code ═══
+Check each item. For each, report PRESENT / MISSING / PARTIAL:
+
+PRICING (should be dollar-pegged, not hardcoded Pi):
+1. client/src/lib/constants.ts — has TIER1_PRICE_USD=35, TIER2_PRICE_USD=143, TIER3_PRICE_USD=350, TIER_TO_CATALOG_KEY map, and still has legacy PREMIUM_PRICE_PI. NO hardcoded TIER1/2/3_PRICE_PI remain.
+2. client/src/lib/api.ts — has billingApi with catalog() and quote() calling /billing/catalog and /billing/quote.
+3. client/src/pages/Pricing.tsx — imports TIER*_PRICE_USD (not _PI), shows "$X/mo ≈ Y π", and checkout fetches a fresh /billing/quote and charges the quoted Pi amount (not a hardcoded number).
+4. client/src/pages/Landing.tsx — Pro teaser shows $ price (TIER2_PRICE_USD), not "π".
+
+ENGINE (bun support added to the EXISTING engine — do not rebuild the engine):
+5. server/src/services/buildService.ts — PackageManager type includes 'bun'; detectPackageManager detects bun.lockb/bun.lock → 'bun'; installArgs has a 'bun' case; the engine still detects npm/pnpm/yarn too.
+6. server/src/services/buildSecurity.ts — rebuildArgs accepts 'bun' (returns null for it safely).
+7. server/src/utils/deployFiles.ts — the honesty-boundary comment reflects that unbuilt projects with a build script are handed to the server-side build engine (Option A), not "we never build."
+
+UI (teal redesign of the upload flow + toggle):
+8. client/src/components/deploy/DropZone.tsx — teal drag/hover states (cherry-400), solid teal "Select folder" primary button, tiers relabeled Builder/Pro/Business/Scale, NO gold/amber/blue tier colors left.
+9. client/src/components/EnvToggle.tsx — active TEST state is bg-cherry-400 (not bg-gold); switching logic unchanged.
+
+═══ PART 2 — REPAIR: for anything MISSING or PARTIAL, build it in correctly ═══
+For each item that is NOT fully present, implement it correctly ON TOP OF the current code:
+- If a pricing file reverted to hardcoded Pi or is missing the USD constants → re-apply the dollar-pegged version: prices anchored in dollars ($35/$143/$350, digits sum to 8), Pi floats live via /billing/quote (Pi owed = dollar ÷ live Pi price × 1.04), checkout charges the quoted amount, never a hardcoded Pi number. Keep PREMIUM_PRICE_PI legacy.
+- If bun support is missing from the engine → add it to the EXISTING buildService.ts/buildSecurity.ts (do NOT rewrite the engine): detect bun.lockb/bun.lock → bun; bun install; bun run build; widen rebuildArgs to accept 'bun' (null). The engine's existing npm/pnpm/yarn/sandbox/limits/output-collection logic must stay intact.
+- If the deployFiles.ts comment still says it never builds → correct it to reflect Option A server-side building (intent only; do not change the resolver logic).
+- If any DropZone/EnvToggle teal styling is missing → apply it using the existing cherry-400/cherry-500/live/surface/hairline tokens. One teal accent; success = live green; no leftover gold.
+
+RULES FOR REPAIR:
+- Build ON TOP of existing code. Never delete or rewrite a working file wholesale.
+- Do NOT rebuild the build engine — it already exists and works; only ensure bun is added and it still handles npm/pnpm/yarn.
+- Do NOT touch the gated backend lane — it stays inert until GO-LIVE.
+- Real errors must surface (no swallowed catches, no hardcoded "check your connection").
+
+═══ FINAL ═══
+Run BOTH client and server TypeScript checks — confirm zero errors. Confirm the build engine still detects npm/pnpm/yarn/bun and runs sandboxed install+build. Give me one report: what was PRESENT, what was MISSING/PARTIAL, and exactly what you repaired.
