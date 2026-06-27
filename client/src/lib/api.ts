@@ -109,6 +109,52 @@ export const subscriptionsApi = {
   cancel: () => apiClient.post('/subscriptions/cancel'),
 };
 
+// Billing — dollar-pegged Pi pricing (display + per-purchase quotes)
+export interface PublicPlanPricing {
+  /** Catalog plan key (BUILDER / PRO / TIER4). */
+  key: string;
+  label: string;
+  /** Monthly dollar anchor in integer US cents. */
+  usdCents: number;
+  /** Live Pi to charge for one month at the current rate. */
+  quotedPiAmount: number;
+}
+
+export interface PublicPricing {
+  currency: string;
+  bufferBps: number;
+  /** Live Pi/USD rate this snapshot was priced at. */
+  piUsd: number;
+  source: string;
+  observedAt: string;
+  plans: PublicPlanPricing[];
+}
+
+/**
+ * A short-lived, server-created priced offer. `quotedPiAmount` / `piUsdRate`
+ * arrive as decimal STRINGS (Prisma Decimal) — coerce with Number() before math.
+ */
+export interface BillingQuote {
+  id: string;
+  plan: string;
+  dollarCents: number;
+  overageCents: number;
+  piUsdRate: string;
+  quotedPiAmount: string;
+  source: string;
+  env: PiEnv;
+  expiresAt: string;
+}
+
+export const billingApi = {
+  // PUBLIC live display pricing. Short timeout so the page falls back fast to a
+  // non-blocking "Pi price updating" rather than ever hanging on a spinner.
+  pricing: () => apiClient.get<PublicPricing>('/billing/pricing', { timeout: 8000 }),
+  // Authed: mint a fresh priced quote for one plan, fetched at tap time.
+  quote: (plan: string, env: PiEnv) =>
+    apiClient.post<{ quote: BillingQuote }>('/billing/quote', { plan, env }),
+};
+
 // Payments (incomplete payment recovery)
 export const paymentsApi = {
   verify: (paymentId: string, env: PiEnv) =>

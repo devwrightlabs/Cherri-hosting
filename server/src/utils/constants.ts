@@ -120,7 +120,7 @@ const LEGACY_PRICE_ENTRIES: PriceEntry[] = [
   { amount: PREMIUM_PRICE_PI, tierName: 'TIER2', months: 1 }, // legacy Premium → TIER2
 ];
 
-function storageLimitForTier(tierName: string): number {
+export function storageLimitForTier(tierName: string): number {
   switch (tierName) {
     case 'TIER4': return TIER4_STORAGE_LIMIT_BYTES;
     case 'TIER3': return TIER3_STORAGE_LIMIT_BYTES;

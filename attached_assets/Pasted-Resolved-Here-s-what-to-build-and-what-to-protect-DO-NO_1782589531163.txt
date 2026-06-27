@@ -1,0 +1,17 @@
+Resolved. Here's what to build and what to protect.
+
+DO NOT TOUCH (the Pi payment itself): Leave the Pi SDK payment flow exactly as it is — Pi.createPayment and the standard approve → complete handshake that executes a normal Pi wallet transaction. It works correctly now. Do not change how the payment runs, do not refactor the SDK calls, do not alter the approve/complete transaction mechanism. Treat it as working and final.
+
+DO BUILD (the pegging system — required, this protects my revenue): Wire the dollar-pegged pricing fully so I always receive the correct USD-equivalent value in Pi. Do whatever this needs on the SERVER side, without changing the SDK payment mechanism above:
+
+1. IDENTIFY THE PLAN BY METADATA, NOT BY PI AMOUNT: The server currently determines which plan was purchased by matching the exact Pi amount against fixed numbers (26/44/143). That breaks once the Pi amount floats with the peg. Change ONLY the server's plan-resolution logic to read the plan from the payment metadata the client already sends (metadata.plan / catalogKey — BUILDER/PRO/TIER4). This runs after the transaction settles; it does not change how the SDK payment executes.
+
+2. VALIDATE THE AMOUNT (anti-underpay): On completion, check the Pi amount paid is within a small tolerance of the live quoted amount for that plan (allowing for normal price movement between quote and pay). Wildly low → reject; within tolerance → grant the plan from the metadata.
+
+3. THE PEG: amount = (plan USD price ÷ live Pi price × 1.04 buffer), using PI_PRICE_SOURCE. Set PI_PRICE_SOURCE=coingecko so live quotes work. The price lookup is read-only and only feeds the amount calculation — it must not affect the payment mechanism.
+
+4. NON-BLOCKING DISPLAY: dollar anchor shows instantly; Pi amount loads non-blocking ("≈ updating" if briefly unavailable); never an infinite spinner.
+
+5. FRAMING: Pi amount is the headline ("≈ 1,192 π /mo") with "pegged to $143 · paid in Pi" beneath, plus a one-line note that prices are pegged to a USD value for stability and always paid in Pi.
+
+CONFIRM in your report: (a) the Pi SDK payment flow (createPayment + approve/complete) is unchanged and still executes a normal Pi transaction, (b) the server now resolves the plan from metadata and validates the paid amount against the live quote, (c) the peg is live via CoinGecko, (d) the pricing page never hangs. Run both TypeScript checks (zero errors).

@@ -36,12 +36,46 @@ billing buffer. This slice only **quotes**; it never charges or grants entitleme
 - Pricing model = **REPLACE** the old Pi-amount tiers — BUT grandfather active subscribers
   until their renewal; never retroactively revoke a mid-period subscription.
 
-## Deferred — confirm before building, never fake
-- Live charging cutover: at approve/complete, verify the paid Pi against the stored quote
-  (amount + not expired) and grant the *dollar-plan* entitlement. Mirror the existing
-  Pi-payment approve/complete pattern. Keep legacy Pi constants + `resolveTierFromAmount`
-  intact during transition.
-- BUILDER → internal storage/upload tier mapping is ambiguous (PRO→TIER3, TIER4→TIER4 are
-  clear; BUILDER is TIER1-vs-TIER2). Resolve before granting.
+## Live-charging cutover — SHIPPED (end-to-end wiring)
+The approve/complete flow is now **dual-path**, keyed on whether the Pi payment's
+metadata carries a `quoteId`:
+- **Pegged path (`quoteId` present):** metadata is a LOCATOR only. The granted plan
+  comes from `quote.plan` (→ `PLAN_ENTITLEMENT_TIER`), NEVER from client metadata; the
+  optional `catalogKey`/`plan`/`tier` fields are only a cross-check. Amount is validated
+  by **exact stroop equality** against the stored quote (no percentage tolerance — a
+  percentage band is a discount exploit).
+- **Legacy path (no `quoteId`):** untouched — `resolveTierFromAmount` over the fixed
+  Pi-amount table, grandfathered before the v2 cutoff. Do not modify this branch.
+- **Approval** atomically binds the quote to the payment via
+  `updateMany({ where:{ id, paymentId: null }})` — replay/race guard; a 0-row update where
+  the existing binding ≠ this payment ⇒ 409.
+- **Completion** re-validates the AUTHORITATIVE `completed.amount` (from Pi, not client)
+  against the quote, then grants entitlement + marks the quote `PAID` in **one
+  `$transaction`** (no charged-but-unhonoured / double-grant window).
+- The Pi SDK handshake (`Pi.createPayment` → approve → complete, testnet/sandbox) is
+  mechanically **identical** to legacy; only the `amount` (a live quote) and `metadata`
+  (the `quoteId`) differ.
+
+### Gotcha — idempotency must run BEFORE quote-status resolution (retry 409 bug)
+Pi **retries** the completion callback. On the retry the bound quote is already `PAID`,
+so calling `resolvePeggedPayment` first returns 409 (`quote.status !== 'PENDING'`) and the
+legitimate retry fails. **The `findUnique({ piTxId })` idempotency check must be the FIRST
+thing in the pegged completion branch**, before any quote-status check — return the existing
+subscription. (Legacy path keeps its own idempotency check after completing; don't add a
+shared top-level one — it collides with the legacy `const existing` declaration.)
+
+## Resolved decisions
+- BUILDER→TIER1, PRO→TIER2, **TIER4 (the $350 catalog key) → TIER3** (50 GB "Business").
+  The $350 plan is keyed `TIER4` historically but grants the **TIER3** entitlement, Cherri's
+  top sold tier — NOT legacy 100 GB TIER4. Map lives in `PLAN_ENTITLEMENT_TIER`.
+- Public `GET /api/billing/pricing` is display-only, registered BEFORE `piAuthMiddleware`
+  (reachable pre-auth for the pricing page); honest 503, never a fabricated price.
+- Client pricing page: USD anchor renders instantly from local config; live Pi headline is
+  non-blocking (8 s timeout → "≈ updating…" / "≈ Pi price updating" fallback, never an
+  infinite spinner). `/quote` `quotedPiAmount` is a Prisma Decimal **string** — `Number()`
+  it before math; `/pricing` returns numbers.
+
+## Still deferred — confirm before building, never fake
 - Overage (> 0) is Phase 4 metering — currently always 0, never fabricated.
 - Overpayment/refund policy and app-earnings fee bps are open.
+- `UpgradeBanner.tsx` (PREMIUM, 10π, no `quoteId`) intentionally left on the legacy path.

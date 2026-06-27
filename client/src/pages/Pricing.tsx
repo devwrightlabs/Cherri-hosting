@@ -8,18 +8,11 @@ import Button from '../components/ui/Button';
 import PageHeader from '../components/ui/PageHeader';
 import Spinner from '../components/ui/Spinner';
 import { useToast } from '../components/ui/Toast';
-import { subscriptionsApi, extractApiError } from '../lib/api';
+import { subscriptionsApi, billingApi, extractApiError } from '../lib/api';
 import { getEnv } from '../lib/piEnv';
 import { useAuth } from '../providers/AuthProvider';
 import { Subscription } from '../types';
-import {
-  TIER1_PRICE_PI,
-  TIER2_PRICE_PI,
-  TIER3_PRICE_PI,
-  ANNUAL_MULTIPLIER,
-  TIER_LABELS,
-  TIER_STORAGE_LABELS,
-} from '../lib/constants';
+import { ANNUAL_MULTIPLIER, TIER_LABELS, TIER_STORAGE_LABELS } from '../lib/constants';
 
 interface SubscriptionData {
   subscription: Subscription | null;
@@ -38,7 +31,13 @@ interface TierDef {
   name: string;
   /** Outcome eyebrow above the name (Go live / Make it yours / …). */
   eyebrow: string;
-  price: number;
+  /**
+   * Catalog plan key driving the live Pi quote (BUILDER / PRO / TIER4). Absent
+   * on Free, which is never charged.
+   */
+  catalogKey?: string;
+  /** Monthly dollar anchor in whole US dollars. 0 for Free. */
+  usd: number;
   /** One-line pitch under the price. */
   headline: string;
   features: TierFeature[];
@@ -65,16 +64,17 @@ const TIER_RANK: Record<string, number> = {
 
 /**
  * The four tiers from the master prompt, mapped onto the existing server tier
- * keys so the Pi amount → tier resolution (resolveTierFromAmount) keeps working.
- * Starter→FREE, Builder→TIER1, Pro→TIER2 (35π, most popular), Business→TIER3.
- * Quotas mirror the enforced limits in TIER_STORAGE_LABELS; prices are tunable.
+ * keys (Starter→FREE, Builder→TIER1, Pro→TIER2, Business→TIER3) so entitlement
+ * enforcement is unchanged. Each PAID tier carries a dollar anchor (`usd`) shown
+ * instantly, plus a `catalogKey` used to fetch the LIVE Pi amount it's pegged to
+ * — Pi is the headline, the dollar value is the peg beneath it.
  */
 const TIERS: TierDef[] = [
   {
     key: 'FREE',
     name: 'Starter',
     eyebrow: 'Go live',
-    price: 0,
+    usd: 0,
     headline: 'A real site on the permanent web — free, in seconds.',
     features: [
       { label: '1 project' },
@@ -90,7 +90,8 @@ const TIERS: TierDef[] = [
     key: 'TIER1',
     name: 'Builder',
     eyebrow: 'Make it yours',
-    price: TIER1_PRICE_PI,
+    catalogKey: 'BUILDER',
+    usd: 35,
     headline: 'Your own Pi domain, and your site stays online — guaranteed.',
     features: [
       { label: '3 projects' },
@@ -107,7 +108,8 @@ const TIERS: TierDef[] = [
     key: 'TIER2',
     name: 'Pro',
     eyebrow: 'Make it permanent',
-    price: TIER2_PRICE_PI,
+    catalogKey: 'PRO',
+    usd: 143,
     headline: "Permanent storage, real analytics, faster — your work can't disappear.",
     features: [
       { label: 'Unlimited projects' },
@@ -125,7 +127,8 @@ const TIERS: TierDef[] = [
     key: 'TIER3',
     name: 'Business',
     eyebrow: 'Make money & scale',
-    price: TIER3_PRICE_PI,
+    catalogKey: 'TIER4',
+    usd: 350,
     headline: 'Team, API, lowest Pi fees, and a featured spot in the marketplace.',
     features: [
       { label: 'Unlimited projects' },
@@ -147,6 +150,10 @@ const FAQ = [
     a: 'Pi Network is a digital currency project that lets you mine Pi on your phone. Visit minepi.com to learn more.',
   },
   {
+    q: 'Why are prices shown in dollars but paid in Pi?',
+    a: "Each plan is pegged to a fixed US-dollar value for stability, and charged in Pi at the live exchange rate when you pay. As Pi's value rises, the same plan costs fewer Pi.",
+  },
+  {
     q: 'How does IPFS hosting work?',
     a: 'Your files are uploaded and pinned on the InterPlanetary File System — a peer-to-peer storage network. Every deployment gets a unique content-addressed URL (CID) that is permanent.',
   },
@@ -164,6 +171,8 @@ const FAQ = [
   },
 ];
 
+type PricingState = 'loading' | 'ready' | 'unavailable';
+
 export default function Pricing() {
   const { user, isAuthenticated, refreshUser, signOut } = useAuth();
   const { success, error: toastError } = useToast();
@@ -171,6 +180,32 @@ export default function Pricing() {
   const [isLoading, setIsLoading] = useState(false);
   const [payingTier, setPayingTier] = useState<string | null>(null);
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'annual'>('monthly');
+
+  // Live Pi peg — fetched non-blocking from the PUBLIC pricing endpoint. The
+  // dollar anchors render instantly from local config; the Pi headline fills in
+  // when this resolves, and falls back to a short "updating" label (never an
+  // infinite spinner) if the live rate is briefly unavailable.
+  const [livePi, setLivePi] = useState<Record<string, number> | null>(null);
+  const [pricingState, setPricingState] = useState<PricingState>('loading');
+
+  useEffect(() => {
+    let active = true;
+    billingApi
+      .pricing()
+      .then((res) => {
+        if (!active) return;
+        const map: Record<string, number> = {};
+        for (const p of res.data.plans) map[p.key] = p.quotedPiAmount;
+        setLivePi(map);
+        setPricingState('ready');
+      })
+      .catch(() => {
+        if (active) setPricingState('unavailable');
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -186,9 +221,9 @@ export default function Pricing() {
 
   const currentTier = subData?.user?.tier ?? user?.tier ?? 'FREE';
 
-  const handleUpgrade = (
+  const handleUpgrade = async (
     tierKey: string,
-    amount: number,
+    catalogKey: string,
     tierLabel: string,
     months: number,
   ) => {
@@ -198,13 +233,37 @@ export default function Pricing() {
     }
     setPayingTier(tierKey);
     const env = getEnv();
+
+    // Fetch a FRESH server quote at tap time — this is the price actually
+    // charged, and the server validates the payment against it. If a live Pi
+    // price can't be obtained we bail cleanly with a retry hint, never a hang.
+    let quoteId: string;
+    let quotedPi: number;
+    try {
+      const res = await billingApi.quote(catalogKey, env);
+      quoteId = res.data.quote.id;
+      quotedPi = Number(res.data.quote.quotedPiAmount); // Prisma Decimal → string
+      if (!Number.isFinite(quotedPi) || quotedPi <= 0) {
+        throw new Error('Invalid quote amount');
+      }
+    } catch {
+      toastError('Pi pricing is briefly unavailable — please try again.');
+      setPayingTier(null);
+      return;
+    }
+
+    const multiplier = months === 12 ? ANNUAL_MULTIPLIER : 1;
+    const amount = Math.round(quotedPi * multiplier * 1e7) / 1e7;
     const periodLabel = months === 12 ? '1 year' : '1 month';
 
+    // The Pi SDK handshake below is intentionally identical to the legacy flow —
+    // only the amount (a live quote) and the metadata (a quoteId locating the
+    // server quote) change.
     window.Pi.createPayment(
       {
         amount,
         memo: `Cherri Hosting ${tierLabel} — ${periodLabel}`,
-        metadata: { plan: tierKey.toLowerCase(), tier: tierKey, months, env },
+        metadata: { quoteId, catalogKey, plan: catalogKey, tier: tierKey, months, env },
       },
       {
         onReadyForServerApproval: async (paymentId) => {
@@ -306,6 +365,11 @@ export default function Pricing() {
         {billingPeriod === 'annual' && (
           <p className="text-center text-xs text-live">Two months free, billed yearly</p>
         )}
+        {/* One-line peg note — the whole pricing model in a sentence. */}
+        <p className="text-center text-xs text-ink-mut max-w-sm mx-auto">
+          Prices are pegged to a US-dollar value and paid in Pi at the live rate — as Pi
+          rises, the same plan costs fewer&nbsp;π.
+        </p>
       </div>
 
       {/* Tier cards — single column, four tiers */}
@@ -320,6 +384,8 @@ export default function Pricing() {
             <TierCardContent
               tier={tier}
               billingPeriod={billingPeriod}
+              livePi={livePi}
+              pricingState={pricingState}
               isCurrentTier={isCurrentTier}
               isPaidAndActive={isPaidAndActive}
               isAuthenticated={isAuthenticated}
@@ -419,17 +485,21 @@ export default function Pricing() {
 interface TierCardContentProps {
   tier: TierDef;
   billingPeriod: 'monthly' | 'annual';
+  livePi: Record<string, number> | null;
+  pricingState: PricingState;
   isCurrentTier: boolean;
   isPaidAndActive: boolean;
   isAuthenticated: boolean;
   canUpgrade: boolean;
   payingTier: string | null;
-  onUpgrade: (key: string, amount: number, label: string, months: number) => void;
+  onUpgrade: (key: string, catalogKey: string, label: string, months: number) => void;
 }
 
 function TierCardContent({
   tier,
   billingPeriod,
+  livePi,
+  pricingState,
   isCurrentTier,
   isPaidAndActive,
   isAuthenticated,
@@ -441,13 +511,17 @@ function TierCardContent({
   // is reserved for the highlighted Pro card only.
   const feeClass = tier.feeGreen ? 'text-live' : 'text-ink';
 
-  // Annual plans bill 10× monthly (two months free). The displayed price is the
-  // exact amount charged, preserving the "displayed price == payment amount" rule.
   const isAnnual = billingPeriod === 'annual';
-  const isPaid = tier.price > 0;
-  const displayPrice = isPaid && isAnnual ? tier.price * ANNUAL_MULTIPLIER : tier.price;
-  const periodSuffix = isAnnual ? '/yr' : '/mo';
+  const isPaid = tier.usd > 0;
+  const multiplier = isAnnual ? ANNUAL_MULTIPLIER : 1;
   const months = isAnnual ? 12 : 1;
+  const periodSuffix = isAnnual ? '/yr' : '/mo';
+
+  // Live Pi peg for this plan (monthly), if the public rate has resolved.
+  const monthlyPi = tier.catalogKey ? livePi?.[tier.catalogKey] : undefined;
+  const piReady = pricingState === 'ready' && typeof monthlyPi === 'number';
+  const piHeadline = piReady ? Math.round((monthlyPi as number) * multiplier) : null;
+  const usdForPeriod = tier.usd * multiplier;
 
   return (
     <>
@@ -456,22 +530,39 @@ function TierCardContent({
           {tier.eyebrow}
         </p>
         <h2 className="text-lg font-bold text-ink font-display mt-0.5">{tier.name}</h2>
-        <div className="flex items-baseline gap-1 mt-2">
-          {tier.price === 0 ? (
+
+        {/* Price block — Pi is the headline, the dollar value is the peg beneath. */}
+        <div className="mt-2">
+          {!isPaid ? (
             <span className="text-4xl font-bold text-ink font-display tracking-tight">Free</span>
-          ) : (
-            <>
-              <span className="text-4xl font-bold text-ink font-display tracking-tight">{displayPrice}</span>
+          ) : piHeadline !== null ? (
+            <div className="flex items-baseline gap-1">
+              <span className="text-ink-mut text-xl font-semibold">≈</span>
+              <span className="text-4xl font-bold text-ink font-display tracking-tight">
+                {piHeadline.toLocaleString()}
+              </span>
               <span className="text-xl font-mono text-ink">π</span>
               <span className="text-ink-mut text-sm ml-0.5">{periodSuffix}</span>
-            </>
+            </div>
+          ) : (
+            <span className="text-2xl font-semibold text-ink-mut font-display">
+              {pricingState === 'loading' ? '≈ updating…' : '≈ Pi price updating'}
+            </span>
+          )}
+
+          {isPaid && (
+            <p className="text-ink-mut text-xs mt-1">
+              pegged to ${usdForPeriod.toLocaleString()} · paid in Pi
+            </p>
+          )}
+          {isPaid && isAnnual && piReady && (
+            <p className="text-ink-mut text-xs mt-0.5">
+              ≈ <span className="font-mono">{Math.round(monthlyPi as number).toLocaleString()} π</span>/mo
+              billed yearly
+            </p>
           )}
         </div>
-        {isPaid && isAnnual && (
-          <p className="text-ink-mut text-xs mt-1">
-            <span className="font-mono">{tier.price} π</span>/mo billed yearly
-          </p>
-        )}
+
         <p className="text-ink-mut text-sm mt-2 leading-snug">{tier.headline}</p>
       </div>
 
@@ -510,11 +601,11 @@ function TierCardContent({
           <Badge variant={tier.key === 'FREE' ? 'default' : 'success'} className="self-start">
             {isPaidAndActive ? 'Active plan' : 'Current plan'}
           </Badge>
-        ) : canUpgrade ? (
+        ) : canUpgrade && tier.catalogKey ? (
           <Button
             variant={tier.popular ? 'primary' : 'secondary'}
             className="w-full justify-center"
-            onClick={() => onUpgrade(tier.key, displayPrice, tier.name, months)}
+            onClick={() => onUpgrade(tier.key, tier.catalogKey!, tier.name, months)}
             isLoading={payingTier === tier.key}
             disabled={payingTier !== null && payingTier !== tier.key}
           >
@@ -527,7 +618,7 @@ function TierCardContent({
             variant={tier.popular ? 'primary' : 'secondary'}
             className="w-full justify-center"
           >
-            {tier.price === 0 ? tier.cta : 'Sign in to upgrade'}
+            {!isPaid ? tier.cta : 'Sign in to upgrade'}
           </Button>
         </Link>
       )}

@@ -4,10 +4,64 @@ import { piAuthMiddleware, AuthenticatedRequest } from '../middleware/piAuth';
 import { logger } from '../utils/logger';
 import { IntegrationUnavailableError } from '../utils/integrations';
 import { normalizePiEnv } from '../utils/piEnv';
-import { PAID_PLAN_KEYS, PLAN_CATALOG } from '../utils/pricingCatalog';
+import {
+  PAID_PLAN_KEYS,
+  PLAN_CATALOG,
+  BILLING_BUFFER_BPS,
+} from '../utils/pricingCatalog';
+import { computePiOwed } from '../utils/piPricing';
+import { getPiUsdPrice } from '../services/piPriceService';
 import { createQuote, UnknownPlanError } from '../services/quoteService';
 
 export const billingRouter = Router();
+
+/**
+ * GET /api/billing/pricing — PUBLIC live display pricing (no auth, no persistence).
+ *
+ * Feeds the pre-auth pricing page so it can show each plan's Pi amount alongside
+ * its dollar anchor, floating off the live Pi/USD rate. This is display-only: it
+ * grants nothing and binds nothing. It returns an honest 503 whenever a live
+ * price source is unavailable — never a guessed amount — so the page can fall
+ * back to "Pi price updating" rather than show a fabricated figure.
+ *
+ * Registered BEFORE piAuthMiddleware so it stays reachable without a Pi session;
+ * every route declared after the `billingRouter.use(piAuthMiddleware)` line below
+ * still requires authentication.
+ */
+billingRouter.get('/pricing', async (_req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { piUsd, observedAt, source } = await getPiUsdPrice();
+    const plans = PAID_PLAN_KEYS.map((key) => {
+      const def = PLAN_CATALOG[key];
+      return {
+        key,
+        label: def.label,
+        usdCents: def.usdCents,
+        quotedPiAmount: computePiOwed({
+          usdCents: def.usdCents,
+          piUsd,
+          bufferBps: BILLING_BUFFER_BPS,
+        }),
+      };
+    });
+    res.json({
+      currency: 'USD',
+      bufferBps: BILLING_BUFFER_BPS,
+      piUsd,
+      source,
+      observedAt,
+      plans,
+    });
+  } catch (err) {
+    if (err instanceof IntegrationUnavailableError) {
+      res.status(503).json({ error: err.message, integration: err.integration });
+      return;
+    }
+    logger.error('Failed to build public pricing', { error: err });
+    res.status(500).json({ error: 'Failed to build pricing' });
+  }
+});
+
 billingRouter.use(piAuthMiddleware);
 
 /**

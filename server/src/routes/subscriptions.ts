@@ -11,14 +11,129 @@ import {
 import { logger } from '../utils/logger';
 import { IntegrationUnavailableError } from '../utils/integrations';
 import {
+  ANNUAL_MULTIPLIER,
   FREE_STORAGE_LIMIT_BYTES,
   PRICING_V2_CUTOFF,
   resolveTierFromAmount,
+  storageLimitForTier,
 } from '../utils/constants';
-import { normalizePiEnv } from '../utils/piEnv';
+import { normalizePiEnv, PiEnv } from '../utils/piEnv';
+import { isPaidPlanKey, PaidPlanKey, PLAN_ENTITLEMENT_TIER } from '../utils/pricingCatalog';
+import { isQuoteExpired } from '../utils/piPricing';
+import { expectedPiForTerm, validatePeggedPayment } from '../services/peggedPayment';
 
 export const subscriptionsRouter = Router();
 subscriptionsRouter.use(piAuthMiddleware);
+
+/**
+ * Pegged-payment locator parsed from a payment's client metadata. Metadata is
+ * UNTRUSTED — it only tells us WHICH server-created quote to look up (and the
+ * term length to validate); the granted plan/amount are always taken from that
+ * stored quote, never from here.
+ */
+interface PeggedMeta {
+  quoteId: string;
+  /** Optional cross-check against the stored quote's plan; not authoritative. */
+  catalogKey?: string;
+  /** Billing term in months — only 1 (monthly) or 12 (annual) are honoured. */
+  months: 1 | 12;
+}
+
+/** Extract the pegged locator from payment metadata, or null for the legacy path. */
+function readPeggedMeta(metadata: Record<string, unknown> | undefined): PeggedMeta | null {
+  const quoteId = typeof metadata?.quoteId === 'string' ? metadata.quoteId : null;
+  if (!quoteId) return null;
+  const rawKey =
+    typeof metadata?.catalogKey === 'string'
+      ? metadata.catalogKey
+      : typeof metadata?.plan === 'string'
+        ? metadata.plan
+        : undefined;
+  const months: 1 | 12 = metadata?.months === 12 || metadata?.months === '12' ? 12 : 1;
+  return { quoteId, catalogKey: rawKey, months };
+}
+
+interface PeggedResolution {
+  tierName: string;
+  storageLimit: number;
+  months: 1 | 12;
+  expectedPi: number;
+  quoteId: string;
+}
+
+type PeggedResolveResult =
+  | { ok: true; resolution: PeggedResolution }
+  | { ok: false; status: number; error: string };
+
+/**
+ * Resolve + authorize a pegged payment against its SERVER-stored quote.
+ *
+ * The granted plan is taken from `quote.plan` (authoritative), never from the
+ * client metadata. We enforce: quote exists, belongs to this user, same env,
+ * still PENDING, not bound to a different payment, plan cross-check (if the
+ * client sent one), and the paid Pi equals the quoted Pi for the requested term
+ * (exact, ±1 stroop). `enforceExpiry` is true at approval (a stale rate must not
+ * be paid against) and false at completion (settlement may legitimately land
+ * after the 10-minute TTL once the server already approved the bound payment).
+ */
+async function resolvePeggedPayment(opts: {
+  meta: PeggedMeta;
+  paidAmount: number;
+  userId: string;
+  env: PiEnv;
+  paymentId: string;
+  enforceExpiry: boolean;
+}): Promise<PeggedResolveResult> {
+  const quote = await prisma.paymentQuote.findUnique({ where: { id: opts.meta.quoteId } });
+  if (!quote) {
+    return { ok: false, status: 400, error: 'Pricing quote not found. Please retry the upgrade.' };
+  }
+  if (quote.userId !== opts.userId) {
+    return { ok: false, status: 403, error: 'This pricing quote belongs to a different account.' };
+  }
+  if (quote.env !== opts.env) {
+    return { ok: false, status: 400, error: 'Payment environment mismatch.' };
+  }
+  if (quote.paymentId && quote.paymentId !== opts.paymentId) {
+    return { ok: false, status: 409, error: 'This pricing quote was already used for another payment.' };
+  }
+  if (quote.status !== 'PENDING') {
+    return { ok: false, status: 409, error: 'This pricing quote is no longer valid. Please retry the upgrade.' };
+  }
+  if (opts.enforceExpiry && isQuoteExpired(quote.expiresAt)) {
+    return { ok: false, status: 400, error: 'Pricing quote expired. Please retry the upgrade.' };
+  }
+  if (!isPaidPlanKey(quote.plan)) {
+    return { ok: false, status: 400, error: 'Pricing quote references an unknown plan.' };
+  }
+  if (opts.meta.catalogKey && opts.meta.catalogKey !== quote.plan) {
+    return { ok: false, status: 400, error: 'Payment plan does not match the pricing quote.' };
+  }
+  const termMultiplier = opts.meta.months === 12 ? ANNUAL_MULTIPLIER : 1;
+  const expectedPi = expectedPiForTerm(Number(quote.quotedPiAmount), termMultiplier);
+  const check = validatePeggedPayment({ quotedPiAmount: expectedPi, paidPiAmount: opts.paidAmount });
+  if (!check.ok) {
+    logger.warn('Pegged payment amount mismatch', {
+      paymentId: opts.paymentId,
+      quoteId: quote.id,
+      expectedPi,
+      paidAmount: opts.paidAmount,
+      reason: check.reason,
+    });
+    return { ok: false, status: 400, error: 'Paid Pi amount does not match the quoted price for this plan.' };
+  }
+  const tierName = PLAN_ENTITLEMENT_TIER[quote.plan as PaidPlanKey];
+  return {
+    ok: true,
+    resolution: {
+      tierName,
+      storageLimit: storageLimitForTier(tierName),
+      months: opts.meta.months,
+      expectedPi,
+      quoteId: quote.id,
+    },
+  };
+}
 
 /**
  * GET /api/subscriptions/current
@@ -69,7 +184,43 @@ subscriptionsRouter.post(
         res.status(403).json({ error: 'This payment belongs to a different account.' });
         return;
       }
-      if (!resolveTierFromAmount(payment.amount)) {
+
+      // DUAL-PATH gate. A payment that carries a quoteId is a dollar-pegged
+      // purchase: authorize it against its server-stored quote (plan + amount),
+      // then atomically bind the quote to this payment so it can't be reused or
+      // raced. A payment with no quoteId is a legacy/in-flight purchase, gated by
+      // the fixed Pi-amount table exactly as before.
+      const peg = readPeggedMeta(payment.metadata);
+      if (peg) {
+        const resolved = await resolvePeggedPayment({
+          meta: peg,
+          paidAmount: payment.amount,
+          userId: req.user!.id,
+          env,
+          paymentId: parsed.data.paymentId,
+          enforceExpiry: true,
+        });
+        if (!resolved.ok) {
+          res.status(resolved.status).json({ error: resolved.error });
+          return;
+        }
+        // Atomically claim the quote for THIS payment (replay/race guard).
+        const bound = await prisma.paymentQuote.updateMany({
+          where: { id: resolved.resolution.quoteId, paymentId: null },
+          data: { paymentId: parsed.data.paymentId },
+        });
+        if (bound.count === 0) {
+          const fresh = await prisma.paymentQuote.findUnique({
+            where: { id: resolved.resolution.quoteId },
+          });
+          if (!fresh || fresh.paymentId !== parsed.data.paymentId) {
+            res
+              .status(409)
+              .json({ error: 'This pricing quote was already used for another payment.' });
+            return;
+          }
+        }
+      } else if (!resolveTierFromAmount(payment.amount)) {
         res.status(400).json({ error: 'Payment amount does not match any subscription plan.' });
         return;
       }
@@ -132,6 +283,104 @@ subscriptionsRouter.post(
         return;
       }
 
+      // DUAL-PATH resolution. A quoteId in metadata marks a dollar-pegged
+      // purchase: the granted plan + the Pi amount owed both come from the
+      // server-stored quote (NEVER from client metadata). Everything else is a
+      // legacy/in-flight payment resolved by the fixed Pi-amount table.
+      const peg = readPeggedMeta(pre.metadata);
+      if (peg) {
+        // Idempotency FIRST — Pi retries the completion callback. After a prior
+        // success the bound quote is already PAID, so re-resolving it would 409;
+        // instead return the subscription already created for this txid. (Must
+        // run before resolvePeggedPayment for exactly that reason.)
+        const existingPegged = await prisma.subscription.findUnique({ where: { piTxId: txid } });
+        if (existingPegged) {
+          res.json({ success: true, subscription: existingPegged, tier: existingPegged.tier });
+          return;
+        }
+
+        // Authorize against the bound quote BEFORE completing on Pi. Expiry is
+        // not re-enforced here — the rate was already locked + approved; we just
+        // re-prove ownership/binding and that the paid amount equals the quote.
+        const pegged = await resolvePeggedPayment({
+          meta: peg,
+          paidAmount: pre.amount,
+          userId: req.user!.id,
+          env,
+          paymentId,
+          enforceExpiry: false,
+        });
+        if (!pegged.ok) {
+          res.status(pegged.status).json({ error: pegged.error });
+          return;
+        }
+        const { tierName, storageLimit, months, expectedPi, quoteId } = pegged.resolution;
+
+        // Step 2 — complete on the Pi Platform (mechanism UNCHANGED). The
+        // returned payment is authoritative: amount/payer come from Pi.
+        const completed = await completePayment(paymentId, txid, env);
+        const isVerified = await verifyPayment(paymentId, env);
+        if (!isVerified) {
+          res.status(400).json({ error: 'Payment could not be verified on-chain' });
+          return;
+        }
+        if (completed.user_uid !== req.user!.piUserId) {
+          logger.warn('Completed payment ownership mismatch', { paymentId, payer: completed.user_uid });
+          res.status(403).json({ error: 'This payment belongs to a different account.' });
+          return;
+        }
+        // Re-validate the AUTHORITATIVE completed amount against the quote —
+        // refuse to grant if Pi reports a different (e.g. lower) amount.
+        const postCheck = validatePeggedPayment({
+          quotedPiAmount: expectedPi,
+          paidPiAmount: completed.amount,
+        });
+        if (!postCheck.ok) {
+          logger.error('Completed Pi amount does not match quote', {
+            paymentId,
+            quoteId,
+            expectedPi,
+            completedAmount: completed.amount,
+            reason: postCheck.reason,
+          });
+          res.status(400).json({ error: 'Payment amount inconsistency detected.' });
+          return;
+        }
+
+        const now = new Date();
+        const periodEnd = new Date(now);
+        periodEnd.setMonth(periodEnd.getMonth() + months);
+
+        // Grant + mark the quote PAID in ONE transaction so a partial failure
+        // can never leave a charged-but-unhonoured (or double-grantable) state.
+        const subscription = await prisma.$transaction(async (tx) => {
+          const sub = await tx.subscription.create({
+            data: {
+              userId: req.user!.id,
+              tier: tierName,
+              piTxId: txid,
+              amount: completed.amount,
+              currency: 'Pi',
+              status: 'active',
+              env,
+              periodStart: now,
+              periodEnd,
+            },
+          });
+          await tx.user.update({
+            where: { id: req.user!.id },
+            data: { tier: tierName, storageLimit: BigInt(storageLimit) },
+          });
+          await tx.paymentQuote.update({ where: { id: quoteId }, data: { status: 'PAID' } });
+          return sub;
+        });
+
+        logger.info('User upgraded (pegged)', { userId: req.user!.id, tier: tierName, txid, quoteId });
+        res.json({ success: true, subscription, tier: tierName });
+        return;
+      }
+
+      // ── LEGACY PATH ────────────────────────────────────────────────────────
       // Resolve the entitlement from the SERVER-fetched amount BEFORE completing,
       // so we never developer-complete a payment we can't honour. Legacy prices
       // are accepted only for payments created before the v2 cutoff — this

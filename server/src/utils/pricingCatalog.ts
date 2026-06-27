@@ -35,6 +35,24 @@ export const PLAN_CATALOG: Record<PlanKey, PlanDef> = {
 export const PAID_PLAN_KEYS: readonly PaidPlanKey[] = ['BUILDER', 'PRO', 'TIER4'];
 
 /**
+ * Entitlement each PAID catalog plan grants. The dollar catalog is the source of
+ * truth for PRICE; the granted entitlement (storage/upload/domain limits and the
+ * tier stored on the user) stays on the existing TIERn scale so enforcement is
+ * completely unchanged.
+ *
+ * NOTE: the $350 plan is keyed `TIER4` in this catalog for historical reasons,
+ * but it grants the 50 GB **TIER3** ("Business") entitlement — Cherri's current
+ * top sold tier — NOT the 100 GB legacy TIER4. Keep this mapping authoritative:
+ * the granted plan is always resolved from a server-stored quote's `plan`, never
+ * from client-supplied metadata.
+ */
+export const PLAN_ENTITLEMENT_TIER: Record<PaidPlanKey, 'TIER1' | 'TIER2' | 'TIER3'> = {
+  BUILDER: 'TIER1',
+  PRO: 'TIER2',
+  TIER4: 'TIER3',
+};
+
+/**
  * Phase 4 metering: network egress allowance (GB) included per plan, and the
  * overage rate in integer US cents per GB beyond the allowance. Overage is
  * metered off REAL sampled provider usage only — when no usage was sampled the
