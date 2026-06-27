@@ -1,0 +1,25 @@
+CHERRI HOSTING — FIX PRICING HANG (configure Pi price source + make UI non-blocking)
+
+ROOT CAUSE (confirmed): The pricing page hangs and the "Upgrade with Pi" button spins forever because the dollar-pegged quote can't be created — PI_PRICE_SOURCE is not configured, so piPriceService throws IntegrationUnavailableError (honest 503) and the client waits forever. The flat "143 π" shown is a stale hardcoded fallback. Keep the dollar-pegged model; fix the config + the hang.
+
+Run straight through. At the end run both TypeScript checks (zero errors) and report.
+
+FIX 1 — CONFIGURE THE PI PRICE SOURCE:
+- The server already supports CoinGecko in piPriceService.ts (PROVIDERS), gated behind the PI_PRICE_SOURCE env var. Add PI_PRICE_SOURCE=coingecko to the server environment/secrets so live quotes work.
+- Show me the env input so I can confirm it's set. Then verify GET /api/billing/quote returns a real quotedPiAmount (not a 503).
+- Do NOT add a fake/hardcoded price fallback in piPriceService — keep its "never fake a price" rule. We're configuring the REAL source, not bypassing it.
+
+FIX 2 — PRICING PAGE MUST NEVER HANG (non-blocking Pi amount):
+- Each tier must render its DOLLAR anchor ($35 / $143 / $350) IMMEDIATELY from local tier config, with no dependency on the Pi price API. Remove any stale flat-Pi hardcoded display (the "143 π" headline) — the headline/anchor is the dollar price; the Pi amount is shown as "≈ X π" beneath it, computed live.
+- Fetch the live Pi quote separately and progressively. While loading → "≈ updating…". If the quote call fails or times out (a few seconds) → keep showing the dollar price with "≈ Pi price updating", NEVER an infinite spinner.
+- The "Upgrade with Pi" button must NOT spin forever waiting on a quote. It should be enabled based on the dollar tier; only show a brief spinner during the actual payment action, and if the quote fails at pay time, show "Pi pricing briefly unavailable — try again", not an endless spinner.
+
+FIX 3 — VERIFY THE WIRING MATCHES:
+- Confirm the client reads exactly the server's /billing/quote fields (quote.quotedPiAmount, quote.dollarCents, etc. from server/src/routes/billing.ts) and /billing/catalog (plans with usdCents). Fix any field-name mismatch so the quote parses. Align client to server; do not change server billing math.
+
+CONSTRAINTS:
+- Keep the dollar-pegged model. Do NOT revert to flat hardcoded Pi.
+- Do NOT add a fake price fallback on the server (keep the honest 503 rule).
+- Pricing page must never hang: dollar price always shows; Pi amount is best-effort.
+
+FINAL: Run both TypeScript checks (zero errors). Confirm PI_PRICE_SOURCE is set, /billing/quote returns a real Pi amount, the pricing headline shows the DOLLAR price with Pi floating beneath, and nothing spins forever. Report what you changed.

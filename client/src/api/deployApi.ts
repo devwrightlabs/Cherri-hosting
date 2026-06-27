@@ -88,6 +88,18 @@ export interface StageResult {
   deployable: boolean;
   /** Present when deployable=false — user-facing guidance, NOT an error. */
   haltReason?: string;
+  /**
+   * Present when deployable=false — a stable discriminator for the halt
+   * (e.g. 'backend' | 'monorepo' | 'no-build' | 'unbuilt-entry' | 'no-entry').
+   * Advisory; the UI uses `overridable` to decide what to offer.
+   */
+  haltKind?: string;
+  /**
+   * Present when deployable=false — true when the user may proceed past the halt
+   * anyway (e.g. a monorepo warning with a usable root build script). When true,
+   * re-submit with acknowledgeWarnings=true to build regardless.
+   */
+  overridable?: boolean;
   /** Present when deployable=true — opaque handle for preview + pin. */
   stageId?: string;
   projectType: string;
@@ -198,10 +210,13 @@ export async function buildStage(
   files: File[],
   filePaths: string[],
   onUploadProgress?: (percent: number) => void,
+  acknowledgeWarnings = false,
 ): Promise<BuildStageResult> {
   const formData = new FormData();
   formData.append('projectId', projectId);
   formData.append('filePaths', JSON.stringify(filePaths));
+  // Set only when proceeding past an overridable shape warning (e.g. monorepo).
+  if (acknowledgeWarnings) formData.append('acknowledgeWarnings', 'true');
   files.forEach((f, i) => {
     formData.append('files', f, filePaths[i] ?? f.name);
   });
@@ -249,10 +264,17 @@ export async function importGitHub(
   projectId: string,
   repoUrl: string,
   ref?: string,
+  acknowledgeWarnings = false,
 ): Promise<BuildStageResult> {
   const res = await apiClient.post(
     '/deployments/import-github',
-    { projectId, repoUrl, ref: ref?.trim() ? ref.trim() : undefined },
+    {
+      projectId,
+      repoUrl,
+      ref: ref?.trim() ? ref.trim() : undefined,
+      // Set only when proceeding past an overridable shape warning (e.g. monorepo).
+      acknowledgeWarnings: acknowledgeWarnings ? true : undefined,
+    },
     { timeout: 180_000 },
   );
   return res.data as BuildStageResult;

@@ -7,6 +7,11 @@ interface StagePanelProps {
   previewSrc: string | null;
   /** Discard this stage and return to the drop zone. */
   onCancel: () => void;
+  /**
+   * Proceed past an OVERRIDABLE shape warning (e.g. monorepo) — re-submits with
+   * acknowledgeWarnings. Only offered when `result.overridable` is true.
+   */
+  onProceed?: () => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -82,19 +87,33 @@ function PiSdkRow({ sdk }: { sdk: StageResult['sdk'] }) {
   );
 }
 
-export default function StagePanel({ result, previewSrc, onCancel }: StagePanelProps) {
+export default function StagePanel({ result, previewSrc, onCancel, onProceed }: StagePanelProps) {
   // ── Halt: not a deployable static site (e.g. needs a local build first) ──────
   if (!result.deployable) {
+    // Overridable = a WARNING the user may build past (e.g. monorepo). A plain
+    // halt (backend, nothing to build) cannot be overridden.
+    const overridable = !!result.overridable && !!onProceed;
+    const accent = overridable ? 'amber' : 'red';
     return (
-      <div className="rounded-xl bg-surface-800 border border-amber-500/30 p-4">
+      <div
+        className={`rounded-xl bg-surface-800 border p-4 ${
+          overridable ? 'border-amber-500/30' : 'border-red-500/30'
+        }`}
+      >
         <div className="flex items-start gap-3">
-          <span className="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-full bg-amber-500/15 text-amber-400">
+          <span
+            className={`shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-full ${
+              accent === 'amber' ? 'bg-amber-500/15 text-amber-400' : 'bg-red-500/15 text-red-400'
+            }`}
+          >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
             </svg>
           </span>
           <div className="min-w-0">
-            <h3 className="text-base font-semibold text-ink font-display">Not ready to deploy</h3>
+            <h3 className="text-base font-semibold text-ink font-display">
+              {overridable ? 'Heads up before we build' : 'Not ready to deploy'}
+            </h3>
             <p className="text-ink-mut text-sm mt-1 break-words">{result.haltReason}</p>
           </div>
         </div>
@@ -120,9 +139,16 @@ export default function StagePanel({ result, previewSrc, onCancel }: StagePanelP
           </div>
         )}
 
-        <Button variant="secondary" className="w-full justify-center mt-4" onClick={onCancel}>
-          Upload different files
-        </Button>
+        <div className="mt-4 space-y-2">
+          {overridable && (
+            <Button className="w-full justify-center" onClick={onProceed}>
+              Build anyway
+            </Button>
+          )}
+          <Button variant="secondary" className="w-full justify-center" onClick={onCancel}>
+            Upload different files
+          </Button>
+        </div>
       </div>
     );
   }

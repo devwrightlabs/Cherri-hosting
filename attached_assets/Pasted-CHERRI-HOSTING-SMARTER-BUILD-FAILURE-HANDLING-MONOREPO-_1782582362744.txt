@@ -1,0 +1,31 @@
+CHERRI HOSTING — SMARTER BUILD FAILURE HANDLING + MONOREPO/STATIC GUIDANCE (engine is fine; improve how failures are handled)
+
+CONTEXT: The build engine works correctly — it runs the project's real build script and honestly reports failures. But when a user uploads a project that fails to build (e.g. a monorepo with a backend, or a project whose build script runs a failing typecheck, or a non-static app), they get a raw "ELIFECYCLE exit code 2 / Start over" which is unhelpful. Real users uploading exported folders from AI builders WILL hit this. Make failures helpful and detect un-deployable project shapes BEFORE wasting a long build. Do NOT change the engine's core build/sandbox/pin logic.
+
+Run straight through. At the end run both TypeScript checks (zero errors) and report.
+
+PART 1 — DETECT PROJECT SHAPE BEFORE BUILDING (fail fast, explain clearly):
+Before running a long install+build, inspect the upload and warn/halt with a clear reason when it's not a deployable static site:
+- MONOREPO / WORKSPACE: if package.json has a "workspaces" field, or there's pnpm-workspace.yaml, or multiple nested packages with their own package.json → tell the user: "This looks like a monorepo with multiple packages. Cherri deploys a single static site. Point Cherri at the specific app folder you want to deploy (e.g. the web/ or client/ folder), not the whole workspace." Let them proceed if they insist, but warn first.
+- BACKEND / SERVER PROJECT: if the project is primarily a server (has a server entry, express/fastify/nest as the main dep, a "start" script that runs a server, and NO static build output) → tell the user clearly: "This is a backend/server app. Static hosting on IPFS can't run a live server — it hosts built front-end files. This project needs the backend lane (coming soon)." Halt with that message, don't run a doomed build.
+- NO BUILD SCRIPT + NO STATIC FILES: if there's no build script and no index.html → "No build script and no static files found. Cherri needs either a buildable front-end project or static HTML/CSS/JS."
+
+PART 2 — WHEN A BUILD FAILS, EXPLAIN IT IN PLAIN ENGLISH (not just raw logs):
+Keep showing the real logs (good), but ABOVE the logs add a plain-English diagnosis of the most common failure types, detected from the build output:
+- TypeScript/typecheck errors (tsc exit 2, "error TS"): "Your project's build includes a type check that found errors. Cherri runs your project's own build script — fix the TypeScript errors, or adjust your build script to skip type-checking (many static hosts only need the build output, not a passing typecheck), then re-deploy."
+- Missing dependency / module not found: "A dependency is missing. Make sure all imports are listed in package.json, then re-deploy."
+- Out of memory / timeout: "The build ran out of time or memory. Large projects may exceed the build limit."
+- Build succeeded but produced no output folder: "The build finished but produced no static output (no dist/build/out). Check that your build outputs static files."
+- Generic fallback: show the last meaningful error lines + "The build failed — see the log above for the specific error."
+Each diagnosis is ONE friendly sentence + what to do. The raw log stays available below it.
+
+PART 3 — BETTER FAILURE UI:
+- Replace the bare "Start over" with: a clear failure heading, the plain-English diagnosis, the real log (collapsible is fine), and TWO actions: "Try again" (re-run the build) and "Upload a different folder" (full reset). 
+- Keep it calm and helpful, not alarming. This is a normal part of deploying — frame it as "here's what to fix," not "error."
+
+CONSTRAINTS:
+- Do NOT change the build engine's sandbox, install, build-run, output-collection, or pin logic. This is detection + messaging + UI only.
+- Do NOT touch the gated backend lane.
+- Real errors always surface (keep the real logs).
+
+FINAL: Run both TypeScript checks (zero errors). Report: the project-shape detections you added, the plain-English failure diagnoses, and the new failure UI. Confirm the engine's build/pin logic was not changed.

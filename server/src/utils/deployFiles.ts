@@ -282,6 +282,46 @@ export function detectBackendNeed(files: DeployFile[]): BackendNeed {
   return { needsBackend: reasons.length > 0, reasons };
 }
 
+export interface MonorepoSignal {
+  /** True when the upload looks like a multi-package monorepo / workspace. */
+  isMonorepo: boolean;
+  /** Human-readable signals behind the decision (for logging + honest UI). */
+  reasons: string[];
+}
+
+/**
+ * Heuristic: does this upload look like a monorepo / workspace rather than a
+ * single deployable app? Any one signal is enough:
+ *   - a pnpm-workspace.yaml at/near the root,
+ *   - a root package.json with a non-empty "workspaces" field (npm/yarn/bun),
+ *   - two or more package.json files (a root plus nested packages).
+ *
+ * Pure + read-only. Used to WARN before a long build — Cherri publishes a single
+ * static site, so a monorepo usually needs to be pointed at one app folder. This
+ * never blocks on its own: when there's a build script the user can proceed
+ * anyway (their root build may produce a static site).
+ */
+export function detectMonorepo(files: DeployFile[]): MonorepoSignal {
+  const reasons: string[] = [];
+  const paths = files.map((f) => f.path);
+
+  if (paths.some((p) => p === 'pnpm-workspace.yaml' || p.endsWith('/pnpm-workspace.yaml'))) {
+    reasons.push('pnpm-workspace.yaml present');
+  }
+
+  const pkg = readRootPackageJson(files);
+  const ws = pkg?.workspaces;
+  const hasWorkspaces = Array.isArray(ws) ? ws.length > 0 : !!ws && typeof ws === 'object';
+  if (hasWorkspaces) reasons.push('root package.json declares "workspaces"');
+
+  const pkgCount = paths.filter(
+    (p) => p === 'package.json' || p.endsWith('/package.json'),
+  ).length;
+  if (pkgCount >= 2) reasons.push(`${pkgCount} package.json files (nested packages)`);
+
+  return { isMonorepo: reasons.length > 0, reasons };
+}
+
 // Ordered preference for the deployable entry point. Root first, then the
 // common build-output folders. Whichever matches becomes the site root.
 const ENTRY_PRIORITY = [
@@ -317,6 +357,12 @@ export interface DeployableResolution {
   deployable: boolean;
   /** Set only when `deployable` is false — user-facing guidance. */
   haltReason?: string;
+  /**
+   * Set only when `deployable` is false — a stable discriminator for the halt so
+   * callers can refine the message (e.g. keep the "unbuilt app" guidance instead
+   * of a generic "no build script" one). Advisory; never changes the decision.
+   */
+  haltKind?: 'no-entry' | 'unbuilt-entry';
   projectType: string;
   /** Folder prefix that becomes the site root, with trailing slash ('' = upload root). */
   rootPrefix: string;
@@ -369,6 +415,7 @@ export function resolveDeployable(files: DeployFile[]): DeployableResolution {
     return {
       deployable: false,
       haltReason,
+      haltKind: 'no-entry',
       projectType: type,
       rootPrefix: '',
       entryPoint: null,
@@ -387,6 +434,7 @@ export function resolveDeployable(files: DeployFile[]): DeployableResolution {
         deployable: false,
         haltReason:
           "This looks like an unbuilt app — its entry page loads source files (e.g. /src/...) that browsers can't run directly. Build it locally and upload the output folder, usually dist, build, or out.",
+        haltKind: 'unbuilt-entry',
         projectType: type,
         rootPrefix: '',
         entryPoint: null,

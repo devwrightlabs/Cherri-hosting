@@ -148,6 +148,14 @@ export default function Deploy() {
   const [deployError, setDeployError] = useState<DeployError | null>(null);
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Remember the last submission so "Try again" (after a build failure) and
+  // "Build anyway" (past an overridable shape warning) can replay it. The
+  // chosen files / repo URL stay in state, so a replay just re-sends them.
+  const lastSubmitRef = useRef<{ kind: 'upload' | 'import'; acknowledge: boolean } | null>(null);
+  // Whether a replay is actually possible THIS session. False after a resumed
+  // build (the original File objects are gone), so we don't offer a dead button.
+  const [canReplay, setCanReplay] = useState(false);
+
   useEffect(() => {
     projectsApi
       .list()
@@ -293,45 +301,72 @@ export default function Deploy() {
 
   // Stage 1 — upload + validate. If the project needs building, run a REAL
   // server-side build first; otherwise show a sandboxed preview (no pin yet).
-  const handleStage = useCallback(async () => {
-    if (!selectedProjectId || files.length === 0 || filePaths.length === 0) return;
-    setIsStaging(true);
-    setDeployError(null);
-    setStageProgress(0);
-    setStageResult(null);
-    setBuildInfo(null);
+  const handleStage = useCallback(
+    async (acknowledge = false) => {
+      if (!selectedProjectId || files.length === 0 || filePaths.length === 0) return;
+      lastSubmitRef.current = { kind: 'upload', acknowledge };
+      setCanReplay(true);
+      setIsStaging(true);
+      setDeployError(null);
+      setStageProgress(0);
+      setStageResult(null);
+      setBuildInfo(null);
 
-    try {
-      applyBuildResult(
-        await buildStage(selectedProjectId, files, filePaths, setStageProgress),
-        selectedProjectId,
-      );
-    } catch (err: unknown) {
-      setDeployError(extractDeployError(err));
-    } finally {
-      setIsStaging(false);
-    }
-  }, [selectedProjectId, files, filePaths, applyBuildResult]);
+      try {
+        applyBuildResult(
+          await buildStage(selectedProjectId, files, filePaths, setStageProgress, acknowledge),
+          selectedProjectId,
+        );
+      } catch (err: unknown) {
+        setDeployError(extractDeployError(err));
+      } finally {
+        setIsStaging(false);
+      }
+    },
+    [selectedProjectId, files, filePaths, applyBuildResult],
+  );
 
   // Stage 1 (GitHub) — import a public repo, then the same stage-or-build flow.
-  const handleImport = useCallback(async () => {
-    if (!selectedProjectId || !repoUrl.trim()) return;
-    setIsImporting(true);
-    setDeployError(null);
-    setStageResult(null);
-    setBuildInfo(null);
+  const handleImport = useCallback(
+    async (acknowledge = false) => {
+      if (!selectedProjectId || !repoUrl.trim()) return;
+      lastSubmitRef.current = { kind: 'import', acknowledge };
+      setCanReplay(true);
+      setIsImporting(true);
+      setDeployError(null);
+      setStageResult(null);
+      setBuildInfo(null);
 
-    try {
-      applyBuildResult(
-        await importGitHub(selectedProjectId, repoUrl.trim(), branch),
-        selectedProjectId,
-      );
-    } catch (err: unknown) {
-      setDeployError(extractDeployError(err));
-    } finally {
-      setIsImporting(false);
-    }
-  }, [selectedProjectId, repoUrl, branch, applyBuildResult]);
+      try {
+        applyBuildResult(
+          await importGitHub(selectedProjectId, repoUrl.trim(), branch, acknowledge),
+          selectedProjectId,
+        );
+      } catch (err: unknown) {
+        setDeployError(extractDeployError(err));
+      } finally {
+        setIsImporting(false);
+      }
+    },
+    [selectedProjectId, repoUrl, branch, applyBuildResult],
+  );
+
+  // Replay the last submission as-is — used by "Try again" after a build failure.
+  const retryLast = useCallback(() => {
+    const last = lastSubmitRef.current;
+    if (!last) return;
+    if (last.kind === 'upload') void handleStage(last.acknowledge);
+    else void handleImport(last.acknowledge);
+  }, [handleStage, handleImport]);
+
+  // Replay the last submission, this time acknowledging an overridable shape
+  // warning (e.g. a monorepo) so the server proceeds to build.
+  const proceedAnyway = useCallback(() => {
+    const last = lastSubmitRef.current;
+    if (!last) return;
+    if (last.kind === 'import') void handleImport(true);
+    else void handleStage(true);
+  }, [handleStage, handleImport]);
 
   // Stage 2 — pin the staged upload to IPFS and run the reveal.
   const handlePin = useCallback(async () => {
@@ -362,6 +397,8 @@ export default function Deploy() {
   // and "Build & verify" could re-submit it before the user picks new files.
   const resetStage = () => {
     clearActiveBuild();
+    lastSubmitRef.current = null;
+    setCanReplay(false);
     setFiles([]);
     setFilePaths([]);
     setStageResult(null);
@@ -375,6 +412,8 @@ export default function Deploy() {
   // Full reset — clear files and start over.
   const reset = () => {
     clearActiveBuild();
+    lastSubmitRef.current = null;
+    setCanReplay(false);
     setFiles([]);
     setFilePaths([]);
     setStageResult(null);
@@ -518,11 +557,18 @@ export default function Deploy() {
             result={stageResult}
             previewSrc={stageResult.previewPath ? previewUrl(stageResult.previewPath) : null}
             onCancel={resetStage}
+            onProceed={proceedAnyway}
           />
         )}
 
         {/* Building — real streamed build logs */}
-        {isBuilding && buildInfo && <BuildLogPanel info={buildInfo} onReset={reset} />}
+        {isBuilding && buildInfo && (
+          <BuildLogPanel
+            info={buildInfo}
+            onRetry={canReplay ? retryLast : undefined}
+            onReset={reset}
+          />
+        )}
 
         {/* Upload — drop zone, build button, GitHub import */}
         {inUploadState && (

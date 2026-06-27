@@ -21,6 +21,7 @@ import {
   extractZipToFiles,
   detectProjectType,
   detectBackendNeed,
+  detectMonorepo,
   resolveDeployable,
   scanPiSdk,
   hasValidationKey,
@@ -131,6 +132,19 @@ interface QuotaUser {
   storageLimit: bigint;
 }
 
+// Plain-English guidance for project shapes we detect BEFORE building, so we can
+// fail fast with a clear reason instead of running a long, doomed build. These
+// only affect MESSAGING + whether the user may proceed — the build engine,
+// install/build/output/pin steps are unchanged.
+const BACKEND_SHAPE_MESSAGE =
+  "This looks like a backend / server app — it needs a running server, not just static files, and there's no build script that would produce a static site. Cherri publishes static sites to IPFS, so there's nothing to host here. Upload a static front-end (a folder with index.html), or deploy just the front-end part of your app.";
+
+const MONOREPO_SHAPE_MESSAGE =
+  "This looks like a monorepo / workspace with more than one package. Cherri deploys a single static site, so it usually works best to point it at one app folder (e.g. client, web, or apps/site) and upload just that. You can still build the whole thing anyway if your root build script produces a static site.";
+
+const NO_BUILD_NO_STATIC_MESSAGE =
+  'We couldn\'t find anything to deploy: there\'s no build script to run and no static files (like an index.html) to serve. Upload a built site (a folder with index.html — usually dist, build, or out), or a front-end project with a "build" script Cherri can run.';
+
 /**
  * Given an assembled set of upload files, either stage a deployable static site
  * immediately, queue a REAL server-side build, or halt honestly. Shared by the
@@ -146,6 +160,8 @@ async function respondBuildOrStage(
     user: QuotaUser;
     allFiles: DeployFile[];
     rawUploadBytes: number;
+    /** User chose to proceed past an overridable shape warning (e.g. monorepo). */
+    acknowledgeWarnings?: boolean;
   },
 ): Promise<void> {
   const { userId, projectId, projectName, user, allFiles, rawUploadBytes } = ctx;
@@ -208,13 +224,23 @@ async function respondBuildOrStage(
     return;
   }
 
-  // Not statically deployable. Build it only if there is a build script.
+  // ── Not statically deployable → diagnose the project's SHAPE before building.
+  // We fail fast with clear guidance instead of running a long, doomed build.
+  // (Detection + messaging only — the build engine itself is unchanged.)
   const buildScript = readBuildScript(allFiles);
-  if (!buildScript) {
+  const monorepo = detectMonorepo(allFiles);
+
+  /** Emit a `deployable:false` halt with consistent file-tree context. */
+  const haltShape = (
+    haltReason: string,
+    opts: { overridable: boolean; haltKind: string },
+  ): void => {
     res.status(200).json({
       needsBuild: false,
       deployable: false,
-      haltReason: resolution.haltReason,
+      haltReason,
+      haltKind: opts.haltKind,
+      overridable: opts.overridable,
       projectType: resolution.projectType,
       needsBackend: backend.needsBackend,
       backendEligible,
@@ -224,6 +250,37 @@ async function respondBuildOrStage(
         .slice(0, 50)
         .map((f) => ({ path: f.path, size: f.buffer.length })),
     });
+  };
+
+  // (A) Server/backend app with no static build → can't be hosted as a static
+  // site. Halt honestly (the gated backend lane is a separate, paid path).
+  if (backend.needsBackend && !buildScript) {
+    logger.info('Shape halt: backend', { projectId, reasons: backend.reasons });
+    haltShape(BACKEND_SHAPE_MESSAGE, { overridable: false, haltKind: 'backend' });
+    return;
+  }
+
+  // (B) No build script → nothing to build. Explain what Cherri needs, with a
+  // monorepo-aware hint when the upload looks like a workspace, and keeping the
+  // sharper "unbuilt app" guidance when resolveDeployable detected one.
+  if (!buildScript) {
+    const unbuilt = resolution.haltKind === 'unbuilt-entry';
+    const haltReason = monorepo.isMonorepo
+      ? MONOREPO_SHAPE_MESSAGE
+      : unbuilt
+        ? (resolution.haltReason as string)
+        : NO_BUILD_NO_STATIC_MESSAGE;
+    const haltKind = monorepo.isMonorepo ? 'monorepo' : unbuilt ? 'unbuilt-entry' : 'no-build';
+    haltShape(haltReason, { overridable: false, haltKind });
+    return;
+  }
+
+  // (C) Has a build script, but the upload looks like a monorepo / workspace.
+  // Warn first — Cherri publishes a single static site — but let the user
+  // proceed (their root build script may build the whole thing into static output).
+  if (monorepo.isMonorepo && ctx.acknowledgeWarnings !== true) {
+    logger.info('Shape warning: monorepo', { projectId, reasons: monorepo.reasons });
+    haltShape(MONOREPO_SHAPE_MESSAGE, { overridable: true, haltKind: 'monorepo' });
     return;
   }
 
@@ -874,6 +931,7 @@ deploymentsRouter.post(
         user,
         allFiles,
         rawUploadBytes: Number(rawUploadSize),
+        acknowledgeWarnings: req.body.acknowledgeWarnings === 'true',
       });
     } catch (err) {
       if (err instanceof UploadTooLargeError) {
@@ -1040,13 +1098,14 @@ deploymentsRouter.post(
         projectId: z.string().min(1),
         repoUrl: z.string().min(1),
         ref: z.string().trim().min(1).optional(),
+        acknowledgeWarnings: z.boolean().optional(),
       })
       .safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'projectId and repoUrl are required.' });
       return;
     }
-    const { projectId, repoUrl, ref } = parsed.data;
+    const { projectId, repoUrl, ref, acknowledgeWarnings } = parsed.data;
 
     const repoRef = parseGitHubRepo(repoUrl);
     if (!repoRef) {
@@ -1114,6 +1173,7 @@ deploymentsRouter.post(
         user,
         allFiles: files,
         rawUploadBytes,
+        acknowledgeWarnings,
       });
     } catch (err) {
       logger.error('Failed to import GitHub repository', { error: err });

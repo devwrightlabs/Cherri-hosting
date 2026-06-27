@@ -1,0 +1,25 @@
+CHERRI HOSTING — FIX THE BROKEN PRICING DISPLAY (dollar-pegged, but never hang)
+
+PROBLEM: The pricing page is stuck loading — it's continuously waiting on the Pi price API and never resolves. The dollar-pegged model is correct and should stay; the WIRING is broken. The page must show the dollar anchor immediately and treat the live Pi amount as non-blocking.
+
+Do NOT revert to hardcoded flat Pi prices. Keep the dollar-pegged model ($35/$143/$350, digits sum to 8; Pi floats off /billing/quote). Fix the wiring so it can't hang.
+
+Run straight through. At the end run both TypeScript checks (zero errors) and report.
+
+FIX:
+1. INVESTIGATE THE HANG: the pricing page calls billingApi.quote() / billingApi.catalog() (/api/billing/quote, /api/billing/catalog). Check whether: (a) the client is reading a response field the server doesn't return (field-name mismatch), (b) the request is erroring/looping, or (c) the page blocks rendering until the Pi quote resolves. Report what's actually wrong.
+
+2. SHOW DOLLAR PRICE IMMEDIATELY (never block): each tier must render its DOLLAR anchor ($35/$143/$350) instantly from the local tier config, with NO dependency on the Pi price API. The page must be fully usable even if the Pi price call never returns.
+
+3. PI AMOUNT IS NON-BLOCKING: fetch the live Pi quote separately and progressively. While it loads → show "≈ updating…". If it fails or times out (e.g. after a few seconds) → keep showing the dollar price with "≈ Pi price updating", NEVER an infinite spinner, NEVER a hang. No retry loop that spins forever.
+
+4. CONFIRM THE ENDPOINT CONTRACT: make the client read EXACTLY the fields the server's /billing/quote and /billing/catalog actually return (check server/src/routes/billing.ts for the real response shape — e.g. quotedPiAmount, usd/usdCents). Fix any field-name mismatch so the quote actually parses. If the server shape differs from what the client expects, align the client to the server (do not change the server billing math).
+
+5. CHECKOUT STILL CORRECT: when paying, still fetch a fresh quote and charge the live Pi amount; if the quote fails at checkout, show a clear "Pi pricing briefly unavailable, try again" — don't charge a wrong/blank amount.
+
+CONSTRAINTS:
+- Keep the dollar-pegged model. Do NOT revert to flat hardcoded Pi.
+- Do NOT change the server billing math/engine; align the client to the server's real response shape.
+- The pricing page must NEVER hang — dollar price always shows, Pi amount is best-effort.
+
+FINAL: Run both TypeScript checks (zero errors). Report what was causing the hang, and confirm the pricing page now renders the dollar price instantly with the Pi amount loading non-blocking.

@@ -2,9 +2,12 @@ import { useEffect, useRef } from 'react';
 import Card from '../ui/Card';
 import Button from '../ui/Button';
 import { BuildJobInfo, BuildStatus } from '../../api/deployApi';
+import { diagnoseBuildFailure } from '../../lib/buildDiagnosis';
 
 interface BuildLogPanelProps {
   info: BuildJobInfo;
+  /** Re-run the same upload/import after a failure. */
+  onRetry?: () => void;
   /** Start over — discard this build and return to the drop zone. */
   onReset: () => void;
 }
@@ -18,7 +21,7 @@ const STATUS_LABEL: Record<BuildStatus, string> = {
   FAILED: 'Build failed',
 };
 
-export default function BuildLogPanel({ info, onReset }: BuildLogPanelProps) {
+export default function BuildLogPanel({ info, onRetry, onReset }: BuildLogPanelProps) {
   const logRef = useRef<HTMLPreElement | null>(null);
   const failed = info.status === 'FAILED';
   const running =
@@ -27,11 +30,14 @@ export default function BuildLogPanel({ info, onReset }: BuildLogPanelProps) {
     info.status === 'BUILDING' ||
     info.status === 'COLLECTING';
 
-  // Keep the log scrolled to the newest line as it streams in.
+  // Keep the log scrolled to the newest line as it streams in (running only —
+  // on failure the log lives in a collapsible block below the diagnosis).
   useEffect(() => {
     const el = logRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [info.logs]);
+
+  const diagnosis = failed ? diagnoseBuildFailure(info) : null;
 
   return (
     <Card>
@@ -53,27 +59,56 @@ export default function BuildLogPanel({ info, onReset }: BuildLogPanelProps) {
         </span>
       </div>
 
-      <p className="text-ink-mut text-xs leading-relaxed mb-3">
-        Cherri is building your app on the server — these are the real build logs.
-        Building runs your project's own scripts, so it can take a minute.
-      </p>
+      {failed ? (
+        <div className="space-y-3">
+          {/* Plain-English diagnosis ABOVE the raw log — friendlier summary, not
+              a replacement. The real log stays one tap away below. */}
+          {diagnosis && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3.5">
+              <p className="text-red-300 text-sm font-semibold leading-snug">
+                {diagnosis.headline}
+              </p>
+              <p className="text-ink-mut text-xs leading-relaxed mt-1.5">{diagnosis.advice}</p>
+            </div>
+          )}
 
-      <pre
-        ref={logRef}
-        className="bg-black/60 border border-hairline rounded-xl p-3.5 text-[11px] leading-relaxed text-ink-mut font-mono overflow-auto max-h-72 whitespace-pre-wrap break-words"
-      >
-        {info.logs || 'Starting…'}
-      </pre>
+          <details open className="group">
+            <summary className="cursor-pointer select-none text-xs text-ink-mut hover:text-ink transition-colors">
+              Build log
+            </summary>
+            <pre
+              ref={logRef}
+              className="mt-2 bg-black/60 border border-hairline rounded-xl p-3.5 text-[11px] leading-relaxed text-ink-mut font-mono overflow-auto max-h-72 whitespace-pre-wrap break-words"
+            >
+              {info.logs || info.error || 'The build failed before producing any output.'}
+            </pre>
+          </details>
 
-      {failed && (
-        <div className="mt-3 space-y-3">
-          <p className="text-red-400 text-xs">
-            {info.error ?? 'The build failed. Check the log above for the real error.'}
-          </p>
-          <Button size="sm" className="w-full justify-center" onClick={onReset}>
-            Start over
-          </Button>
+          <div className="space-y-2 pt-1">
+            {onRetry && (
+              <Button className="w-full justify-center" onClick={onRetry}>
+                Try again
+              </Button>
+            )}
+            <Button variant="secondary" className="w-full justify-center" onClick={onReset}>
+              Upload a different folder
+            </Button>
+          </div>
         </div>
+      ) : (
+        <>
+          <p className="text-ink-mut text-xs leading-relaxed mb-3">
+            Cherri is building your app on the server — these are the real build logs.
+            Building runs your project's own scripts, so it can take a minute.
+          </p>
+
+          <pre
+            ref={logRef}
+            className="bg-black/60 border border-hairline rounded-xl p-3.5 text-[11px] leading-relaxed text-ink-mut font-mono overflow-auto max-h-72 whitespace-pre-wrap break-words"
+          >
+            {info.logs || 'Starting…'}
+          </pre>
+        </>
       )}
     </Card>
   );
