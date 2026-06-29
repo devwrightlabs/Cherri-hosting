@@ -13,6 +13,11 @@ import {
   resolveInjectableBackendUrlForProject,
 } from '../services/provisioningService';
 import { injectCherriRuntimeConfig } from '../utils/frontendConfig';
+import {
+  hardenStaticBundle,
+  verifyReferencedAssets,
+  WhiteScreenRiskError,
+} from '../utils/staticHardening';
 import { getRouteParam } from '../utils/routeParams';
 import { maxUploadBytesForTier, TIER2_MAX_UPLOAD_BYTES } from '../utils/constants';
 import {
@@ -557,20 +562,49 @@ async function executePin(opts: {
 
     let pinResult;
     if (pinFiles && pinFiles.length > 0) {
+      // Universal white-screen fix: rewrite root-absolute asset paths to relative,
+      // inject <base href="./">, and add a 404.html SPA fallback so the site
+      // renders from a non-root gateway path (IPFS / Pi Browser). Pure, idempotent
+      // and framework-agnostic — already-relative static sites pass through
+      // functionally unchanged. Runs before backend injection so the config script
+      // lands after the <base> tag.
+      let filesToPin = hardenStaticBundle(pinFiles);
+
       // Phase 3 env-split wiring: when the project has a verified branded backend
       // URL AND the GO-LIVE envWiring capability is enabled, inject the Cherri
       // runtime config so the published front-end talks to its backend. Otherwise
       // this is a no-op and the bundle ships with no backend config (honest —
       // never injects a provider URL or a backend that isn't verified-active).
       const backendUrl = await resolveInjectableBackendUrlForProject(projectId);
-      const filesToPin = backendUrl
-        ? injectCherriRuntimeConfig(pinFiles, backendUrl)
-        : pinFiles;
       if (backendUrl) {
+        filesToPin = injectCherriRuntimeConfig(filesToPin, backendUrl);
         logger.info('Injected Cherri runtime backend config into bundle', {
           deploymentId,
         });
       }
+
+      // Never pin a site we already know will white-screen: confirm the entry
+      // HTML's render-critical JS/CSS exist at their (rewritten) paths. Halting
+      // here surfaces as a clear FAILED reason instead of a blank published page.
+      const verification = verifyReferencedAssets(filesToPin);
+      if (!verification.ok) {
+        throw new WhiteScreenRiskError(
+          `This build can't be published because index.html points to assets that aren't in the output: ${verification.missing.join(', ')}. That would render a blank page. Rebuild your project and try again.`,
+          verification.missing,
+        );
+      }
+
+      // The route-level quota gate ran against the pre-hardening size. Hardening
+      // (the 404.html mirror) and backend-config injection add bytes, so re-check
+      // the REAL final bundle against the user's quota before pinning — additions
+      // must never slip a deploy over the limit.
+      const finalBytes = filesToPin.reduce((acc, f) => acc + f.buffer.length, 0);
+      const quotaUser = await prisma.user.findUnique({ where: { id: userId } });
+      if (!quotaUser) throw new Error('User not found.');
+      if (quotaUser.storageUsed + BigInt(finalBytes) > quotaUser.storageLimit) {
+        throw new Error('Storage quota exceeded. Upgrade to get more IPFS storage.');
+      }
+
       pinResult = await pinDirectory(filesToPin, projectName);
     } else if (singleFile) {
       pinResult = await pinFile(singleFile.buffer, singleFile.name, singleFile.mimeType);

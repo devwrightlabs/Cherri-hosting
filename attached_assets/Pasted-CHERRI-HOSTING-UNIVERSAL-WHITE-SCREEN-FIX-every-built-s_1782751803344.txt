@@ -1,0 +1,38 @@
+CHERRI HOSTING — UNIVERSAL WHITE-SCREEN FIX (every built site must render in Pi Browser / on IPFS gateways)
+
+THE PROBLEM (confirmed live): Cherri's build engine works — it built a Vite app into a valid static bundle and deployed it. BUT the deployed site shows a WHITE SCREEN in Pi Browser. The HTML loads (the page is "live"), but the JavaScript/CSS assets don't load, so nothing renders. This is the classic absolute-path problem when a built SPA is served from a gateway/subpath instead of a domain root. It must be fixed AUTOMATICALLY for EVERY site Cherri builds — no user should ever see a white screen.
+
+This is a fix to the post-build HARDENING step (after build, before pin). Do NOT change the build engine's detection/install/build logic. Do NOT touch the gated backend lane or the payment system.
+
+Run straight through. At the end run both TypeScript checks (zero errors) and report.
+
+ROOT CAUSE: Built apps (Vite/CRA/etc.) reference their assets with ROOT-ABSOLUTE paths like:
+  <script src="/assets/index-abc.js">   <link href="/assets/index-abc.css">
+On a domain root these work, but on an IPFS gateway / Replit preview subpath / Pi Browser the leading "/" resolves to the wrong place → asset 404 → white screen.
+
+THE UNIVERSAL FIX — apply ALL of these to the built output before pinning, for every deploy:
+
+1. REWRITE ABSOLUTE ASSET PATHS TO RELATIVE: in the built index.html (and any built HTML), rewrite every root-absolute asset reference to relative:
+   - src="/assets/..."  → src="./assets/..."
+   - href="/assets/..." → href="./assets/..."
+   - Also handle other root-absolute references to built files (/index-*.js, /favicon, /manifest, etc.) → "./..."
+   - Apply to <script src>, <link href>, <img src>, and any built asset URL that starts with "/". Do NOT rewrite external URLs (http://, https://, //) or anchor links.
+
+2. REWRITE ABSOLUTE PATHS INSIDE BUILT CSS AND JS where they reference local assets:
+   - In built CSS: url(/assets/...) → url(./assets/...) (and url("/...") / url('/...')).
+   - In built JS where asset paths are root-absolute string literals to local files, make them relative where safely detectable. (Be conservative — only clearly-local /assets/ style paths.)
+
+3. INJECT A <base> TAG AS A SAFETY NET: if not already present, add <base href="./"> in the <head> of index.html so any remaining relative resolution anchors to the current directory. (Place it before other asset links.)
+
+4. SPA ROUTING FALLBACK: for single-page apps (client-side routing), ensure deep links don't break on the gateway:
+   - Include a 404.html that mirrors index.html (so gateways serving 404 fall back to the app), AND/OR ensure the app can run from index.html. Prefer hash-friendly behavior where the framework supports it.
+
+5. VERIFY BEFORE PINNING (don't ship a white screen):
+   - After rewriting, confirm the index.html's referenced asset files (the .js and .css it points to) ACTUALLY EXIST in the output bundle at the rewritten relative paths. If a referenced asset is missing/unresolvable → HALT with a clear message instead of pinning a site that will white-screen.
+   - This verification runs for every deploy.
+
+6. MAKE IT UNIVERSAL + FRAMEWORK-AGNOSTIC: this hardening runs on EVERY built output regardless of framework (Vite, CRA, Vue, Astro, plain static, etc.), because the absolute-path issue is common to all of them. Plain static sites that already use relative paths should pass through unchanged.
+
+WHY THIS MATTERS: Pi Browser serves sites from a decentralized gateway, not a clean domain root, so root-absolute paths break. Making every Cherri site use relative paths + a base tag means every deployed app/website actually renders for the user, every time.
+
+FINAL: Run both TypeScript checks (zero errors). Confirm the hardening now rewrites absolute asset paths to relative, injects <base href="./">, verifies referenced assets exist before pinning, and applies universally to every build. Note: re-deploying the previously white-screened test site should now render correctly.
