@@ -1,5 +1,16 @@
+import { useState } from 'react';
 import Button from '../ui/Button';
-import type { StageResult } from '../../api/deployApi';
+import {
+  addStagePiSdk,
+  addStageValidationKey,
+  extractDeployError,
+  isPlausibleValidationKey,
+  type StageHelperResult,
+  type StageResult,
+} from '../../api/deployApi';
+import { usePiEnv, type PiEnv } from '../../lib/piEnv';
+import { PI_DEVELOPER_PORTAL_URL } from '../../lib/constants';
+import { openExternal } from '../../lib/openExternal';
 
 interface StagePanelProps {
   result: StageResult;
@@ -12,6 +23,10 @@ interface StagePanelProps {
    * acknowledgeWarnings. Only offered when `result.overridable` is true.
    */
   onProceed?: () => void;
+  /** Merge refreshed verification facts after a "Configure for Pi" helper runs. */
+  onHelperUpdate?: (patch: Partial<StageResult>) => void;
+  /** Remember the pasted validation key for the post-deploy served-file check. */
+  onValidationKeySaved?: (key: string) => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -87,7 +102,252 @@ function PiSdkRow({ sdk }: { sdk: StageResult['sdk'] }) {
   );
 }
 
-export default function StagePanel({ result, previewSrc, onCancel, onProceed }: StagePanelProps) {
+// ─── "Configure for Pi" helpers ───────────────────────────────────────────────
+
+/**
+ * Paste-your-validation-key helper. Writes the key as validation-key.txt at
+ * the staged site's root (exactly as pasted — no extra whitespace), then
+ * re-flips the verification row. Advisory — never blocks a deploy.
+ */
+function ValidationKeyHelper({
+  stageId,
+  onSaved,
+}: {
+  stageId: string;
+  onSaved: (key: string, facts: StageHelperResult) => void;
+}) {
+  const [key, setKey] = useState('');
+  const [error, setError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const save = async () => {
+    const trimmed = key.trim();
+    if (!isPlausibleValidationKey(trimmed)) {
+      setError(
+        "That doesn't look like a Pi validation key. It should be one long unbroken string of letters and numbers (no spaces or line breaks) — copy the whole key from Pi's developer portal and paste it exactly.",
+      );
+      return;
+    }
+    setIsSaving(true);
+    setError('');
+    try {
+      const facts = await addStageValidationKey(stageId, trimmed);
+      onSaved(trimmed, facts);
+    } catch (err: unknown) {
+      setError(extractDeployError(err).message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="ml-7 mt-2 rounded-lg bg-surface-900 border border-hairline p-3">
+      <p className="text-xs font-medium text-ink">Have your key? Paste it here</p>
+      <p className="text-ink-mut text-[11px] mt-1 leading-relaxed">
+        Cherri will add it to this upload as <span className="font-mono">validation-key.txt</span>{' '}
+        at your site root — exactly as pasted, nothing added. Cherri can&rsquo;t check it&rsquo;s
+        the right key for your domain; only Pi&rsquo;s portal can confirm that.
+      </p>
+      <textarea
+        value={key}
+        onChange={(e) => {
+          setKey(e.target.value);
+          if (error) setError('');
+        }}
+        rows={2}
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
+        placeholder="Paste your validation key from Pi's developer portal"
+        className="mt-2 w-full min-h-[48px] bg-surface-950 border border-surface-600 rounded-lg px-3 py-2.5 text-ink text-xs font-mono placeholder:text-ink-mut placeholder:font-sans resize-y focus:outline-none focus:border-cherry-500/50 focus:ring-2 focus:ring-cherry-500 focus:ring-offset-2 focus:ring-offset-surface-950 transition-colors"
+      />
+      {error && <p className="text-red-400 text-xs mt-2 leading-relaxed">{error}</p>}
+      <Button
+        size="md"
+        className="w-full justify-center mt-2"
+        disabled={key.trim().length === 0}
+        isLoading={isSaving}
+        onClick={() => void save()}
+      >
+        Add key to this upload
+      </Button>
+      <button
+        type="button"
+        onClick={() => openExternal(PI_DEVELOPER_PORTAL_URL)}
+        className="mt-2 w-full min-h-[44px] text-xs text-cherry-300 underline underline-offset-2"
+      >
+        Get a key in Pi&rsquo;s developer portal (opens in Pi Browser) ↗
+      </button>
+    </div>
+  );
+}
+
+/**
+ * One-tap Pi SDK helper. Detect-before-inject is enforced server-side: if the
+ * site already loads the SDK or calls Pi.init anywhere, nothing is touched.
+ * The sandbox flag is an explicit choice about the USER'S app (which network
+ * THEIR app talks to), defaulting to the current TEST/LIVE setting.
+ */
+function PiSdkHelper({
+  stageId,
+  sdk,
+  onDone,
+}: {
+  stageId: string;
+  sdk: StageResult['sdk'];
+  onDone: (facts: StageHelperResult) => void;
+}) {
+  const currentEnv = usePiEnv();
+  const [env, setEnv] = useState<PiEnv>(currentEnv);
+  const [error, setError] = useState('');
+  const [isInjecting, setIsInjecting] = useState(false);
+  const [alreadyPresent, setAlreadyPresent] = useState(false);
+
+  const detected = !!sdk && (sdk.scriptDetected || sdk.initDetected);
+
+  // Site already has the SDK (fully or partially) — never double-inject.
+  if (detected && !sdk?.ready) {
+    return (
+      <p className="ml-7 mt-1 text-ink-mut text-[11px] leading-relaxed">
+        Your site already references the Pi SDK, so Cherri won&rsquo;t add it again (injecting
+        twice could break Pi features). Adjust it in your source code if needed.
+      </p>
+    );
+  }
+  if (detected) return null;
+
+  const inject = async () => {
+    setIsInjecting(true);
+    setError('');
+    try {
+      const res = await addStagePiSdk(stageId, env);
+      if (res.alreadyPresent) setAlreadyPresent(true);
+      onDone(res);
+    } catch (err: unknown) {
+      setError(extractDeployError(err).message);
+    } finally {
+      setIsInjecting(false);
+    }
+  };
+
+  if (alreadyPresent) {
+    return (
+      <p className="ml-7 mt-1 text-ink-mut text-[11px] leading-relaxed">
+        ✓ Pi SDK already present — nothing was added.
+      </p>
+    );
+  }
+
+  return (
+    <div className="ml-7 mt-2 rounded-lg bg-surface-900 border border-hairline p-3">
+      <p className="text-xs font-medium text-ink">Add the Pi SDK for me</p>
+      <p className="text-ink-mut text-[11px] mt-1 leading-relaxed">
+        Cherri adds the official SDK script and a{' '}
+        <span className="font-mono">Pi.init()</span> call to your site&rsquo;s{' '}
+        <span className="font-mono">&lt;head&gt;</span>. Pick which Pi network{' '}
+        <em>your app</em> should talk to:
+      </p>
+      <div className="mt-2 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Pi network for your app">
+        {(
+          [
+            { value: 'testnet' as PiEnv, label: 'Testnet', hint: 'sandbox · Test-Pi' },
+            { value: 'mainnet' as PiEnv, label: 'Mainnet', hint: 'real Pi' },
+          ]
+        ).map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={env === opt.value}
+            onClick={() => setEnv(opt.value)}
+            className={`min-h-[48px] rounded-lg border px-3 py-2 text-left transition-colors ${
+              env === opt.value
+                ? 'border-cherry-500/50 bg-cherry-500/10 text-ink'
+                : 'border-surface-600 bg-surface-950 text-ink-mut'
+            }`}
+          >
+            <span className="block text-xs font-medium">{opt.label}</span>
+            <span className="block text-[10px] text-ink-mut mt-0.5">{opt.hint}</span>
+          </button>
+        ))}
+      </div>
+      {error && <p className="text-red-400 text-xs mt-2 leading-relaxed">{error}</p>}
+      <Button
+        size="md"
+        className="w-full justify-center mt-2"
+        isLoading={isInjecting}
+        onClick={() => void inject()}
+      >
+        Add Pi SDK to my site
+      </Button>
+      <p className="text-ink-mut text-[10px] mt-2 leading-relaxed">
+        Only added if your site doesn&rsquo;t load it already — Cherri checks first and never
+        injects twice.
+      </p>
+    </div>
+  );
+}
+
+/** Plain-language "get your app Pi-ready" walkthrough. Informational only. */
+function PiSetupChecklist() {
+  const steps = [
+    <>
+      Register your app in{' '}
+      <button
+        type="button"
+        onClick={() => openExternal(PI_DEVELOPER_PORTAL_URL)}
+        className="text-cherry-300 underline underline-offset-2"
+      >
+        Pi&rsquo;s developer portal
+      </button>{' '}
+      (the link opens in Pi Browser).
+    </>,
+    <>
+      Copy the <span className="text-ink">validation key</span> Pi gives you and paste it above —
+      Cherri serves it at <span className="font-mono">/validation-key.txt</span> so Pi can verify
+      your site.
+    </>,
+    <>
+      Using Pi login or payments? Make sure the <span className="text-ink">Pi SDK</span> is in
+      your app — add it above with one tap if it isn&rsquo;t.
+    </>,
+    <>
+      Deploy in step 2, then finish <span className="text-ink">.pi domain verification</span> in
+      Pi&rsquo;s portal — that last step happens on Pi&rsquo;s side, not in Cherri.
+    </>,
+  ];
+  return (
+    <div className="rounded-xl bg-surface-800 border border-hairline p-4">
+      <p className="text-[11px] uppercase tracking-wide text-ink-mut">Getting Pi-ready</p>
+      <p className="text-ink-mut text-xs mt-1.5 leading-relaxed">
+        None of this blocks your deploy — it&rsquo;s the path to a verified Pi app.
+      </p>
+      <ol className="mt-3 space-y-2.5">
+        {steps.map((step, i) => (
+          <li key={i} className="flex items-start gap-2.5">
+            <span className="shrink-0 mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-surface-900 border border-hairline text-[10px] font-semibold text-ink-mut">
+              {i + 1}
+            </span>
+            <p className="text-ink-mut text-xs leading-relaxed min-w-0">{step}</p>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+export default function StagePanel({
+  result,
+  previewSrc,
+  onCancel,
+  onProceed,
+  onHelperUpdate,
+  onValidationKeySaved,
+}: StagePanelProps) {
+  // Bumped after a helper mutates the stage so the sandboxed preview iframe
+  // reloads and shows the change (the preview is served with no-store).
+  const [previewNonce, setPreviewNonce] = useState(0);
+
   // ── Halt: not a deployable static site (e.g. needs a local build first) ──────
   if (!result.deployable) {
     // Overridable = a WARNING the user may build past (e.g. monorepo). A plain
@@ -153,6 +413,16 @@ export default function StagePanel({ result, previewSrc, onCancel, onProceed }: 
     );
   }
 
+  const applyFacts = (facts: StageHelperResult) => {
+    onHelperUpdate?.({
+      hasValidationKey: facts.hasValidationKey,
+      sdk: facts.sdk,
+      fileCount: facts.fileCount,
+      totalBytes: facts.totalBytes,
+    });
+    setPreviewNonce((n) => n + 1);
+  };
+
   // ── Deployable: verification checklist + sandboxed preview ────────────────────
   return (
     <div className="space-y-4">
@@ -164,18 +434,37 @@ export default function StagePanel({ result, previewSrc, onCancel, onProceed }: 
           okText="Build succeeded — your site is a deployable static bundle"
           warnText=""
         />
-        <CheckRow
-          ok={!!result.hasValidationKey}
-          okText="Pi validation key found (validation-key.txt)"
-          warnText="No validation-key.txt at your site root"
-          detail={
-            result.hasValidationKey
-              ? undefined
-              : 'Pi Network needs this file to verify .pi domain ownership. You can still deploy now and add it later — your .pi domain just won’t verify until it’s present.'
-          }
-        />
-        <PiSdkRow sdk={result.sdk} />
+        <div>
+          <CheckRow
+            ok={!!result.hasValidationKey}
+            okText="Pi validation key found (validation-key.txt)"
+            warnText="No validation-key.txt at your site root"
+            detail={
+              result.hasValidationKey
+                ? undefined
+                : 'Pi Network needs this file to verify .pi domain ownership. You can still deploy now and add it later — your .pi domain just won’t verify until it’s present.'
+            }
+          />
+          {!result.hasValidationKey && result.stageId && (
+            <ValidationKeyHelper
+              stageId={result.stageId}
+              onSaved={(key, facts) => {
+                onValidationKeySaved?.(key);
+                applyFacts(facts);
+              }}
+            />
+          )}
+        </div>
+        <div>
+          <PiSdkRow sdk={result.sdk} />
+          {result.stageId && (
+            <PiSdkHelper stageId={result.stageId} sdk={result.sdk} onDone={applyFacts} />
+          )}
+        </div>
       </div>
+
+      {/* Plain-language Pi setup walkthrough — never blocks anything */}
+      <PiSetupChecklist />
 
       {/* Live sandboxed preview */}
       <div className="rounded-xl bg-surface-800 border border-hairline overflow-hidden">
@@ -189,6 +478,7 @@ export default function StagePanel({ result, previewSrc, onCancel, onProceed }: 
         <div className="bg-surface-950">
           {previewSrc ? (
             <iframe
+              key={`${previewSrc}#${previewNonce}`}
               title="Site preview"
               src={previewSrc}
               // Opaque-origin sandbox: scripts + forms run, but the frame gets

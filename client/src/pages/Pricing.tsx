@@ -333,28 +333,29 @@ export default function Pricing() {
       <PageHeader
         title={isAuthenticated ? 'Plans' : 'Simple, Pi-powered pricing'}
         subtitle="Pay with Pi. No credit cards. Cancel anytime."
+        className="animate-fade-in"
       />
 
       {isAuthenticated && isLoading && (
-        <div className="flex justify-center py-4">
+        <div className="flex justify-center py-6 animate-fade-in">
           <Spinner />
         </div>
       )}
 
       {/* Billing period toggle — neutral styling so gold stays reserved for Pro */}
-      <div className="space-y-2">
+      <div className="space-y-3 animate-fade-in" style={{ animationDelay: '50ms' }}>
         <div className="flex items-center justify-center">
-          <div className="inline-flex rounded-full border border-hairline bg-surface-900 p-0.5">
+          <div className="inline-flex rounded-full border border-hairline bg-surface-900 p-1 shadow-sm">
             {(['monthly', 'annual'] as const).map((period) => (
               <button
                 key={period}
                 type="button"
                 onClick={() => setBillingPeriod(period)}
                 aria-pressed={billingPeriod === period}
-                className={`rounded-full px-5 py-1.5 text-sm font-medium transition-colors ${
+                className={`rounded-full px-6 py-2 text-sm font-semibold transition-all duration-200 ${
                   billingPeriod === period
-                    ? 'bg-surface-800 text-ink'
-                    : 'text-ink-mut hover:text-ink'
+                    ? 'bg-surface-800 text-ink shadow-[0_1px_2px_rgba(0,0,0,0.4)]'
+                    : 'text-ink-mut hover:text-ink hover:bg-surface-800/50'
                 }`}
               >
                 {period === 'monthly' ? 'Monthly' : 'Annual'}
@@ -363,17 +364,17 @@ export default function Pricing() {
           </div>
         </div>
         {billingPeriod === 'annual' && (
-          <p className="text-center text-xs text-live">Two months free, billed yearly</p>
+          <p className="text-center text-sm font-semibold text-live animate-fade-in">Two months free, billed yearly</p>
         )}
         {/* One-line peg note — the whole pricing model in a sentence. */}
-        <p className="text-center text-xs text-ink-mut max-w-sm mx-auto">
+        <p className="text-center text-xs text-ink-mut max-w-sm mx-auto leading-relaxed">
           Prices are pegged to a US-dollar value and paid in Pi at the live rate — as Pi
           rises, the same plan costs fewer&nbsp;π.
         </p>
       </div>
 
       {/* Tier cards — single column, four tiers */}
-      <div className="space-y-4">
+      <div className="space-y-5 mt-4 animate-fade-in" style={{ animationDelay: '100ms' }}>
         {TIERS.map((tier) => {
           const isCurrentTier = currentTier === tier.key;
           const isPaidAndActive = isCurrentTier && tier.key !== 'FREE';

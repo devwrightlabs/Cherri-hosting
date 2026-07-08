@@ -5,6 +5,7 @@ import DropZone from '../components/deploy/DropZone';
 import DeployReveal from '../components/deploy/DeployReveal';
 import StagePanel from '../components/deploy/StagePanel';
 import DeployDomainPanel from '../components/deploy/DeployDomainPanel';
+import ValidationKeyLiveCheck from '../components/deploy/ValidationKeyLiveCheck';
 import BuildLogPanel from '../components/deploy/BuildLogPanel';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
@@ -138,6 +139,12 @@ export default function Deploy() {
 
   // True while we reconnect to a build the user started before leaving the page.
   const [isResuming, setIsResuming] = useState(false);
+
+  // The validation key pasted via the Stage 1 helper THIS session — kept so the
+  // post-deploy check can confirm the live site serves exactly what was pasted.
+  // (The staged upload is gone after pinning, so the client is the only place
+  // that still knows the expected value.)
+  const [pastedKey, setPastedKey] = useState<string | null>(null);
 
   // Stage 2 — pinning (the reveal sequence)
   const [isPinning, setIsPinning] = useState(false);
@@ -406,6 +413,7 @@ export default function Deploy() {
     setDeployError(null);
     setBuildInfo(null);
     setIsResuming(false);
+    setPastedKey(null);
     if (buildPollRef.current !== null) clearTimeout(buildPollRef.current);
   };
 
@@ -424,6 +432,7 @@ export default function Deploy() {
     setDeployStartedAt(null);
     setBuildInfo(null);
     setIsResuming(false);
+    setPastedKey(null);
     if (buildPollRef.current !== null) clearTimeout(buildPollRef.current);
   };
 
@@ -458,12 +467,12 @@ export default function Deploy() {
     <AppShell>
       <PageHeader
         title="Deploy"
-        subtitle="Two steps: build & verify your site, then deploy it live to IPFS."
+        subtitle="Upload your files, verify, and publish to IPFS."
       />
 
       {/* Project selector */}
-      <Card>
-        <label className="block text-xs font-medium text-ink-mut mb-2">Project</label>
+      <Card className="animate-fade-in" style={{ animationDelay: '50ms' }}>
+        <label className="block text-xs font-semibold tracking-wide uppercase text-ink-mut mb-2">Project</label>
         {projectsLoadError ? (
           <div className="flex items-center justify-between gap-3">
             <p className="text-red-400 text-sm">{projectsLoadError}</p>
@@ -558,6 +567,10 @@ export default function Deploy() {
             previewSrc={stageResult.previewPath ? previewUrl(stageResult.previewPath) : null}
             onCancel={resetStage}
             onProceed={proceedAnyway}
+            onHelperUpdate={(patch) =>
+              setStageResult((prev) => (prev ? { ...prev, ...patch } : prev))
+            }
+            onValidationKeySaved={setPastedKey}
           />
         )}
 
@@ -696,6 +709,13 @@ export default function Deploy() {
               onReset={reset}
               customDomain={projects.find((p) => p.id === selectedProjectId)?.customDomain}
             />
+
+            {deploymentStatus === 'ACTIVE' && liveDeployment && stageResult?.hasValidationKey && (
+              <ValidationKeyLiveCheck
+                deploymentId={liveDeployment.id}
+                expectedKey={pastedKey}
+              />
+            )}
 
             {deploymentStatus === 'ACTIVE' && liveDeployment && (
               <DeployDomainPanel deployment={liveDeployment} />

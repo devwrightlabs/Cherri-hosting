@@ -1,0 +1,47 @@
+CHERRI HOSTING — "CONFIGURE FOR PI" HELPERS + PROFESSIONAL DETAIL POLISH
+
+Two parts, run straight through in order. Do NOT change the build engine core, the payment/quote system, or the gated backend lane. Run both TypeScript checks at the end (zero errors) and give one summary.
+
+═══════════ PART 1 — THE TWO PI HELPERS ═══════════
+
+HELPER A — VALIDATION KEY FIELD (build this first):
+In Stage 1's verification area, when "No validation-key.txt at your site root":
+- Show an input: "Paste your Pi validation key" with help text: "Pi Network gives you this key when you register your app in the Pi Developer Portal. Cherri will place it at your site root as validation-key.txt." Link to the Pi Developer Portal.
+- FORMAT VALIDATION (reject obvious garbage): non-empty, no internal spaces/newlines, plausible length and character set for a Pi validation key (a long alphanumeric token — NOT a short word, sentence, URL, or junk). Reject clearly-invalid input with: "That doesn't look like a Pi validation key — copy the full key from your Pi Developer Portal."
+- BE HONEST ABOUT LIMITS (small text): "Cherri places the file; Pi Network verifies it when you connect your .pi domain." (Cherri cannot confirm the key is the right one for this app — only Pi can.)
+- On accept: write validation-key.txt at the ROOT of the built output containing exactly the pasted key (no extra whitespace/BOM), re-run verification → flips to "✓ validation-key.txt present."
+- SERVED-FILE CONFIRMATION: after a deploy that includes the key, fetch <deployed-site>/validation-key.txt from the live deployment and confirm it's reachable AND matches what was pasted. Show honestly: "✓ Your validation key is live — now complete verification in the Pi Developer Portal" (link), or the real reason if unreachable/mismatched.
+
+HELPER B — PI SDK INJECTION:
+When "No Pi SDK detected":
+- Offer a toggle/button: "Add Pi SDK to my app" — one-line explanation: "Pi apps need the Pi SDK to use Pi login and payments inside Pi Browser. Cherri can add it for you."
+- On enable, inject into the built index.html <head>:
+    <script src="https://sdk.minepi.com/pi-sdk.js"></script>
+    <script>Pi.init({ version: "2.0", sandbox: <true when TEST env, false when LIVE> })</script>
+  Sandbox flag follows the current TEST/LIVE environment.
+- DETECT-BEFORE-INJECT: if the app already loads the Pi SDK (script tag or Pi.init in the built output), do NOT double-inject — show "✓ Pi SDK already present."
+- After injection, re-run verification → "✓ Pi SDK present."
+- UI note: "This connects your app to Pi Browser. Your app's own code still decides how to use Pi login/payments."
+
+GUIDANCE CHECKLIST (compact, plain language, near the helpers):
+1. Register your app in the Pi Developer Portal (link)
+2. Copy your validation key → paste it above (Cherri places the file)
+3. Add the Pi SDK (toggle) if your app uses Pi login/payments
+4. Deploy → connect your .pi domain in Stage 2 → verify in the Pi portal
+All non-blocking: plain static sites deploy fine without any of this.
+
+═══════════ PART 2 — PROFESSIONAL DETAIL POLISH (not bug fixes — refinement) ═══════════
+The app works and looks good. This pass makes it FEEL premium — the small details that separate a funded product from a good prototype. Sweep the ENTIRE client with a fine comb:
+
+- MICRO-CONSISTENCY: identical spacing rhythm on every screen (same page padding, same gaps between cards/sections), identical card radius + border + shadow everywhere, identical heading sizes per level. No screen slightly "off" from the others.
+- TYPOGRAPHY DETAILS: consistent font sizes/weights per role (page title / section title / body / caption), no orphan default styles, comfortable line-height, no text touching container edges.
+- INTERACTIVE FEEL: every button/tap target has a visible pressed state and (where it fits) a subtle 150ms transition; disabled states clearly look disabled; focus states visible. All tap targets ≥48px.
+- STATES SWEEP: every list/section has designed loading (skeletons matching content shape), empty (icon + one line + one action), and error (real message + retry) states — nothing default, blank, or raw.
+- COPY POLISH: sweep visible text for tone — short, confident, friendly, no dev-speak leaking to users (no raw codes/paths in user-facing copy; keep raw detail in collapsible logs). Consistent capitalization on buttons/labels.
+- TRANSITIONS: smooth, subtle transitions between the two deploy stages (Stage 1 collapsing to its summary, Stage 2 unlocking) — polished, not flashy; respect prefers-reduced-motion.
+- MOBILE FINISH: verify 320/390/430px — no horizontal scroll, nothing clipped or cramped, safe-area padding respected, bottom nav perfectly even.
+- SMALL DELIGHTS where cheap: the verification checkmarks animating in, the copy buttons giving a satisfying "Copied ✓" feedback, consistent teal accent discipline (one primary action per screen).
+
+RULES: visual/copy/interaction refinement only — do not alter business logic, routes, the engine, payments, or gating. If a "detail" would require logic changes, note it in the report instead of doing it.
+
+FINAL: both TypeScript checks (zero errors). Report: the two helpers working (key placement + served check, SDK inject + detect-before-inject), and a screen-by-screen list of the polish details applied.

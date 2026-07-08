@@ -97,17 +97,17 @@ export default function Landing() {
             Decentralised hosting on IPFS
           </div>
 
-          <h1 className="text-4xl font-bold text-ink font-display leading-[1.1] tracking-tight">
+          <h1 className="text-4xl sm:text-5xl font-bold text-ink font-display leading-tight tracking-tight">
             Deploy to the{' '}
             <span className="gold-text">permanent web</span>
           </h1>
 
-          <p className="text-ink-mut text-base mt-4 max-w-md mx-auto">
-            Upload your static site, get an IPFS URL in seconds. Pay with Pi. No
+          <p className="text-ink-mut text-base mt-5 max-w-md mx-auto leading-relaxed">
+            Upload your static site and get an IPFS URL in seconds. Pay with Pi. No
             servers, no lock-in.
           </p>
 
-          <div className="mt-7 flex flex-col gap-3">
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
             {isAuthenticated ? (
               <Link to="/deploy">
                 <Button size="lg" className="w-full justify-center">

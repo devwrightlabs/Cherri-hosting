@@ -95,9 +95,9 @@ export default function BottomTabBar() {
             className={[
               '-mt-6',
               'flex items-center justify-center',
-              'w-14 h-14 rounded-full',
-              'bg-gold-gradient text-surface-950',
-              'transition-transform active:scale-95',
+              'w-14 h-14 rounded-[20px]',
+              'bg-cherry-gradient text-surface-950',
+              'transition-all duration-300 hover:scale-105 active:scale-95',
               deployActive ? 'shadow-gold ring-2 ring-gold/60' : 'shadow-gold-sm',
             ].join(' ')}
           >
@@ -122,13 +122,13 @@ function TabButton({ tab, active }: { tab: Tab; active: boolean }) {
   return (
     <NavLink
       to={tab.to}
-      className="flex-1 flex flex-col items-center justify-end gap-1 pb-2"
+      className="flex-1 flex flex-col items-center justify-end gap-1 pb-2 group"
       style={{ minWidth: 0 }}
     >
-      <span className={active ? 'text-gold' : 'text-ink-mut'}>
+      <span className={`transition-all duration-200 group-hover:-translate-y-0.5 ${active ? 'text-gold' : 'text-ink-mut group-hover:text-ink/80'}`}>
         <Icon active={active} />
       </span>
-      <span className={`text-[10px] font-medium leading-none ${active ? 'text-gold' : 'text-ink-mut'}`}>
+      <span className={`text-[10px] font-semibold leading-none tracking-wide transition-colors ${active ? 'text-gold' : 'text-ink-mut group-hover:text-ink/80'}`}>
         {tab.label}
       </span>
     </NavLink>

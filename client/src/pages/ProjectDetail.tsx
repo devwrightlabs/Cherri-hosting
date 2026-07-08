@@ -221,10 +221,10 @@ export default function ProjectDetail() {
 
       {/* Live deployment */}
       {activeDeployment && (
-        <Card className="border-gold/25">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="w-2 h-2 rounded-full bg-live animate-pulse-slow" />
-            <span className="text-sm font-medium text-ink">Live deployment</span>
+        <Card className="border-gold/30 shadow-gold-sm animate-fade-in">
+          <div className="flex items-center gap-2.5 mb-4">
+            <span className="w-2 h-2 rounded-full bg-live animate-pulse-slow shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
+            <span className="text-sm font-semibold text-ink">Live Deployment</span>
           </div>
           {backendOutage && (
             <div

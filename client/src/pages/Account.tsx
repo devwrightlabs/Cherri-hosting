@@ -85,11 +85,11 @@ export default function Account() {
 
   return (
     <AppShell>
-      <PageHeader title="Account" subtitle="Your plan, usage, and profile." />
+      <PageHeader title="Account" subtitle="Your plan, usage, and profile." className="animate-fade-in" />
 
       {/* Prominent plan + usage card */}
-      <Card>
-        <div className="flex items-center justify-between gap-3 flex-wrap mb-5">
+      <Card className="animate-fade-in" style={{ animationDelay: '50ms' }}>
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-6">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-mut mb-1.5">
               Current plan
@@ -135,8 +135,8 @@ export default function Account() {
       </Card>
 
       {/* Profile */}
-      <Card>
-        <h2 className="text-base font-semibold text-ink font-display mb-4">Profile</h2>
+      <Card className="animate-fade-in" style={{ animationDelay: '100ms' }}>
+        <h2 className="text-xl font-bold text-ink font-display tracking-tight mb-5">Profile</h2>
         {isLoading ? (
           <div className="space-y-3">
             <Skeleton className="h-4 w-32" />
@@ -212,11 +212,11 @@ export default function Account() {
       </Card>
 
       {/* Pi Network */}
-      <Card>
-        <h2 className="text-base font-semibold text-ink font-display mb-4">Pi Network</h2>
+      <Card className="animate-fade-in" style={{ animationDelay: '150ms' }}>
+        <h2 className="text-xl font-bold text-ink font-display tracking-tight mb-5">Pi Network</h2>
         <div className="flex items-center justify-between text-sm">
           <span className="text-ink-mut">Pi user ID</span>
-          <span className="font-mono text-xs text-ink truncate max-w-[160px]">
+          <span className="font-mono text-xs text-ink bg-surface-800 px-2 py-1 rounded border border-hairline truncate max-w-[160px]">
             {profile?.piUserId ?? user?.piUserId ?? '—'}
           </span>
         </div>

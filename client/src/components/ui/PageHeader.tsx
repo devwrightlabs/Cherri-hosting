@@ -25,17 +25,17 @@ export default function PageHeader({
   className = '',
 }: PageHeaderProps) {
   return (
-    <header className={`flex items-start justify-between gap-4 ${className}`}>
+    <header className={`flex items-start justify-between gap-4 animate-fade-in ${className}`}>
       <div className="min-w-0">
         {eyebrow && (
-          <div className="text-xs font-medium text-ink-mut mb-1.5">{eyebrow}</div>
+          <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-mut mb-1.5">{eyebrow}</div>
         )}
-        <h1 className="text-[1.75rem] leading-[1.1] font-bold text-ink font-display tracking-tight">
+        <h1 className="text-3xl leading-tight font-bold text-ink font-display tracking-tight">
           {title}
         </h1>
-        {subtitle && <p className="text-ink-mut text-sm mt-2 leading-relaxed">{subtitle}</p>}
+        {subtitle && <p className="text-ink-mut text-sm mt-1.5 leading-relaxed">{subtitle}</p>}
       </div>
-      {action && <div className="shrink-0 pt-0.5">{action}</div>}
+      {action && <div className="shrink-0 pt-1">{action}</div>}
     </header>
   );
 }

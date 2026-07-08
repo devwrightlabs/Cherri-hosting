@@ -126,20 +126,20 @@ export default function Billing() {
     <AppShell>
       <PageHeader
         title="Billing"
-        subtitle="Past invoices and charges."
+        subtitle="Your past invoices and charges."
         action={
           <Link to="/account">
-            <Button size="sm" variant="secondary">Account</Button>
+            <Button size="sm" variant="secondary">Account settings</Button>
           </Link>
         }
       />
 
       {isLoading ? (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {Array.from({ length: 3 }).map((_, i) => (
             <Card key={i}>
-              <Skeleton className="h-5 w-28 mb-2" />
-              <Skeleton className="h-3 w-44" />
+              <Skeleton className="h-6 w-28 mb-3" />
+              <Skeleton className="h-4 w-44" />
             </Card>
           ))}
         </div>
@@ -163,15 +163,15 @@ export default function Billing() {
             </svg>
           }
           title="No invoices yet"
-          description="Your billing history will appear here once charges are made."
+          description="Your billing history will appear here once you have been charged."
           action={
-            <Link to="/pricing">
-              <Button>View plans</Button>
+            <Link to="/pricing" className="block w-full">
+              <Button className="w-full justify-center">View plans</Button>
             </Link>
           }
         />
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {invoices.map((inv) => (
             <button
               key={inv.id}

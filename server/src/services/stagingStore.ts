@@ -90,6 +90,31 @@ export function releaseStage(id: string): void {
   if (s) s.pinning = false;
 }
 
+export type MutateResult =
+  | { ok: true; stage: Stage }
+  | { ok: false; reason: 'not_found' | 'pinning' };
+
+/**
+ * Atomically mutate a staged upload's files (e.g. add validation-key.txt or
+ * inject the Pi SDK) BEFORE it is pinned. Mirrors claimStage's atomicity:
+ * ownership + pinning are checked and the mutation applied synchronously with
+ * no awaits in between, so a concurrent /pin cannot interleave. The mutation
+ * callback MUST be synchronous. totalBytes is recomputed after the mutation so
+ * quota checks at pin time stay accurate.
+ */
+export function mutateStage(
+  id: string,
+  userId: string,
+  fn: (stage: Stage) => void,
+): MutateResult {
+  const s = getStage(id);
+  if (!s || s.userId !== userId) return { ok: false, reason: 'not_found' };
+  if (s.pinning) return { ok: false, reason: 'pinning' };
+  fn(s);
+  s.totalBytes = s.files.reduce((acc, f) => acc + f.buffer.length, 0);
+  return { ok: true, stage: s };
+}
+
 // Periodic sweep so expired uploads don't linger in memory.
 const sweep = setInterval(() => {
   const now = Date.now();

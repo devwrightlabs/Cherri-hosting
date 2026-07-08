@@ -513,3 +513,43 @@ export function scanPiSdk(files: DeployFile[]): PiSdkScan {
 export function hasValidationKey(files: DeployFile[]): boolean {
   return files.some((f) => f.path === 'validation-key.txt');
 }
+
+/**
+ * Plausibility check for a Pi domain validation key. Pi's exact key format is
+ * not publicly specified, so this is deliberately lenient — one long unbroken
+ * token of URL-safe characters — while still rejecting obvious non-keys
+ * (sentences, URLs, empty strings, pasted HTML). Callers must trim first.
+ */
+const VALIDATION_KEY_RE = /^[A-Za-z0-9_-]{20,512}$/;
+
+export function isPlausibleValidationKey(key: string): boolean {
+  return VALIDATION_KEY_RE.test(key);
+}
+
+/**
+ * Inject the Pi SDK <script> + Pi.init call into a built HTML document's head.
+ * Pure string transform — detection (scanPiSdk) is the caller's job; this
+ * function only performs the insertion. Prefers just before </head>, then just
+ * after <head…>, then before </body>, then prepends as a last resort so the
+ * tags are never silently dropped.
+ */
+export function injectPiSdkIntoHtml(html: string, sandbox: boolean): string {
+  const snippet =
+    `<script src="https://sdk.minepi.com/pi-sdk.js"></script>\n` +
+    `<script>Pi.init({ version: "2.0", sandbox: ${sandbox ? 'true' : 'false'} });</script>`;
+
+  const headClose = html.match(/<\/head\s*>/i);
+  if (headClose && headClose.index !== undefined) {
+    return html.slice(0, headClose.index) + snippet + '\n' + html.slice(headClose.index);
+  }
+  const headOpen = html.match(/<head[^>]*>/i);
+  if (headOpen && headOpen.index !== undefined) {
+    const at = headOpen.index + headOpen[0].length;
+    return html.slice(0, at) + '\n' + snippet + html.slice(at);
+  }
+  const bodyClose = html.match(/<\/body\s*>/i);
+  if (bodyClose && bodyClose.index !== undefined) {
+    return html.slice(0, bodyClose.index) + snippet + '\n' + html.slice(bodyClose.index);
+  }
+  return snippet + '\n' + html;
+}

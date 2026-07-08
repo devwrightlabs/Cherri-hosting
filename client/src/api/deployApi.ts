@@ -163,6 +163,90 @@ export async function pinStaged(stageId: string): Promise<DeployFilesResult> {
   return (res.data as { deployment: DeployFilesResult }).deployment;
 }
 
+// ─── "Configure for Pi" stage helpers ────────────────────────────────────────
+
+/**
+ * Client-side mirror of the server's validation-key plausibility check: one
+ * long unbroken token of URL-safe characters. Trim before testing. Kept in
+ * sync with `isPlausibleValidationKey` on the server so the input can reject
+ * obvious non-keys instantly with the same message the server would send.
+ */
+export function isPlausibleValidationKey(key: string): boolean {
+  return /^[A-Za-z0-9_-]{20,512}$/.test(key);
+}
+
+/** Refreshed verification facts returned after a stage helper mutation. */
+export interface StageHelperResult {
+  hasValidationKey: boolean;
+  sdk: PiSdkScan;
+  fileCount: number;
+  totalBytes: number;
+}
+
+/**
+ * POST /api/deployments/stages/:stageId/validation-key — write the pasted Pi
+ * validation key as validation-key.txt at the staged site's root.
+ */
+export async function addStageValidationKey(
+  stageId: string,
+  key: string,
+): Promise<StageHelperResult> {
+  const res = await apiClient.post(`/deployments/stages/${stageId}/validation-key`, { key });
+  return res.data as StageHelperResult;
+}
+
+export interface PiSdkInjectResult extends StageHelperResult {
+  /** True when the site already loaded the SDK / called Pi.init — nothing was injected. */
+  alreadyPresent: boolean;
+  injected: boolean;
+  env: 'testnet' | 'mainnet';
+  sandbox: boolean;
+}
+
+/**
+ * POST /api/deployments/stages/:stageId/pi-sdk — inject the Pi SDK script +
+ * Pi.init() into the staged site's entry HTML. Detect-before-inject: a site
+ * that already has the SDK comes back with alreadyPresent:true, untouched.
+ */
+export async function addStagePiSdk(
+  stageId: string,
+  env: 'testnet' | 'mainnet',
+): Promise<PiSdkInjectResult> {
+  const res = await apiClient.post(`/deployments/stages/${stageId}/pi-sdk`, { env });
+  return res.data as PiSdkInjectResult;
+}
+
+/** Result of the post-deploy served-file confirmation for validation-key.txt. */
+export interface ValidationKeyCheck {
+  /** The exact public URL that was fetched. */
+  url: string;
+  /** True only when the gateway actually returned the file. */
+  served: boolean;
+  /** True when the check was inconclusive (rate-limit / network) — NOT "down". */
+  indeterminate: boolean;
+  status: number | null;
+  reason?: string;
+  /** True/false when an expected key was compared; null = reachability only. */
+  matches: boolean | null;
+  checkedAt: string;
+}
+
+/**
+ * GET /api/deployments/:deploymentId/validation-key-check — REAL check that
+ * `<site>/validation-key.txt` is served by the gateway, optionally comparing
+ * against the key pasted this session.
+ */
+export async function checkValidationKey(
+  deploymentId: string,
+  expected?: string,
+): Promise<ValidationKeyCheck> {
+  const res = await apiClient.get(`/deployments/${deploymentId}/validation-key-check`, {
+    params: expected ? { expected } : undefined,
+    timeout: 30_000,
+  });
+  return res.data as ValidationKeyCheck;
+}
+
 // ─── Server-side build (Vercel-style) ────────────────────────────────────────
 
 export type BuildStatus =

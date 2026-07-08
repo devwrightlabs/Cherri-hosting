@@ -8,6 +8,8 @@ interface CardProps {
   onClick?: () => void;
   /** Internal padding. Default `md` (20px). Use `none` for full-bleed content. */
   padding?: Padding;
+  /** Inline styles — used for per-card animation delays in staggered entrances. */
+  style?: React.CSSProperties;
 }
 
 const paddingClasses: Record<Padding, string> = {
@@ -27,12 +29,14 @@ export default function Card({
   className = '',
   onClick,
   padding = 'md',
+  style,
 }: CardProps) {
   return (
     <div
       onClick={onClick}
+      style={style}
       className={`rounded-2xl bg-surface-900 border border-hairline shadow-card ${paddingClasses[padding]} ${
-        onClick ? 'cursor-pointer hover:border-cherry-500/40 transition-colors' : ''
+        onClick ? 'cursor-pointer hover:border-cherry-500/40 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99] transition-all duration-200' : 'transition-colors duration-200'
       } ${className}`}
     >
       {children}

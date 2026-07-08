@@ -23,16 +23,16 @@ export default function EmptyState({
 }: EmptyStateProps) {
   return (
     <div
-      className={`rounded-2xl bg-surface-900 border border-hairline shadow-card px-6 py-14 text-center flex flex-col items-center ${className}`}
+      className={`rounded-2xl bg-surface-900 border border-hairline shadow-card px-6 py-12 text-center flex flex-col items-center animate-fade-in ${className}`}
     >
       {icon && (
-        <div className="mb-5 flex items-center justify-center w-16 h-16 rounded-2xl bg-surface-800 border border-hairline text-gold">
+        <div className="mb-6 flex items-center justify-center w-16 h-16 rounded-[20px] bg-surface-800 border border-hairline text-gold shadow-sm">
           {icon}
         </div>
       )}
-      <h3 className="font-display font-semibold text-ink text-lg">{title}</h3>
-      <p className="text-ink-mut text-sm mt-2 max-w-xs leading-relaxed">{description}</p>
-      {action && <div className="mt-6">{action}</div>}
+      <h3 className="font-display font-bold text-ink text-xl tracking-tight">{title}</h3>
+      <p className="text-ink-mut text-sm mt-2 max-w-[260px] leading-relaxed">{description}</p>
+      {action && <div className="mt-7 w-full max-w-[200px] mx-auto">{action}</div>}
     </div>
   );
 }

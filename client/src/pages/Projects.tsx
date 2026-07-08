@@ -70,11 +70,11 @@ function CreateProjectSheet({
         className="bg-surface-900 border border-hairline rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] shadow-sheet animate-fade-up"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="w-10 h-1 rounded-full bg-surface-700 mx-auto mb-5 sm:hidden" />
-        <h2 className="text-xl font-bold text-ink font-display mb-5">New project</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="w-10 h-1 rounded-full bg-surface-700 mx-auto mb-6 sm:hidden" />
+        <h2 className="text-2xl font-bold text-ink font-display mb-6 tracking-tight">New project</h2>
+        <form onSubmit={handleSubmit} className="space-y-5">
           <Input
-            label="Project name"
+            label="Project Name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="my-awesome-site"
@@ -84,24 +84,24 @@ function CreateProjectSheet({
             required
           />
           <div>
-            <label className="block text-xs font-medium text-ink-mut mb-2">
-              Description (optional)
+            <label className="block text-xs font-semibold tracking-wide uppercase text-ink-mut mb-2">
+              Description (Optional)
             </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What is this project about?"
-              className="w-full bg-surface-800 border border-surface-600 rounded-xl px-4 py-3 text-ink text-sm focus:outline-none focus:border-cherry-500/50 focus:ring-2 focus:ring-cherry-500 focus:ring-offset-2 focus:ring-offset-surface-950 transition-colors resize-none"
+              className="w-full bg-surface-800 border border-surface-600 rounded-xl px-4 py-3 text-ink text-sm focus:outline-none focus:border-cherry-500/50 focus:ring-2 focus:ring-cherry-500 focus:ring-offset-2 focus:ring-offset-surface-950 hover:bg-surface-700/50 transition-all duration-200 resize-none"
               rows={3}
               maxLength={500}
             />
           </div>
-          {error && <p className="text-red-400 text-xs">{error}</p>}
-          <div className="flex gap-3 pt-1">
-            <Button type="submit" isLoading={isLoading} className="flex-1">
+          {error && <p className="text-red-400 text-xs animate-fade-in">{error}</p>}
+          <div className="flex gap-3 pt-2">
+            <Button type="submit" isLoading={isLoading} className="flex-1 justify-center">
               Create project
             </Button>
-            <Button type="button" variant="secondary" onClick={onClose}>
+            <Button type="button" variant="secondary" className="flex-1 justify-center" onClick={onClose}>
               Cancel
             </Button>
           </div>
@@ -156,11 +156,11 @@ export default function Projects() {
       )}
 
       {isLoading ? (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {Array.from({ length: 3 }).map((_, i) => (
             <Card key={i}>
-              <Skeleton className="h-5 w-32 mb-2.5" />
-              <Skeleton className="h-3 w-44 mb-3" />
+              <Skeleton className="h-6 w-32 mb-3" />
+              <Skeleton className="h-4 w-44 mb-4" />
               <Skeleton className="h-3 w-24" />
             </Card>
           ))}
@@ -173,11 +173,11 @@ export default function Projects() {
             </svg>
           }
           title="No projects yet"
-          description="Create a project to start deploying sites to the permanent web."
-          action={<Button onClick={() => setShowSheet(true)}>Create a project</Button>}
+          description="Create your first project to start deploying sites."
+          action={<Button onClick={() => setShowSheet(true)} className="w-full justify-center">Create project</Button>}
         />
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {projects.map((project) => {
             const latest = project.deployments?.[0];
             const count = project._count?.deployments ?? project.deployments?.length ?? 0;

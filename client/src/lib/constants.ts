@@ -68,3 +68,11 @@ function resolvePiDomainPortalUrl(): string {
 }
 
 export const PI_DOMAIN_PORTAL_URL = resolvePiDomainPortalUrl();
+
+/**
+ * Pi's Developer Portal — where apps are registered and validation keys are
+ * issued. The `.pi` address only resolves inside Pi Browser (Pi Network
+ * controls that resolution), which is fine for a Pi-Browser-first product;
+ * UI copy that links here should say so.
+ */
+export const PI_DEVELOPER_PORTAL_URL = 'https://develop.pi';

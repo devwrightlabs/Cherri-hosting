@@ -100,12 +100,12 @@ export default function Dashboard() {
       )}
 
       <PageHeader
-        title={`Welcome back${user?.username ? `, ${user.username}` : ''}`}
-        subtitle="Deploy static sites to the permanent web and pay with Pi."
+        title={`Welcome${user?.username ? `, ${user.username}` : ''}`}
+        subtitle="Deploy your static sites to the permanent web."
       />
 
       {/* Stat grid — two confident numbers */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4 animate-fade-in" style={{ animationDelay: '50ms' }}>
         <StatTile label="Projects" value={projects.length} isLoading={isLoading} />
         <StatTile label="Deployments" value={totalDeployments} isLoading={isLoading} />
       </div>
@@ -164,12 +164,12 @@ export default function Dashboard() {
       <DomainGateway projects={projects} />
 
       {/* Recent projects */}
-      <section>
+      <section className="animate-fade-in" style={{ animationDelay: '150ms' }}>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-ink font-display">Projects</h2>
+          <h2 className="text-xl font-bold text-ink font-display tracking-tight">Projects</h2>
           {projects.length > 0 && (
-            <Link to="/projects" className="text-ink-mut text-sm hover:text-ink transition-colors">
-              View all →
+            <Link to="/projects" className="text-ink-mut text-sm hover:text-ink transition-colors px-2 py-1">
+              View all
             </Link>
           )}
         </div>
@@ -191,10 +191,10 @@ export default function Dashboard() {
               </svg>
             }
             title="No projects yet"
-            description="Create a project, then drop your files into the deploy zone above."
+            description="Create a project, then drop your files into the deploy zone above to go live."
             action={
-              <Link to="/projects">
-                <Button>Create a project</Button>
+              <Link to="/projects" className="block w-full">
+                <Button className="w-full justify-center">Create project</Button>
               </Link>
             }
           />
