@@ -4,24 +4,20 @@ import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import { pirc2Api, statusApi, PiSubscription } from '../../lib/api';
 import { PREMIUM_PRICE_PI } from '../../lib/constants';
+import { subscriptionStatusLabel } from '../../lib/statusLabels';
 
 const BILLING_INTERVAL_DAYS = 30;
 const DEFAULT_CYCLES = 12;
 
-/** Map subscription status to a badge variant + label. */
-function statusBadge(status: string): { variant: 'premium' | 'default'; label: string } {
-  switch (status) {
-    case 'ACTIVE':
-      return { variant: 'premium', label: 'Active' };
-    case 'PAST_DUE':
-      return { variant: 'default', label: 'Past due' };
-    case 'CANCELLED':
-      return { variant: 'default', label: 'Cancelled' };
-    case 'EXPIRED':
-      return { variant: 'default', label: 'Expired' };
-    default:
-      return { variant: 'default', label: status };
-  }
+/** Map subscription status to a badge variant + plain-language label. */
+function statusBadge(status: string): {
+  variant: 'premium' | 'warning' | 'default';
+  label: string;
+} {
+  const label = subscriptionStatusLabel(status);
+  if (status === 'ACTIVE') return { variant: 'premium', label };
+  if (status === 'PAST_DUE') return { variant: 'warning', label };
+  return { variant: 'default', label };
 }
 
 function formatDate(iso: string | null): string {
