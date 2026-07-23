@@ -42,6 +42,10 @@ export interface Project {
   _count?: { deployments: number };
 }
 
+/** Post-pin live-link verification result. VERIFIED = the gateway actually
+ *  returned the site's HTML; anything less is shown honestly, never as "live". */
+export type LiveCheckStatus = 'UNCHECKED' | 'VERIFIED' | 'INDETERMINATE' | 'FAILED';
+
 export interface Deployment {
   id: string;
   projectId: string;
@@ -51,6 +55,12 @@ export interface Deployment {
   status: DeploymentStatus;
   /** Human-readable failure detail (real Pinata error) when status === 'FAILED'. */
   failureReason?: string | null;
+  /** Entry file within the pinned directory (e.g. "index.html"). */
+  entryPath?: string | null;
+  liveCheckStatus?: LiveCheckStatus;
+  /** Honest detail for INDETERMINATE / FAILED live checks. */
+  liveCheckDetail?: string | null;
+  liveCheckAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

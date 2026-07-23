@@ -71,6 +71,15 @@ export async function getDeployment(id: string): Promise<Deployment> {
   return (res.data as { deployment: Deployment }).deployment;
 }
 
+/**
+ * POST /api/deployments/:id/verify-live — re-run the server's honest
+ * live-link check (body-sniffing GET against the real gateway URL).
+ */
+export async function verifyLive(id: string): Promise<Deployment> {
+  const res = await apiClient.post(`/deployments/${id}/verify-live`);
+  return (res.data as { deployment: Deployment }).deployment;
+}
+
 // ─── Staging (validate + preview before pinning) ─────────────────────────────
 
 export interface FileTreeEntry {

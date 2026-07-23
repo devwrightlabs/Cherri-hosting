@@ -242,7 +242,7 @@ export default function ProjectDetail() {
               <span className="font-mono text-ink break-all">{activeDeployment.cid}</span>
             </div>
             <div className="flex items-start gap-2">
-              <span className="text-ink-mut shrink-0 w-8">URL</span>
+              <span className="text-ink-mut shrink-0 w-8">Link</span>
               <a
                 href={activeDeployment.gateway}
                 target="_blank"

@@ -62,6 +62,10 @@ export default function SystemStatusBanner() {
   const issues: string[] = [];
   if (!status.integrations.pinata) issues.push('IPFS deployments are paused');
   if (!status.integrations.pi) issues.push('Pi Network payments are unavailable');
+  // Honest gateway warning: pinning works, but the public IPFS gateway blocks
+  // website HTML — deployed sites won't open until a dedicated gateway is set.
+  if (status.integrations.pinata && !status.integrations.dedicatedGateway)
+    issues.push('Deployed sites may not open in the browser until a dedicated IPFS gateway is configured');
 
   if (issues.length === 0) return null;
 

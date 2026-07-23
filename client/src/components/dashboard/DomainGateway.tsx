@@ -136,7 +136,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
     <Card>
       <div className="flex items-center gap-2 mb-1">
         <span className="text-lg">🌐</span>
-        <h2 className="text-sm font-semibold text-white">Connect a Pi domain</h2>
+        <h2 className="text-sm font-semibold text-ink">Connect a Pi domain</h2>
       </div>
       <p className="text-surface-500 text-xs leading-relaxed mb-4">
         Take your site to a <span className="font-mono">.pi</span> address in three steps.
@@ -178,7 +178,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
             <select
               value={selectedProjectId}
               onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="w-full bg-surface-700 border border-surface-600 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-cherry-500"
+              className="w-full bg-surface-800 border border-surface-600 rounded-lg px-3 py-2 text-ink text-xs focus:outline-none focus:border-cherry-500"
             >
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -351,7 +351,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
               onKeyDown={(e) => { if (e.key === 'Enter') void handleSaveMapping(); }}
               placeholder="your-domain.pi"
               disabled={!canMapMore}
-              className="w-full bg-surface-700 border border-surface-600 rounded-lg px-3 py-2 text-white text-xs placeholder-surface-500 focus:outline-none focus:border-cherry-500 disabled:opacity-50 font-mono"
+              className="w-full bg-surface-800 border border-surface-600 rounded-lg px-3 py-2 text-ink text-xs placeholder-surface-500 focus:outline-none focus:border-cherry-500 disabled:opacity-50 font-mono"
             />
 
             {!canMapMore && (

@@ -116,6 +116,7 @@ export default function Deploy() {
   const navigate = useNavigate();
 
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(true);
   const [selectedProjectId, setSelectedProjectId] = useState(
     searchParams.get('projectId') ?? '',
   );
@@ -173,7 +174,8 @@ export default function Deploy() {
       })
       .catch((err) => {
         setProjectsLoadError(extractApiError(err, 'Could not load your projects. Please refresh.'));
-      });
+      })
+      .finally(() => setProjectsLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -186,17 +188,29 @@ export default function Deploy() {
 
   const pollStatus = useCallback((id: string) => {
     if (pollTimeoutRef.current !== null) clearTimeout(pollTimeoutRef.current);
+    // Bounded extra polls after ACTIVE while the server's post-pin live-link
+    // verification is still running (liveCheckStatus === 'UNCHECKED').
+    let liveCheckPolls = 0;
 
     const poll = async () => {
       try {
         const d = await getDeployment(id);
         setDeploymentStatus(d.status);
-        if (d.status === 'ACTIVE' || d.status === 'FAILED') {
+        if (d.status === 'FAILED') {
           // Keep the deployment on FAILED too so the reveal can show the real
           // failure reason, not a generic message.
           setLiveDeployment(d);
           if (pollTimeoutRef.current !== null) clearTimeout(pollTimeoutRef.current);
           return;
+        }
+        if (d.status === 'ACTIVE') {
+          setLiveDeployment(d);
+          const checked = d.liveCheckStatus && d.liveCheckStatus !== 'UNCHECKED';
+          liveCheckPolls += 1;
+          if (checked || liveCheckPolls > 20) {
+            if (pollTimeoutRef.current !== null) clearTimeout(pollTimeoutRef.current);
+            return;
+          }
         }
       } catch {
         // ignore transient polling errors
@@ -477,12 +491,15 @@ export default function Deploy() {
           <div className="flex items-center justify-between gap-3">
             <p className="text-red-400 text-sm">{projectsLoadError}</p>
             <button
-              className="shrink-0 text-xs underline text-red-400"
+              className="shrink-0 inline-flex items-center min-h-[44px] px-2 text-xs underline text-red-400"
               onClick={() => window.location.reload()}
             >
               Retry
             </button>
           </div>
+        ) : projectsLoading ? (
+          // Skeleton while projects load — never claim "no projects" prematurely.
+          <div className="h-12 rounded-xl bg-surface-800 border border-hairline animate-pulse" />
         ) : projects.length === 0 ? (
           <p className="text-ink-mut text-sm">
             You have no projects yet.{' '}

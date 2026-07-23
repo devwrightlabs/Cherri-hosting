@@ -17,6 +17,15 @@ const statusVariant: Record<
   FAILED: 'error',
 };
 
+/** Plain-language status labels — never show raw enum values to users. */
+const statusLabel: Record<string, string> = {
+  ACTIVE: 'Published',
+  PENDING: 'Queued',
+  UPLOADING: 'Uploading',
+  PINNING: 'Publishing',
+  FAILED: 'Failed',
+};
+
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
   const k = 1024;
@@ -33,7 +42,7 @@ export default function DeploymentCard({ deployment }: DeploymentCardProps) {
       <div className="flex items-center justify-between gap-3 mb-3">
         <div className="flex items-center gap-2 min-w-0">
           <Badge variant={variant} dot>
-            {deployment.status}
+            {statusLabel[deployment.status] ?? deployment.status}
           </Badge>
           <span className="text-ink-mut text-xs">
             {new Date(deployment.createdAt).toLocaleDateString()}
@@ -45,8 +54,8 @@ export default function DeploymentCard({ deployment }: DeploymentCardProps) {
       </div>
 
       {deployment.cid && (
-        <p className="font-mono text-xs text-ink-mut truncate mb-3">
-          ipfs://{deployment.cid}
+        <p className="text-xs text-ink-mut truncate mb-3">
+          Permanent address: <span className="font-mono">{deployment.cid}</span>
         </p>
       )}
 

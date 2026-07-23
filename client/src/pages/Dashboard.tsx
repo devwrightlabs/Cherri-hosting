@@ -93,7 +93,10 @@ export default function Dashboard() {
       {projectsError && (
         <div className="rounded-xl bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-400 flex items-center justify-between gap-3">
           <span>{projectsError}</span>
-          <button className="shrink-0 text-xs font-medium underline" onClick={loadProjects}>
+          <button
+            className="shrink-0 inline-flex items-center min-h-[44px] px-2 text-xs font-medium underline"
+            onClick={loadProjects}
+          >
             Retry
           </button>
         </div>

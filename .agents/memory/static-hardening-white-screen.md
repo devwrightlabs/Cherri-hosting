@@ -35,11 +35,14 @@ script (which injects at end-of-head); verify the EXACT bytes that will be pinne
   never pin a known white screen).
 
 ## Hard-won decisions
-- **DO NOT rewrite JS string literals.** `"/assets/chunk.js"`→`"./assets/chunk.js"` is WRONG
-  for ESM dynamic imports: they resolve relative to the MODULE url (a chunk already in
-  `/assets/`), giving `/assets/assets/…`. HTML rewrite + `<base>` fixes the document-level
-  loads that cause the white screen; deeper public-path handling is a per-bundler concern,
-  not a blind replace. (Architect-confirmed.)
+- **JS string-literal rewriting must be EXISTENCE-GATED, never blind.** A blind
+  `"/x"`→`"./x"` replace is WRONG for ESM dynamic imports (they resolve relative to the
+  MODULE url — a chunk already in `/assets/` would yield `/assets/assets/…`). The shipped
+  approach: rewrite a root-absolute literal in a JS file ONLY when the exact path exists as
+  a file in the bundle, and skip literals directly preceded by `import(`/`from ` prefixes;
+  plus a separate marker-gated rewrite of Vite's preload-helper `return"/"+dep` →
+  `return"./"+dep`. Runtime-fetch paths (`fetch('/data.json')`) are what this fixes.
+  (Architect-reviewed; 7 unit tests in `staticHardening.test.ts`.)
 - **Quota must be re-checked AFTER hardening.** The route-level gate runs on pre-hardening
   size; the `404.html` mirror (≈ a second index.html) + config injection add bytes. Re-sum
   `filesToPin` and compare to `storageUsed + finalBytes > storageLimit` inside executePin

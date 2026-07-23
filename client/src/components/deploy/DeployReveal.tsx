@@ -3,7 +3,8 @@ import { QRCodeSVG } from 'qrcode.react';
 import Button from '../ui/Button';
 import ProgressBar from '../ui/ProgressBar';
 import { useToast } from '../ui/Toast';
-import { Deployment, DeploymentStatus } from '../../types';
+import { verifyLive } from '../../api/deployApi';
+import { Deployment, DeploymentStatus, LiveCheckStatus } from '../../types';
 
 type Phase = 'uploading' | 'pinning' | 'sealing' | 'live' | 'failed';
 
@@ -64,9 +65,28 @@ export default function DeployReveal({
   onReset,
   customDomain,
 }: DeployRevealProps) {
-  const { success } = useToast();
+  const { success, error: toastError } = useToast();
   const [phase, setPhase] = useState<Phase>('uploading');
   const [elapsed, setElapsed] = useState<number | null>(null);
+  // Result of a manual "Check again" — overrides the polled deployment prop.
+  const [rechecked, setRechecked] = useState<Deployment | null>(null);
+  const [isRechecking, setIsRechecking] = useState(false);
+
+  // A new deployment invalidates any previous manual re-check result.
+  useEffect(() => {
+    setRechecked(null);
+  }, [deployment?.id]);
+
+  const runRecheck = async (id: string) => {
+    setIsRechecking(true);
+    try {
+      setRechecked(await verifyLive(id));
+    } catch {
+      toastError('Could not run the link check — please try again.');
+    } finally {
+      setIsRechecking(false);
+    }
+  };
 
   useEffect(() => {
     if (status === 'FAILED') {
@@ -116,16 +136,23 @@ export default function DeployReveal({
 
   // ── Live reveal ─────────────────────────────────────────────────────────────
   if (phase === 'live' && deployment) {
-    const gateway = deployment.gateway;
+    // A manual re-check result supersedes the polled prop.
+    const dep = rechecked ?? deployment;
+    const gateway = dep.gateway;
+    const liveCheck: LiveCheckStatus = dep.liveCheckStatus ?? 'UNCHECKED';
+    const isVerified = liveCheck === 'VERIFIED';
+
     return (
       <div className="rounded-2xl bg-surface-900 border border-gold/25 p-5 flex flex-col items-center text-center">
         <ShieldStamp />
 
         <h3 className="mt-4 text-lg font-bold text-ink font-display reveal-item" style={{ animationDelay: '0.45s' }}>
-          Sealed to the permanent web
+          {isVerified ? 'Your site is live' : 'Published to the permanent web'}
         </h3>
         <p className="text-ink-mut text-sm mt-1 reveal-item" style={{ animationDelay: '0.55s' }}>
-          {elapsed != null ? `Live in ${elapsed.toFixed(1)}s · ` : ''}can't be taken down.
+          {isVerified
+            ? `${elapsed != null ? `Live in ${elapsed.toFixed(1)}s · ` : ''}we opened your link and your site rendered.`
+            : "Your files are safely stored and can't be taken down."}
         </p>
 
         {gateway && (
@@ -157,11 +184,83 @@ export default function DeployReveal({
           </>
         )}
 
+        {/* Honest live-link state — never celebrate an unverified link. */}
+        <div className="mt-4 w-full reveal-item text-left" style={{ animationDelay: '0.78s' }}>
+          {liveCheck === 'VERIFIED' && (
+            <div className="flex items-center gap-2 rounded-xl bg-live/10 border border-live/30 px-4 py-3">
+              <span className="text-live shrink-0">
+                <CheckIcon size={16} />
+              </span>
+              <p className="text-xs text-ink">
+                Link checked — it opens your site.
+              </p>
+            </div>
+          )}
+          {liveCheck === 'UNCHECKED' && (
+            <div className="rounded-xl bg-surface-800 border border-hairline px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                <span className="w-3.5 h-3.5 shrink-0 border-2 border-ink-mut border-t-transparent rounded-full animate-spin" />
+                <p className="text-xs text-ink-mut">
+                  Checking that your link opens your site…
+                </p>
+              </div>
+              {/* Escape hatch — the spinner must never be a dead end. */}
+              <Button
+                size="sm"
+                variant="secondary"
+                className="mt-2.5"
+                disabled={isRechecking}
+                onClick={() => void runRecheck(dep.id)}
+              >
+                {isRechecking ? 'Checking…' : 'Check now'}
+              </Button>
+            </div>
+          )}
+          {liveCheck === 'INDETERMINATE' && (
+            <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-3">
+              <p className="text-xs font-semibold text-amber-400 mb-1">
+                Couldn't confirm your link yet
+              </p>
+              <p className="text-xs text-ink-mut mb-2.5">
+                {dep.liveCheckDetail ??
+                  'The link could not be confirmed yet — it may still be propagating.'}
+              </p>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={isRechecking}
+                onClick={() => void runRecheck(dep.id)}
+              >
+                {isRechecking ? 'Checking…' : 'Check again'}
+              </Button>
+            </div>
+          )}
+          {liveCheck === 'FAILED' && (
+            <div className="rounded-xl bg-red-500/10 border border-red-500/30 px-4 py-3">
+              <p className="text-xs font-semibold text-red-400 mb-1">
+                The link doesn't open your site yet
+              </p>
+              <p className="text-xs text-ink-mut mb-2.5">
+                {dep.liveCheckDetail ??
+                  'The gateway did not return your site when we checked this link.'}
+              </p>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={isRechecking}
+                onClick={() => void runRecheck(dep.id)}
+              >
+                {isRechecking ? 'Checking…' : 'Check again'}
+              </Button>
+            </div>
+          )}
+        </div>
+
         <p
           className="mt-3 font-mono text-[11px] text-ink-mut break-all reveal-item"
           style={{ animationDelay: '0.8s' }}
         >
-          {deployment.cid}
+          {dep.cid}
         </p>
 
         {customDomain && (
@@ -178,13 +277,13 @@ export default function DeployReveal({
             </p>
             <div className="flex items-stretch gap-2">
               <code className="flex-1 min-w-0 font-mono text-[11px] bg-surface-800 border border-hairline rounded-lg px-2 py-1.5 text-ink break-all">
-                dnslink=/ipfs/{deployment.cid}
+                dnslink=/ipfs/{dep.cid}
               </code>
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={() => {
-                  void navigator.clipboard.writeText(`dnslink=/ipfs/${deployment.cid}`);
+                  void navigator.clipboard.writeText(`dnslink=/ipfs/${dep.cid}`);
                   success('Copied');
                 }}
               >
@@ -198,10 +297,15 @@ export default function DeployReveal({
           {gateway && (
             <Button
               size="lg"
+              variant={liveCheck === 'FAILED' ? 'secondary' : 'primary'}
               className="w-full justify-center"
               onClick={() => window.open(gateway, '_blank', 'noopener,noreferrer')}
             >
-              View live site ↗
+              {isVerified
+                ? 'Open your site ↗'
+                : liveCheck === 'FAILED'
+                  ? 'Open link anyway ↗'
+                  : 'Open link ↗'}
             </Button>
           )}
           <Button variant="ghost" className="w-full justify-center" onClick={onReset}>

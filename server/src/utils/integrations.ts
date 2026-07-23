@@ -7,6 +7,7 @@
  * throwing opaque runtime errors or crashing the process.
  */
 import { isS3Provider, s3ConfigMissing } from '../services/snapshotStoreS3';
+import { isDedicatedGatewayConfigured } from './gateway';
 
 /** True when a Pi Network server API key is configured (required for payments). */
 export function isPiConfigured(): boolean {
@@ -109,6 +110,10 @@ export function integrationStatus() {
   return {
     pi: isPiConfigured(),
     pinata: isPinataConfigured(),
+    // Dedicated IPFS gateway (serves HTML; the public gateway blocks it).
+    // When false, live links fall back to the public gateway and the client
+    // must warn that sites won't render there.
+    dedicatedGateway: isDedicatedGatewayConfigured(),
     database: isDatabaseConfigured(),
     pirc2: isPirc2Configured(),
   };

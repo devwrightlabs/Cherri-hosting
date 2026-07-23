@@ -19,6 +19,7 @@ import FormData from 'form-data';
 import { logger } from '../utils/logger';
 import { IPFS_CID_VERSION } from '../utils/constants';
 import { IntegrationUnavailableError } from '../utils/integrations';
+import { liveUrlForCid } from '../utils/gateway';
 
 const PINATA_BASE = 'https://api.pinata.cloud';
 
@@ -84,7 +85,8 @@ export async function pinFile(
 
   const cid = response.data.IpfsHash;
   const size = response.data.PinSize;
-  const gatewayUrl = `https://gateway.pinata.cloud/ipfs/${cid}`;
+  // Derived from the CID: dedicated Pinata gateway when configured, else public.
+  const gatewayUrl = liveUrlForCid(cid);
 
   logger.info('File pinned to IPFS', { cid, size, fileName });
   return { cid, gatewayUrl, size };
@@ -142,7 +144,8 @@ export async function pinDirectory(
 
   const cid = response.data.IpfsHash;
   const size = response.data.PinSize;
-  const gatewayUrl = `https://gateway.pinata.cloud/ipfs/${cid}`;
+  // Derived from the CID: dedicated Pinata gateway when configured, else public.
+  const gatewayUrl = liveUrlForCid(cid);
 
   logger.info('Directory pinned to IPFS', { cid, size, dirName, fileCount: files.length });
   return { cid, gatewayUrl, size };

@@ -126,7 +126,7 @@ export function PiSDKProvider({ children }: { children: React.ReactNode }) {
     return (
       <div className="min-h-screen bg-surface-950 flex flex-col items-center justify-center gap-6 px-4 text-center">
         <div className="text-5xl">🌐</div>
-        <h2 className="text-xl font-semibold text-white">
+        <h2 className="text-xl font-semibold text-ink">
           Could not reach Pi Network
         </h2>
         <p className="text-surface-600 max-w-sm text-sm">

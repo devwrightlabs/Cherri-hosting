@@ -217,6 +217,9 @@ export const pirc2Api = {
 export interface IntegrationStatus {
   pi: boolean;
   pinata: boolean;
+  /** True when the server has a dedicated IPFS gateway configured. Without it,
+   *  live links fall back to the public gateway, which blocks website HTML. */
+  dedicatedGateway: boolean;
   database: boolean;
   pirc2: boolean;
 }

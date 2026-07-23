@@ -43,13 +43,18 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
       clearTimeout(pollTimeoutRef.current);
       pollTimeoutRef.current = null;
     }
+    // Bounded extra polls after ACTIVE while the server's post-pin live-link
+    // verification is still running (liveCheckStatus === 'UNCHECKED') — same
+    // behaviour as the Deploy page, so the reveal never freezes on "checking".
+    let liveCheckPolls = 0;
+    let notifiedSuccess = false;
 
     const poll = async () => {
       try {
         const d = await getDeployment(id);
         setDeploymentStatus(d.status);
 
-        if (d.status === 'ACTIVE' || d.status === 'FAILED') {
+        if (d.status === 'FAILED') {
           if (pollTimeoutRef.current !== null) {
             clearTimeout(pollTimeoutRef.current);
             pollTimeoutRef.current = null;
@@ -57,10 +62,23 @@ export default function QuickDeploy({ projects, onDeploySuccess }: QuickDeployPr
           // Keep the deployment on FAILED too so the reveal can show the real
           // Pinata failure reason (failureReason) rather than a generic message.
           setLiveDeployment(d);
-          if (d.status === 'ACTIVE') {
+          return;
+        }
+        if (d.status === 'ACTIVE') {
+          setLiveDeployment(d);
+          if (!notifiedSuccess) {
+            notifiedSuccess = true;
             onDeploySuccess(d);
           }
-          return;
+          const checked = d.liveCheckStatus && d.liveCheckStatus !== 'UNCHECKED';
+          liveCheckPolls += 1;
+          if (checked || liveCheckPolls > 20) {
+            if (pollTimeoutRef.current !== null) {
+              clearTimeout(pollTimeoutRef.current);
+              pollTimeoutRef.current = null;
+            }
+            return;
+          }
         }
       } catch {
         // ignore transient polling errors

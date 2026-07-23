@@ -123,8 +123,11 @@ export default function Pirc2Subscription({ onChange }: Pirc2SubscriptionProps) 
   if (loading) {
     return (
       <Card>
-        <h2 className="text-sm font-semibold text-white mb-2">Recurring subscription</h2>
-        <p className="text-xs text-surface-500">Loading…</p>
+        <h2 className="text-sm font-semibold text-ink mb-2">Recurring subscription</h2>
+        <div className="space-y-2 animate-pulse">
+          <div className="h-3.5 w-2/3 rounded bg-surface-800" />
+          <div className="h-3.5 w-1/2 rounded bg-surface-800" />
+        </div>
       </Card>
     );
   }
@@ -137,7 +140,7 @@ export default function Pirc2Subscription({ onChange }: Pirc2SubscriptionProps) 
   return (
     <Card>
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-white">Recurring subscription</h2>
+        <h2 className="text-sm font-semibold text-ink">Recurring subscription</h2>
         <Badge variant="default">PiRC2</Badge>
       </div>
 
@@ -193,24 +196,24 @@ export default function Pirc2Subscription({ onChange }: Pirc2SubscriptionProps) 
           </div>
           <div className="flex items-center justify-between text-xs">
             <span className="text-surface-400">Per cycle</span>
-            <span className="text-white">
+            <span className="text-ink">
               {subscription.amountPerCycle} {subscription.currency} /{' '}
               {subscription.intervalDays} days
             </span>
           </div>
           <div className="flex items-center justify-between text-xs">
             <span className="text-surface-400">Cycles billed</span>
-            <span className="text-white">
+            <span className="text-ink">
               {subscription.cyclesBilled} / {subscription.cyclesAuthorized}
             </span>
           </div>
           <div className="flex items-center justify-between text-xs">
             <span className="text-surface-400">Next billing</span>
-            <span className="text-white">{formatDate(subscription.nextBillingAt)}</span>
+            <span className="text-ink">{formatDate(subscription.nextBillingAt)}</span>
           </div>
           <div className="flex items-center justify-between text-xs">
             <span className="text-surface-400">Allowance left</span>
-            <span className="text-white">
+            <span className="text-ink">
               {subscription.allowanceRemaining} {subscription.currency}
             </span>
           </div>

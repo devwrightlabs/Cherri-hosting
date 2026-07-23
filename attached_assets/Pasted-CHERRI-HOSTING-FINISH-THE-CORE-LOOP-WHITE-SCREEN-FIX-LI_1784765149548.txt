@@ -1,0 +1,64 @@
+CHERRI HOSTING — FINISH THE CORE LOOP: WHITE-SCREEN FIX + LIVE LINK FIX + PI HELPERS + POLISH (run all 4 stages, one session, in this exact order)
+
+READ FIRST: these four stages touch related but DIFFERENT parts of the deploy pipeline — build hardening (Stage 1), the link Cherri generates after pinning (Stage 2), the deploy UI helpers (Stage 3), and pure visual polish (Stage 4). Do them IN THIS ORDER because Stage 2 depends on Stage 1 being done first (you can't correctly link to an asset-fixed site until the assets are actually fixed). Do NOT change the build engine's core detection/install/build logic, the payment/quote system, or the gated backend lane (provisioning/billing scheduler/snapshot/PiRC2 stay inert). Run straight through — do not stop to ask between stages. At the very end: run BOTH client and server TypeScript checks, confirm zero errors, and give ONE combined summary covering all four stages.
+
+══════════════════════════════════════════
+STAGE 1 — UNIVERSAL WHITE-SCREEN FIX (fix the built files themselves)
+══════════════════════════════════════════
+CONFIRMED PROBLEM: a real built app (Vite) deployed correctly but showed a white screen — the HTML loaded but JS/CSS assets didn't, because built apps reference assets with root-absolute paths (e.g. src="/assets/index-abc.js") which break on IPFS gateways / Pi Browser's serving path. A pure-HTML test with zero JS rendered fine, confirming Pi Browser itself renders correctly — this is purely an asset-path problem in the hardening step, not a Pi Browser problem.
+
+Fix the post-build hardening step (after build, before pin) — NOT the build engine's detection/install/build logic:
+1. Rewrite every root-absolute asset reference in built HTML to relative: src="/assets/..." → src="./assets/...", same for href, and other built-asset URLs starting with "/". Do NOT touch external URLs (http://, https://, //) or anchor links.
+2. Rewrite root-absolute references inside built CSS (url(/assets/...) → url(./assets/...)) and, conservatively, in built JS where a local asset path is a clear string literal.
+3. Inject <base href="./"> into <head> as a safety net if not already present.
+4. SPA routing fallback: include a 404.html mirroring index.html for gateway fallback where applicable.
+5. VERIFY BEFORE PINNING: after rewriting, confirm the index.html's referenced JS/CSS files actually exist at the rewritten relative paths in the output. If a referenced asset is missing → HALT with a clear message instead of pinning a site that will white-screen. This verification runs on every deploy.
+6. Apply universally to every framework (Vite, CRA, Vue, Astro, plain static, etc.) — plain static sites already using relative paths pass through unchanged.
+
+STOP CHECK before Stage 2: confirm the hardening step is producing correctly relative-pathed output before moving on — Stage 2's link fix only matters if Stage 1's files are actually fixed.
+
+══════════════════════════════════════════
+STAGE 2 — LIVE LINK MUST OPEN THE RENDERED SITE, NOT A RAW IPFS FOLDER
+══════════════════════════════════════════
+CONFIRMED PROBLEM (separate bug from Stage 1): after a successful pin, the URL Cherri gives the user for their live site opens as a raw IPFS folder listing ("Index of /ipfs/...") instead of the rendered app, and clicking into the file triggers Pinata's public-gateway HTML-blocking error: "For security reasons, HTML content cannot be served through the pinata public gateway... ERR_ID:00023." This is a REAL Pinata policy (free public gateways refuse to serve raw HTML, to prevent phishing pages) — not something to work around dishonestly. Users must land directly on their rendered live site with ONE click — like Vercel — never a folder listing or a raw CID error.
+
+1. LINK TO THE FILE, NOT THE DIRECTORY: wherever Cherri generates/displays the "live URL" after a successful pin, it must point directly at the site's entry file, not the bare CID/folder: gateway/ipfs/<CID>/index.html (or the correct entry file detected in Stage 1's hardening), so the gateway serves the page instead of an "Index of /ipfs/..." listing.
+
+2. SWITCH TO A DEDICATED GATEWAY (removes the HTML-blocking restriction):
+   - Add a PINATA_DEDICATED_GATEWAY config value (the operator's own dedicated gateway domain from a paid Pinata plan, e.g. https://<my-subdomain>.mypinata.cloud).
+   - Every live-site URL Cherri shows or opens (deploy reveal, project list, QR code, copy button) must use this dedicated gateway domain instead of the public gateway.
+   - If PINATA_DEDICATED_GATEWAY is not yet configured, show an HONEST state: "A dedicated gateway isn't configured yet — the public gateway may block HTML content" rather than silently serving a broken link. NEEDS APPROVAL: verify this env var name matches whatever Pinata currently calls it in their dashboard/docs before wiring it in — report back what you find.
+
+3. VERIFY BEFORE SHOWING THE LINK AS "LIVE": after pinning, actually fetch the generated live URL server-side and confirm it returns real rendered content (not a folder listing, not an error page, not the Pinata HTML-block message) before telling the user their site is live. If this check fails, show the real reason instead of a false "live" state — never claim live when it isn't.
+
+══════════════════════════════════════════
+STAGE 3 — CONFIGURE FOR PI HELPERS (deploy UI)
+══════════════════════════════════════════
+In Stage 1 of the deploy UI (Build & Verify), turn the two Pi-app warnings into actionable helpers:
+
+VALIDATION KEY: input field — "Paste your Pi validation key" with help text explaining Pi Network issues this when you register your app in the Pi Developer Portal (link it), and Cherri places it as validation-key.txt at the site root. FORMAT VALIDATION: reject empty/garbage input (must look like a real long alphanumeric token, not a short word/sentence/URL) with a friendly message. Be honest in small text: "Cherri places the file; Pi Network verifies it when you connect your .pi domain" (Cherri cannot confirm it's the correct key for this app — only Pi can). On accept: write the file at the built output root with exactly the pasted content, re-run verification. After deploy, fetch the live <site>/validation-key.txt through the SAME live-link logic fixed in Stage 2 (dedicated gateway, entry-file-correct) and confirm it's reachable and matches — show the real result either way.
+
+PI SDK: toggle — "Add Pi SDK to my app," explained simply. On enable, inject into built index.html <head>: the Pi SDK script tag + Pi.init() with sandbox true/false matching current TEST/LIVE env. DETECT-BEFORE-INJECT: skip if the app already loads the SDK. Re-run verification after. UI note: "This connects your app to Pi Browser — your app's own code still decides how to use Pi login/payments."
+
+Add a short plain-language checklist near the helpers: register in the Pi Developer Portal → paste your validation key (Cherri places it) → toggle the Pi SDK if needed → deploy → connect your .pi domain. All non-blocking — plain static sites deploy fine without any of it.
+
+══════════════════════════════════════════
+STAGE 4 — PROFESSIONAL DETAIL POLISH
+══════════════════════════════════════════
+Refinement only, not logic changes. Sweep the entire client:
+- Identical spacing rhythm, card style/radius/shadow, and heading sizes across every screen.
+- Every list/section has a designed loading (skeleton), empty (icon + line + action), and error (real message + retry) state — nothing blank or default.
+- All tap targets ≥48px with visible pressed/disabled/focus states; smooth ~150ms transitions; respect prefers-reduced-motion.
+- Copy sweep: confident, friendly, no dev-speak leaking to users; consistent capitalization.
+- Mobile check at 320/390/430px: no horizontal scroll, nothing clipped/cramped, safe-area respected, bottom nav perfectly even.
+- If a "detail" needs a logic change rather than styling, note it in the report instead of doing it.
+
+══════════════════════════════════════════
+FINAL REPORT (all four stages)
+══════════════════════════════════════════
+Run both TypeScript checks — confirm zero errors. Report:
+1. Stage 1: white-screen fix confirmed applied + asset-existence verification working.
+2. Stage 2: live links now point to the entry file, dedicated gateway used when configured (with honest fallback when not), live URL verified to actually render (not a folder listing or Pinata block page) before being shown as live. State what you found for the PINATA_DEDICATED_GATEWAY env var name.
+3. Stage 3: both Pi helpers working with format/served-file checks.
+4. Stage 4: screen-by-screen list of polish applied.
+Confirm the build engine, payment/quote system, and gated backend lane were untouched throughout.

@@ -12,7 +12,7 @@ channel = "stable-25_05"
 PORT = "4000"
 NODE_ENV = "development"
 ALLOWED_ORIGIN = "http://localhost:5000"
-PI_PRICE_SOURCE = "coingecko"
+PI_PRICE_SOURCE = "coingecko,bitget"
 
 [workflows]
 runButton = "Project"

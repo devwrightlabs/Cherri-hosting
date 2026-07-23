@@ -1,0 +1,45 @@
+CHERRI HOSTING — FULL INDEPENDENT AUDIT + FIX PLAN (audit and plan ONLY — do not fix anything yet)
+
+You are in PLAN MODE. Your job: audit the entire app with skeptical fresh eyes, TEST the real workflows end to end, then produce (a) a findings report and (b) a step-by-step fix plan prioritized by importance. Do NOT change any code in this run. Do NOT trust previous sessions' completion summaries — verify against the actual code and by actually running things.
+
+═══════════ PART 1 — WORKFLOW TESTING (actually run them, don't just read code) ═══════════
+Test each core journey end to end and report PASS / FAIL / PARTIAL with what actually happened:
+
+1. STATIC DEPLOY JOURNEY: upload a simple static site (plain index.html) → Stage 1 Build & Verify → preview renders → Stage 2 unlock → Deploy to IPFS/pin → live URL reachable. Does every step work?
+2. BUILT-APP JOURNEY: upload a small Vite (or CRA) project → engine detects framework + package manager → sandboxed install + build runs with streamed logs → verification checklist (build ✓ / validation-key / Pi SDK) → preview renders (NOT a white screen — confirm assets load with relative paths) → Stage 2 → pin → live URL renders.
+3. PI CONFIG HELPERS: paste a plausible validation key → format validation accepts it / garbage is rejected → validation-key.txt lands at the built output root → after deploy the served-file check confirms it's live and matching. Pi SDK toggle → injects SDK + Pi.init with correct sandbox for TEST env → detect-before-inject works when SDK already present.
+4. FAILURE HANDLING: upload something that can't build (e.g. a project with a broken build script or a backend/monorepo shape) → does it fail with a clear, plain-English reason + retry/upload-different actions (not a raw generic error or infinite spinner)?
+5. BUILD RESILIENCE: start a build, navigate away (Home) mid-build, return → does the deploy page reconnect to the in-progress/finished build instead of resetting?
+6. PRICING & QUOTES: pricing page renders the dollar anchors instantly; live Pi amounts fill in non-blocking (or show "≈ updating" if the price source is unavailable — never an infinite spinner); GET /api/billing/pricing returns live pegged numbers; quote creation works; confirm the Pi SDK payment handshake code path is intact (do NOT execute a real payment — verify wiring only).
+7. ACCOUNT / BILLING / NOTIFICATIONS: Account page loads real data and profile edit works; Billing lists invoices (and has a designed empty state); notification bell loads and clears.
+8. TEST/LIVE TOGGLE: switches seamlessly both ways, header stays visible, state persists correctly.
+
+═══════════ PART 2 — UI/UX PAGE AUDIT (every screen) ═══════════
+Walk EVERY page (Landing, Dashboard, Deploy, Projects, Project detail, Pricing, Account, Billing, and all shared components) and flag:
+- Visual inconsistencies: spacing/padding rhythm that differs between screens, mismatched card styles/radii/borders, inconsistent heading sizes, leftover non-teal accent colors or stale styles.
+- States: any list/section missing a designed loading (skeleton), empty, or error state — anything blank, default, or raw.
+- Interaction: tap targets under 48px, missing pressed/disabled/focus states, anything that feels janky or dead on tap.
+- Mobile (320/390/430px): horizontal scroll, clipping, cramped layouts, crooked nav, safe-area problems.
+- Copy: dev-speak leaking into user-facing text, inconsistent capitalization, confusing labels.
+- Dead ends: buttons/links that do nothing or lead somewhere wrong.
+
+═══════════ PART 3 — CODE-LEVEL AUDIT ═══════════
+- Silent failures: any remaining swallowed catches, fire-and-forget promises, or hardcoded generic error strings masking real errors.
+- Dead code: orphaned routes/components/files, unused exports, leftover legacy paths.
+- Type safety: run BOTH client and server TypeScript checks — report any errors.
+- Security spot-check: no secrets reachable from client code or the built/pinned output; per-user data isolation intact; the payment quote binding + exact-amount validation still enforced.
+- Gated backend lane: confirm provisioning/billing scheduler/snapshot/PiRC2 remain inert and untouched.
+- Console noise: boot the app and note any runtime console errors/warnings beyond the expected Pi SDK non-Pi-browser warning.
+
+═══════════ PART 4 — THE DELIVERABLE (findings + plan, no fixes) ═══════════
+Produce a report with:
+1. WORKFLOW RESULTS TABLE: each journey above → PASS / PARTIAL / FAIL + one line of what actually happened.
+2. FINDINGS LIST, prioritized:
+   • P1 — broken or blocks a user from completing a core journey
+   • P2 — works but degraded/confusing (bad states, dead ends, wrong messages)
+   • P3 — polish/consistency details
+   For each finding: what it is, where (file/screen), and how you verified it.
+3. STEP-BY-STEP FIX PLAN: an ordered plan to fix everything found — grouped into stages (Stage 1 = all P1s, Stage 2 = P2s, Stage 3 = P3 polish), with each step small and specific enough to execute directly in a follow-up run. Note any step that would touch the payment system, build engine core, or gated lane so I can approve those explicitly.
+4. WHAT'S GENUINELY SOLID: also list what verified clean — I want the full honest picture, not only problems.
+
+Do not fix anything in this run. Report back and wait for my go on the plan.

@@ -35,13 +35,19 @@
  *   - FRAMEWORK-AGNOSTIC: it inspects the built files, not the toolchain. A plain
  *     static site that already uses relative paths passes through functionally
  *     unchanged.
- *   - We deliberately do NOT rewrite paths inside built JS. Rewriting an absolute
- *     "/assets/chunk.js" string literal is unsafe: ESM dynamic imports resolve
- *     relative to the MODULE url (a chunk already living in /assets/), so "./" or
- *     stripping the slash produces the wrong URL and can break a working bundle.
- *     HTML rewriting + <base> fixes the document-level loads that cause the white
- *     screen; deeper public-path handling is a per-bundler concern, not a blind
- *     string replace.
+ *   - JS rewriting is CONSERVATIVE and existence-gated. A quoted root-absolute
+ *     literal ("/assets/img-abc.png") inside built JS is rewritten to
+ *     document-relative ("./assets/img-abc.png") ONLY when that exact file exists
+ *     in the bundle. Document-relative is correct because Rollup/Vite emit
+ *     inter-chunk import specifiers as native relative paths already — surviving
+ *     root-absolute literals are DOM-consumed (image/font URLs, preload <link>
+ *     hrefs), which resolve against the document base, and our injected <base>
+ *     anchors every document at the bundle root. As extra insurance, literals
+ *     that are dynamic-import specifiers (preceded by `import(` / `from `) are
+ *     never touched. Additionally, Vite's preload helper base-join
+ *     (`assetsURL = dep => "/" + dep`) is rewritten to `"./" + dep`, gated on the
+ *     file containing Vite preload runtime markers, because a failing CSS preload
+ *     throws at runtime in Vite 5 (white screen) rather than degrading.
  */
 
 import nodePath from 'path';
@@ -169,6 +175,46 @@ function rewriteCssAssetPaths(css: string, cssPath: string): string {
   });
 }
 
+// ── Conservative JS rewriting ───────────────────────────────────────────────
+
+const JS_EXTS = new Set(['.js', '.mjs', '.cjs']);
+
+// Markers proving a file contains Vite's preload runtime (string literals and
+// helper names survive minification).
+const VITE_PRELOAD_MARKERS = ['__vitePreload', 'vite:preloadError', 'Unable to preload CSS'];
+
+/**
+ * Rewrite quoted root-absolute string literals in built JS to document-relative
+ * ("./…") — but ONLY when the literal resolves to a file that actually exists in
+ * the bundle, and never when it is an import specifier (`import(` / `from `).
+ * Idempotent: already-relative literals start with "." and never match.
+ */
+function rewriteJsAssetLiterals(js: string, present: Set<string>): string {
+  return js.replace(/(["'])(\/[^"'\n]*)\1/g, (whole, q: string, val: string, offset: number) => {
+    if (!isRootAbsoluteLocal(val)) return whole;
+    const resolved = resolveRefToBundlePath(val);
+    if (!resolved || !present.has(resolved)) return whole;
+    // Never touch module specifiers: `import("/x")` resolves against the MODULE
+    // url, and `from "/x"` is a static import — both are the bundler's domain.
+    const before = js.slice(Math.max(0, offset - 12), offset);
+    if (/import\s*\(\s*$/.test(before) || /\bfrom\s+$/.test(before)) return whole;
+    return `${q}.${val}${q}`;
+  });
+}
+
+/**
+ * Rewrite Vite's preload base-join (`return "/" + dep` / `=> "/" + dep`) to
+ * "./" + dep. Only applied to files containing Vite preload runtime markers.
+ * The joined values are consumed as <link> hrefs (document-resolved), so
+ * document-relative is correct under our injected <base>.
+ */
+function rewriteVitePreloadBase(js: string): string {
+  if (!VITE_PRELOAD_MARKERS.some((m) => js.includes(m))) return js;
+  return js
+    .replace(/(\breturn\s*)(["'])\/\2(\s*\+)/g, '$1$2./$2$3')
+    .replace(/(=>\s*)(["'])\/\2(\s*\+)/g, '$1$2./$2$3');
+}
+
 /**
  * Harden a built static bundle so it renders from a non-root gateway path.
  *
@@ -180,6 +226,7 @@ function rewriteCssAssetPaths(css: string, cssPath: string): string {
 export function hardenStaticBundle(files: DeployFile[]): DeployFile[] {
   const out: DeployFile[] = [];
   let hardenedRootIndex: Buffer | null = null;
+  const present = new Set(files.map((f) => f.path));
 
   for (const f of files) {
     const ext = nodePath.extname(f.path).toLowerCase();
@@ -193,6 +240,11 @@ export function hardenStaticBundle(files: DeployFile[]): DeployFile[] {
     } else if (ext === '.css') {
       const css = f.buffer.toString('utf8');
       out.push({ ...f, buffer: Buffer.from(rewriteCssAssetPaths(css, f.path), 'utf8') });
+    } else if (JS_EXTS.has(ext)) {
+      let js = f.buffer.toString('utf8');
+      js = rewriteJsAssetLiterals(js, present);
+      js = rewriteVitePreloadBase(js);
+      out.push({ ...f, buffer: Buffer.from(js, 'utf8') });
     } else {
       out.push(f);
     }

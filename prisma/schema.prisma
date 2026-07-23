@@ -67,6 +67,17 @@ model Deployment {
   status    String   @default("PENDING")
   /// Human-readable failure detail (e.g. the real Pinata error) when status=FAILED.
   failureReason String?
+  /// Entry file within the pinned directory (e.g. "index.html"); null for
+  /// single-file pins and legacy rows. Live URLs point at this file so the
+  /// gateway renders the site instead of a folder listing.
+  entryPath String?
+  /// Post-pin live-URL verification: UNCHECKED | VERIFIED | INDETERMINATE | FAILED.
+  /// VERIFIED means the gateway actually returned the site's HTML — never claim
+  /// "live" to the user on anything less.
+  liveCheckStatus String    @default("UNCHECKED")
+  /// Honest human-readable detail for INDETERMINATE / FAILED checks.
+  liveCheckDetail String?
+  liveCheckAt     DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   projectId String

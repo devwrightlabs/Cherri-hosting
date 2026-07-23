@@ -19,6 +19,7 @@ import {
   WhiteScreenRiskError,
 } from '../utils/staticHardening';
 import { getRouteParam } from '../utils/routeParams';
+import { liveUrlForCid, withLiveUrl } from '../utils/gateway';
 import { maxUploadBytesForTier, TIER2_MAX_UPLOAD_BYTES } from '../utils/constants';
 import {
   DeployFile,
@@ -565,6 +566,9 @@ async function executePin(opts: {
     });
 
     let pinResult;
+    /** Entry file for directory pins — live links point here so the gateway
+     *  renders the site instead of a folder listing. Null for single files. */
+    let entryPath: string | null = null;
     if (pinFiles && pinFiles.length > 0) {
       // Universal white-screen fix: rewrite root-absolute asset paths to relative,
       // inject <base href="./">, and add a 404.html SPA fallback so the site
@@ -609,6 +613,10 @@ async function executePin(opts: {
         throw new Error('Storage quota exceeded. Upgrade to get more IPFS storage.');
       }
 
+      if (filesToPin.some((f) => f.path === 'index.html')) {
+        entryPath = 'index.html';
+      }
+
       pinResult = await pinDirectory(filesToPin, projectName);
     } else if (singleFile) {
       pinResult = await pinFile(singleFile.buffer, singleFile.name, singleFile.mimeType);
@@ -622,14 +630,19 @@ async function executePin(opts: {
     });
     await new Promise((r) => setTimeout(r, 800));
 
+    const liveUrl = liveUrlForCid(pinResult.cid, entryPath);
     await prisma.deployment.update({
       where: { id: deploymentId },
       data: {
         cid: pinResult.cid,
-        gateway: pinResult.gatewayUrl,
+        gateway: liveUrl,
+        entryPath,
         size: BigInt(pinResult.size),
         status: 'ACTIVE',
         failureReason: null,
+        liveCheckStatus: 'UNCHECKED',
+        liveCheckDetail: null,
+        liveCheckAt: null,
       },
     });
 
@@ -640,6 +653,28 @@ async function executePin(opts: {
 
     if (stageId) deleteStage(stageId);
     logger.info('Deployment activated', { deploymentId, cid: pinResult.cid });
+
+    // Post-pin honesty check: fetch the live URL and confirm it actually renders
+    // (not a folder listing, not the public gateway's HTML block). A failure here
+    // NEVER un-pins or fails the deployment — the content is on IPFS — it is
+    // recorded truthfully so the client can show the real serving state.
+    try {
+      const check = await verifyLiveUrl(liveUrl, entryPath !== null);
+      await prisma.deployment.update({
+        where: { id: deploymentId },
+        data: {
+          liveCheckStatus: check.status,
+          liveCheckDetail: check.detail,
+          liveCheckAt: new Date(),
+        },
+      });
+      logger.info('Live-link verification finished', {
+        deploymentId,
+        result: check.status,
+      });
+    } catch (checkErr) {
+      logger.error('Live-link verification errored', { deploymentId, error: checkErr });
+    }
   } catch (err) {
     const failureReason = describePinError(err);
     logger.error('Deployment failed', { deploymentId, error: failureReason });
@@ -1321,6 +1356,169 @@ async function verifyGatewayServesCid(gatewayUrl: string): Promise<GatewayCheck>
   }
 }
 
+// ─── Live-URL rendering check ─────────────────────────────────────────────────
+
+type LiveCheckOutcome = {
+  status: 'VERIFIED' | 'INDETERMINATE' | 'FAILED';
+  detail: string | null;
+};
+
+/** Read at most `maxBytes` of a response body as UTF-8, then cancel the rest. */
+async function readBodySnippet(res: globalThis.Response, maxBytes: number): Promise<string> {
+  const reader = res.body?.getReader();
+  if (!reader) return '';
+  const chunks: Buffer[] = [];
+  let total = 0;
+  try {
+    while (total < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(Buffer.from(value));
+      total += value.byteLength;
+    }
+  } finally {
+    void reader.cancel().catch(() => undefined);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+/**
+ * REAL "does the live link render?" check — a body-sniffing GET, stricter than
+ * verifyGatewayServesCid (which only proves the gateway answers). Detects the
+ * two ways a technically-reachable link still fails the user:
+ *   - the gateway returned a directory listing instead of the site, or
+ *   - Pinata's public gateway refused to serve HTML (its ERR_ID:00023 block).
+ * 3-state and honest: VERIFIED only when the body looks like the actual site;
+ * rate limits / network failures are INDETERMINATE (unknown ≠ down).
+ */
+async function verifyLiveUrl(liveUrl: string, expectHtml: boolean): Promise<LiveCheckOutcome> {
+  let res: globalThis.Response | null = null;
+  // One retry on pure network failure (cold gateway cache is common right after a pin).
+  for (let attempt = 0; attempt < 2 && !res; attempt++) {
+    try {
+      res = await fetch(liveUrl, {
+        method: 'GET',
+        redirect: 'follow',
+        headers: { 'User-Agent': 'Cherri-Hosting', Accept: 'text/html,*/*' },
+        signal: AbortSignal.timeout(12_000),
+      });
+    } catch {
+      if (attempt === 1) {
+        return {
+          status: 'INDETERMINATE',
+          detail:
+            'Could not reach the gateway to verify your link — the content may still be propagating. Check again in a minute.',
+        };
+      }
+    }
+  }
+  if (!res) {
+    return { status: 'INDETERMINATE', detail: 'Could not reach the gateway to verify your link.' };
+  }
+
+  if (res.status === 429) {
+    await res.body?.cancel().catch(() => undefined);
+    return {
+      status: 'INDETERMINATE',
+      detail:
+        'The gateway is rate-limiting checks right now — your site may already be live. Check again in a moment.',
+    };
+  }
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const isTextual =
+    contentType === '' || /text|html|json|xml/.test(contentType);
+  const snippet = isTextual ? (await readBodySnippet(res, 65_536)).toLowerCase() : '';
+  if (!isTextual) await res.body?.cancel().catch(() => undefined);
+
+  // Pinata public-gateway HTML block (ERR_ID:00023) — definitive, not transient.
+  if (
+    (snippet.includes('err_id') && snippet.includes('00023')) ||
+    snippet.includes('cannot be served through the pinata public gateway') ||
+    // Pinata-specific block page phrasing only — a user site that merely
+    // contains the words "content blocked" must not be marked FAILED.
+    (snippet.includes('content blocked') && snippet.includes('pinata'))
+  ) {
+    return {
+      status: 'FAILED',
+      detail:
+        'The public IPFS gateway refuses to serve website HTML (its ERR_ID:00023 restriction). Your content is safely pinned — a dedicated gateway is needed for the link to open as a website.',
+    };
+  }
+
+  // Directory listing instead of the site.
+  if (snippet.includes('index of /ipfs') || snippet.includes('<title>index of')) {
+    return {
+      status: 'FAILED',
+      detail:
+        'The gateway returned a folder listing instead of your site. The live link should point at your index.html — redeploy to fix this.',
+    };
+  }
+
+  if (!res.ok) {
+    if (res.status >= 500) {
+      return {
+        status: 'INDETERMINATE',
+        detail: `The gateway had a problem (HTTP ${res.status}) — your site may still be propagating. Check again shortly.`,
+      };
+    }
+    return { status: 'FAILED', detail: `The gateway returned HTTP ${res.status} for your live link.` };
+  }
+
+  if (expectHtml) {
+    const looksLikeHtml =
+      contentType.includes('html') || snippet.includes('<html') || snippet.includes('<!doctype');
+    if (!looksLikeHtml) {
+      return {
+        status: 'FAILED',
+        detail: "The gateway responded, but not with your site's HTML page.",
+      };
+    }
+  }
+
+  return { status: 'VERIFIED', detail: null };
+}
+
+/**
+ * POST /api/deployments/:deploymentId/verify-live — re-run the honest live-link
+ * check (e.g. after propagation or after the operator configures a dedicated
+ * gateway) and persist the result. Never fabricates VERIFIED.
+ */
+deploymentsRouter.post(
+  '/:deploymentId/verify-live',
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const deploymentId = getRouteParam(req.params.deploymentId);
+    try {
+      const deployment = await prisma.deployment.findFirst({
+        where: { id: deploymentId, project: { userId: req.user!.id } },
+      });
+      if (!deployment) {
+        res.status(404).json({ error: 'Deployment not found' });
+        return;
+      }
+      if (!deployment.cid || deployment.status !== 'ACTIVE') {
+        res.status(409).json({ error: 'This deployment has no live content to verify yet.' });
+        return;
+      }
+
+      const liveUrl = liveUrlForCid(deployment.cid, deployment.entryPath);
+      const check = await verifyLiveUrl(liveUrl, deployment.entryPath !== null);
+      const updated = await prisma.deployment.update({
+        where: { id: deployment.id },
+        data: {
+          liveCheckStatus: check.status,
+          liveCheckDetail: check.detail,
+          liveCheckAt: new Date(),
+        },
+      });
+      res.json({ deployment: withLiveUrl(updated) });
+    } catch (err) {
+      logger.error('Live-link re-check failed', { deploymentId, error: err });
+      res.status(500).json({ error: 'Failed to verify the live link.' });
+    }
+  },
+);
+
 /**
  * GET /api/deployments/:deploymentId/domain-target — return the EXACT values a
  * user points their .pi domain at (the gateway URL and the DNSLink TXT value
@@ -1350,7 +1548,8 @@ deploymentsRouter.get(
       }
 
       const cid = deployment.cid;
-      const gatewayUrl = deployment.gateway || `https://gateway.pinata.cloud/ipfs/${cid}`;
+      // Derived at read time: dedicated gateway when configured, entry file included.
+      const gatewayUrl = liveUrlForCid(cid, deployment.entryPath);
       const check = await verifyGatewayServesCid(gatewayUrl);
 
       res.json({
@@ -1691,7 +1890,8 @@ deploymentsRouter.get('/:id', async (req: AuthenticatedRequest, res: Response): 
       res.status(404).json({ error: 'Deployment not found' });
       return;
     }
-    res.json({ deployment });
+    // Live URL is derived at read time (dedicated gateway when configured).
+    res.json({ deployment: withLiveUrl(deployment) });
   } catch (err) {
     logger.error('Failed to get deployment', { error: err });
     res.status(500).json({ error: 'Failed to get deployment' });
@@ -1716,7 +1916,7 @@ deploymentsRouter.get(
         where: { projectId: getRouteParam(req.params.projectId) },
         orderBy: { createdAt: 'desc' },
       });
-      res.json({ deployments });
+      res.json({ deployments: deployments.map(withLiveUrl) });
     } catch (err) {
       logger.error('Failed to list deployments', { error: err });
       res.status(500).json({ error: 'Failed to list deployments' });

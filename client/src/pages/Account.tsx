@@ -189,7 +189,7 @@ export default function Account() {
                       {profile?.email ?? '—'}
                     </span>
                     <button
-                      className="shrink-0 text-xs text-cherry-300 hover:text-cherry-400 underline transition-colors"
+                      className="shrink-0 inline-flex items-center min-h-[44px] px-2 text-xs text-cherry-300 hover:text-cherry-400 underline transition-colors"
                       onClick={() => setEditingEmail(true)}
                     >
                       Edit

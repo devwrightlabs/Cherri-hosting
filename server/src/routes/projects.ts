@@ -14,6 +14,7 @@ import {
   ExportError,
 } from '../services/exportService';
 import { deleteProjectFully, DeletionError } from '../services/deletionService';
+import { withLiveUrl } from '../utils/gateway';
 
 export const projectsRouter = Router();
 projectsRouter.use(piAuthMiddleware);
@@ -36,12 +37,25 @@ projectsRouter.get('/', async (req: AuthenticatedRequest, res: Response): Promis
         deployments: {
           orderBy: { createdAt: 'desc' },
           take: 1,
-          select: { id: true, cid: true, gateway: true, status: true, createdAt: true, size: true },
+          select: {
+            id: true,
+            cid: true,
+            gateway: true,
+            entryPath: true,
+            liveCheckStatus: true,
+            status: true,
+            createdAt: true,
+            size: true,
+          },
         },
         _count: { select: { deployments: true } },
       },
     });
-    res.json({ projects });
+    // Live URLs are derived at read time (dedicated gateway when configured),
+    // so legacy rows get the working link too.
+    res.json({
+      projects: projects.map((p) => ({ ...p, deployments: p.deployments.map(withLiveUrl) })),
+    });
   } catch (err) {
     logger.error('Failed to list projects', { error: err });
     res.status(500).json({ error: 'Failed to list projects' });
@@ -78,7 +92,18 @@ projectsRouter.get('/:id', async (req: AuthenticatedRequest, res: Response): Pro
       include: {
         deployments: {
           orderBy: { createdAt: 'desc' },
-          select: { id: true, cid: true, gateway: true, status: true, size: true, createdAt: true },
+          select: {
+            id: true,
+            cid: true,
+            gateway: true,
+            entryPath: true,
+            liveCheckStatus: true,
+            liveCheckDetail: true,
+            liveCheckAt: true,
+            status: true,
+            size: true,
+            createdAt: true,
+          },
         },
         // Operator-safe backup status only — NEVER expose Railway ids/domains.
         backendService: {
@@ -95,7 +120,8 @@ projectsRouter.get('/:id', async (req: AuthenticatedRequest, res: Response): Pro
       res.status(404).json({ error: 'Project not found' });
       return;
     }
-    res.json({ project });
+    // Live URLs derived at read time — see gateway.ts.
+    res.json({ project: { ...project, deployments: project.deployments.map(withLiveUrl) } });
   } catch (err) {
     logger.error('Failed to get project', { error: err });
     res.status(500).json({ error: 'Failed to get project' });
