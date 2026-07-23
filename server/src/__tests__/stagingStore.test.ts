@@ -14,6 +14,7 @@ import {
   claimStage,
   releaseStage,
   deleteStage,
+  mutateStage,
   sweepExpiredStages,
 } from '../services/stagingStore';
 
@@ -108,4 +109,64 @@ test('double-claim is rejected while a pin is in flight', () => {
   assert.equal(claimStage(s.id, USER).ok, true);
   assert.deepEqual(claimStage(s.id, USER), { ok: false, reason: 'pinning' });
   deleteStage(s.id);
+});
+
+test('mutateStage is rejected while a pin is in flight, succeeds after release', () => {
+  const s = makeStage();
+  assert.equal(claimStage(s.id, USER).ok, true);
+
+  // Mid-pin: mutation must be refused so the pin only sees quota-checked files.
+  const denied = mutateStage(s.id, USER, (stage) => {
+    stage.files.push({
+      path: 'validation-key.txt',
+      buffer: Buffer.from('should-not-be-added'),
+      mimeType: 'text/plain',
+    });
+  });
+  assert.deepEqual(denied, { ok: false, reason: 'pinning' });
+  assert.equal(s.files.length, 1, 'mid-pin mutation must not touch the files');
+  assert.equal(s.totalBytes, 13, 'mid-pin mutation must not touch totalBytes');
+
+  // Pin fails → release → mutation is allowed again.
+  releaseStage(s.id);
+  const allowed = mutateStage(s.id, USER, (stage) => {
+    stage.files.push({
+      path: 'validation-key.txt',
+      buffer: Buffer.from('0123456789'),
+      mimeType: 'text/plain',
+    });
+  });
+  assert.equal(allowed.ok, true, 'mutation after release must succeed');
+  deleteStage(s.id);
+});
+
+test('mutateStage recomputes totalBytes after a mutation', () => {
+  const s = makeStage();
+  const result = mutateStage(s.id, USER, (stage) => {
+    stage.files.push({
+      path: 'extra.txt',
+      buffer: Buffer.from('12345'),
+      mimeType: 'text/plain',
+    });
+  });
+  assert.equal(result.ok, true);
+  assert.equal(s.totalBytes, 18, 'totalBytes must equal sum of file buffers after mutation');
+
+  // Replacing a file's contents also recomputes.
+  mutateStage(s.id, USER, (stage) => {
+    stage.files = stage.files.filter((f) => f.path !== 'extra.txt');
+  });
+  assert.equal(s.totalBytes, 13, 'totalBytes must shrink when files are removed');
+  deleteStage(s.id);
+});
+
+test('mutateStage refuses the wrong user and expired stages honestly', () => {
+  const s = makeStage();
+  assert.deepEqual(
+    mutateStage(s.id, 'someone-else', () => {}),
+    { ok: false, reason: 'not_found' },
+    'wrong owner must get not_found, not a hint the stage exists',
+  );
+  s.expiresAt = Date.now() - 1;
+  assert.deepEqual(mutateStage(s.id, USER, () => {}), { ok: false, reason: 'not_found' });
 });
