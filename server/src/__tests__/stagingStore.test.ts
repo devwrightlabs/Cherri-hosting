@@ -14,6 +14,7 @@ import {
   claimStage,
   releaseStage,
   deleteStage,
+  sweepExpiredStages,
 } from '../services/stagingStore';
 
 const USER = 'user-1';
@@ -60,6 +61,45 @@ test('mid-pin stage survives TTL expiry and release grants a retry window', () =
   const retry = claimStage(s.id, USER);
   assert.equal(retry.ok, true, 'retry claim after TTL-edge failure must succeed');
 
+  deleteStage(s.id);
+});
+
+test('sweep removes expired non-pinning stages, which then 404 honestly', () => {
+  const s = makeStage();
+  s.expiresAt = Date.now() - 1;
+  sweepExpiredStages();
+  assert.equal(getStage(s.id), null, 'swept stage must not be retrievable');
+  assert.deepEqual(claimStage(s.id, USER), { ok: false, reason: 'not_found' });
+});
+
+test('sweep keeps an expired stage that is mid-pin, and it stays releasable', () => {
+  const s = makeStage();
+  assert.equal(claimStage(s.id, USER).ok, true);
+  s.expiresAt = Date.now() - 1;
+
+  sweepExpiredStages();
+
+  // The in-flight pin's stage must survive the sweep.
+  assert.ok(getStage(s.id), 'expired mid-pin stage must survive the sweep');
+
+  // Pin fails → releaseStage must still find the stage and allow a retry.
+  releaseStage(s.id);
+  const retry = claimStage(s.id, USER);
+  assert.equal(retry.ok, true, 'retry after sweep + failed pin must succeed');
+
+  // Once released and past its (grace-extended) TTL, the sweep removes it.
+  const again = getStage(s.id);
+  assert.ok(again);
+  releaseStage(s.id);
+  again!.expiresAt = Date.now() - 1;
+  sweepExpiredStages();
+  assert.equal(getStage(s.id), null, 'released expired stage is swept honestly');
+});
+
+test('sweep does not touch unexpired stages', () => {
+  const s = makeStage();
+  sweepExpiredStages();
+  assert.ok(getStage(s.id), 'live stage must survive the sweep');
   deleteStage(s.id);
 });
 

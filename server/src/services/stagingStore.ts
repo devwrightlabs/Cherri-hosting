@@ -134,10 +134,11 @@ export function mutateStage(
 // pin would make a pin failure at the TTL edge unretryable (releaseStage would
 // have nothing to release). getStage still returns an honest 404 for expired
 // stages that are NOT pinning.
-const sweep = setInterval(() => {
-  const now = Date.now();
+export function sweepExpiredStages(now: number = Date.now()): void {
   for (const [id, s] of stages) {
     if (s.expiresAt <= now && !s.pinning) stages.delete(id);
   }
-}, 5 * 60 * 1000);
+}
+
+const sweep = setInterval(() => sweepExpiredStages(), 5 * 60 * 1000);
 sweep.unref?.();
