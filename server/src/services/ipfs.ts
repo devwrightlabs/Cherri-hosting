@@ -93,8 +93,79 @@ export async function pinFile(
 }
 
 /**
- * Pin multiple files as a directory to IPFS via Pinata.
- * Returns the root CID of the pinned directory.
+ * Sanitize a project name into a safe single-segment root directory name for
+ * the Pinata multipart upload. Pinata only needs SOME common root — the root's
+ * name is not part of the returned CID — but it must be one clean path segment.
+ */
+export function sanitizePinRootName(name: string): string {
+  const cleaned = name
+    .normalize('NFKD')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^[-.]+|[-.]+$/g, '')
+    .slice(0, 60);
+  return cleaned || 'site';
+}
+
+/**
+ * Normalize a bundle-relative file path for the pin request: posix separators,
+ * no leading `/` or `./`, no empty segments. Returns null for paths that are
+ * empty or attempt traversal (`..`) — those must never reach Pinata.
+ */
+export function normalizeBundlePath(p: string): string | null {
+  const segments = p
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter((seg) => seg !== '' && seg !== '.');
+  if (segments.length === 0 || segments.some((seg) => seg === '..')) return null;
+  return segments.join('/');
+}
+
+/**
+ * Build the multipart entries for a directory pin: every file is placed under
+ * ONE shared root directory (`<root>/<relative path>`).
+ *
+ * Why: Pinata's pinFileToIPFS accepts exactly one file OR one directory. The
+ * previous implementation appended each file with the `filename` option, which
+ * form-data passes through `path.basename()` — directory structure was
+ * stripped and every file became a loose root-level entry, so any bundle with
+ * more than one file (hardening alone adds 404.html) was rejected with
+ * 400 "More than one file and/or directory was provided for pinning".
+ * The `filepath` option is used verbatim, and a shared root makes the whole
+ * upload a single directory. The returned CID is that directory's contents,
+ * so entry files stay at `<cid>/index.html` — the root name never appears in
+ * live URLs.
+ */
+export function buildDirectoryEntries(
+  files: Array<{ buffer: Buffer; path: string; mimeType: string }>,
+  dirName: string,
+): Array<{ buffer: Buffer; filepath: string; mimeType: string }> {
+  const root = sanitizePinRootName(dirName);
+  const seen = new Set<string>();
+  return files.map((file) => {
+    const rel = normalizeBundlePath(file.path);
+    if (!rel) {
+      throw new Error(
+        `This bundle contains a file path that can't be published safely ("${file.path}"). Rebuild and try again.`,
+      );
+    }
+    // Two different inputs collapsing to one path (e.g. "./index.html" and
+    // "index.html") would silently drop a file inside the pinned directory —
+    // fail honestly instead.
+    if (seen.has(rel)) {
+      throw new Error(
+        `This bundle contains two files that resolve to the same path ("${rel}"). Rebuild and try again.`,
+      );
+    }
+    seen.add(rel);
+    return { buffer: file.buffer, filepath: `${root}/${rel}`, mimeType: file.mimeType };
+  });
+}
+
+/**
+ * Pin multiple files as ONE directory to IPFS via Pinata.
+ * Returns the root CID of the pinned directory. Works for any file count —
+ * a one-file bundle is still a valid single-directory upload, keeping the
+ * `<cid>/index.html` URL contract uniform.
  */
 export async function pinDirectory(
   files: Array<{ buffer: Buffer; path: string; mimeType: string }>,
@@ -102,21 +173,17 @@ export async function pinDirectory(
 ): Promise<PinResult> {
   const form = new FormData();
 
-  for (const file of files) {
-    // Use the file's relative path as the filename. When `wrapWithDirectory: true`
-    // Pinata wraps all files in an outer directory — prefixing each file with
-    // dirName would create double-nesting (dirName/dirName/file) and causes a 400.
-    form.append('file', file.buffer, {
-      filename: file.path,
-      contentType: file.mimeType,
+  for (const entry of buildDirectoryEntries(files, dirName)) {
+    form.append('file', entry.buffer, {
+      filepath: entry.filepath,
+      contentType: entry.mimeType,
     });
   }
 
   form.append('pinataMetadata', JSON.stringify({ name: dirName }));
-  form.append(
-    'pinataOptions',
-    JSON.stringify({ cidVersion: IPFS_CID_VERSION, wrapWithDirectory: true }),
-  );
+  // No wrapWithDirectory: the shared root above IS the single directory. An
+  // extra wrap would nest it (cid/<root>/index.html) and break entry paths.
+  form.append('pinataOptions', JSON.stringify({ cidVersion: IPFS_CID_VERSION }));
 
   let response: Awaited<ReturnType<typeof axios.post<{ IpfsHash: string; PinSize: number }>>>;
   try {

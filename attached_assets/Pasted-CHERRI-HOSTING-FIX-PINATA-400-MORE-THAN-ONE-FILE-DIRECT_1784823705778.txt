@@ -1,0 +1,19 @@
+CHERRI HOSTING — FIX: PINATA 400 "MORE THAN ONE FILE/DIRECTORY PROVIDED FOR PINNING"
+
+CONFIRMED PROBLEM: Stage 2 (Deploy & Go Live) fails with "Pinata error 400: More than one file and/or directory was provided for pinning" when pinning a verified build. This happens on the PINNING REQUEST itself, before any gateway/HTML issue — it means the built output is being sent to Pinata's pin API as multiple separate files/entries instead of as ONE single directory (or one file, for a single-file site).
+
+Do NOT change the build engine, the white-screen/asset-path hardening, or the gated backend lane. This is a fix to how the pin request is ASSEMBLED and SENT.
+
+Run straight through. At the end run both TypeScript checks (zero errors) and report.
+
+1. FIND THE PIN CALL: locate where Cherri sends the verified build output to Pinata (the pinning service call in the deploy/pin route or service). Confirm exactly how the files are currently being passed — as an array of separate file entries, or as one wrapped directory.
+
+2. FIX THE REQUEST SHAPE: Pinata's pinning API expects either a single file OR a single directory upload, not a loose list of files. Wrap the ENTIRE built output (index.html + all assets, preserving folder structure) into ONE directory upload for the pin request, even when the build only has 1-2 files. Do not send multiple top-level entries.
+
+3. HANDLE THE SINGLE-FILE CASE explicitly: if the build output is truly just one file (e.g. a single index.html with no separate assets), confirm Pinata is called with the correct single-file pinning method — not the multi-file path with only one item in it, which may be what's triggering this 400.
+
+4. VERIFY WITH THE REAL CASE: re-test pinning the exact kind of small build shown in the screenshot (1 file, ~1.3 KB) end to end — confirm it now pins successfully and produces a working CID, using the corrected live-link + dedicated-gateway logic from the previous fix.
+
+5. SURFACE CLEARLY: if a pin request ever fails for any other Pinata-side reason in the future, keep showing the REAL error message (like this one did) rather than a generic failure — that honesty is what made this bug easy to diagnose. Don't regress that.
+
+FINAL: both TypeScript checks zero errors. Confirm: the pin request now sends the build as a single file or single directory (never a loose multi-file list), the exact small build from the screenshot pins successfully, and real Pinata errors continue to surface honestly if they occur.

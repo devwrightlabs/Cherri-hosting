@@ -24,6 +24,26 @@ There are no client-side Pinata calls. Pinning runs in the server's background
 `executePin`, which persists the real error via `describePinError()` to
 `Deployment.failureReason`. Never move pinning to the browser (CORS + key exposure).
 
+## Pin request shape: ONE shared root via `filepath`, never loose files
+Pinata's `pinFileToIPFS` accepts exactly one file OR one directory. A directory
+pin must append every multipart part with form-data's **`filepath`** option
+under one shared root (`<root>/<relative path>`), with NO `wrapWithDirectory`.
+
+**Why:** the `filename` option is passed through `path.basename()` by
+form-data, silently stripping directory structure — every file becomes a loose
+root-level entry and Pinata rejects with 400 "More than one file and/or
+directory was provided for pinning". Even a "1-file" site hits this, because
+hardening adds `404.html`. `wrapWithDirectory: true` does not rescue loose
+entries, and combined with a shared root it would nest (`cid/<root>/…`) and
+break the `<cid>/index.html` entryPath contract.
+
+**How to apply:** the returned CID is the shared root's *contents* (the root
+name never appears in URLs), so `<cid>/index.html` stays valid. Keep the pure
+helpers (`buildDirectoryEntries` et al. in `services/ipfs.ts`) as the only way
+to assemble the form, and pin even one-file bundles as a single directory for
+a uniform URL contract. A wrong shape 404s at `<cid>/index.html`; the public
+gateway's 403 (ERR_ID:00023) means the shape is RIGHT but HTML is blocked.
+
 ## Surfacing real errors (kill the bare "Network Error")
 Two things must hold so honest Pinata errors (401 invalid JWT / 403
 NO_SCOPES_FOUND / 413 payload too large) reach the user instead of a generic
