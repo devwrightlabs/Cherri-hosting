@@ -143,6 +143,10 @@ export default function Pirc2Subscription({ onChange }: Pirc2SubscriptionProps) 
         <h2 className="text-sm font-semibold text-ink">Recurring subscription</h2>
         <Badge variant="default">PiRC2</Badge>
       </div>
+      <p className="text-surface-500 text-[11px] leading-relaxed mb-3">
+        PiRC2 is Pi Network's standard for auto-renewing payments — approve once,
+        renew automatically.
+      </p>
 
       {error && (
         <div className="mb-3 p-2 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-400">

@@ -170,7 +170,14 @@ async function deferProvisioning(
         failureReason: reason,
       },
     })
-    .catch(() => undefined);
+    .catch((dbErr: unknown) => {
+      // Log (not swallow) — the retry loop can still pick the row up, but a
+      // silent failure here would hide why attempt counts/backoff didn't move.
+      logger.error('Failed to record deferred provisioning state', {
+        backendServiceId,
+        error: (dbErr as Error)?.message ?? String(dbErr),
+      });
+    });
   logger.warn('Provisioning deferred; will retry', {
     backendServiceId,
     attemptCount,

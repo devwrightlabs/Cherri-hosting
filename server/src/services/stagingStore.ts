@@ -55,7 +55,10 @@ export function createStage(
 export function getStage(id: string): Stage | null {
   const s = stages.get(id);
   if (!s) return null;
-  if (s.expiresAt <= Date.now()) {
+  // A mid-pin stage is never expired out from under the in-flight pin — a pin
+  // failure at the TTL edge must remain retryable (releaseStage grants a grace
+  // window). Only non-pinning expired stages return an honest 404.
+  if (s.expiresAt <= Date.now() && !s.pinning) {
     stages.delete(id);
     return null;
   }
@@ -84,10 +87,21 @@ export function claimStage(id: string, userId: string): ClaimResult {
   return { ok: true, stage: s };
 }
 
-/** Release a pinning claim so a failed pin can be retried. */
+/** Grace window granted after a failed pin so a TTL-edge failure is retryable. */
+const RELEASE_GRACE_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Release a pinning claim so a failed pin can be retried. If the stage expired
+ * while the pin was in flight, extend its TTL by a short grace window —
+ * otherwise the very next getStage/claimStage would 404 it and the failure
+ * could never be retried.
+ */
 export function releaseStage(id: string): void {
   const s = stages.get(id);
-  if (s) s.pinning = false;
+  if (!s) return;
+  s.pinning = false;
+  const minExpiry = Date.now() + RELEASE_GRACE_MS;
+  if (s.expiresAt < minExpiry) s.expiresAt = minExpiry;
 }
 
 export type MutateResult =
@@ -115,11 +129,15 @@ export function mutateStage(
   return { ok: true, stage: s };
 }
 
-// Periodic sweep so expired uploads don't linger in memory.
+// Periodic sweep so expired uploads don't linger in memory. A stage that is
+// mid-pin is skipped even past its TTL: deleting it out from under an in-flight
+// pin would make a pin failure at the TTL edge unretryable (releaseStage would
+// have nothing to release). getStage still returns an honest 404 for expired
+// stages that are NOT pinning.
 const sweep = setInterval(() => {
   const now = Date.now();
   for (const [id, s] of stages) {
-    if (s.expiresAt <= now) stages.delete(id);
+    if (s.expiresAt <= now && !s.pinning) stages.delete(id);
   }
 }, 5 * 60 * 1000);
 sweep.unref?.();

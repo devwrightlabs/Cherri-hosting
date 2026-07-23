@@ -24,6 +24,15 @@ function relativeTime(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString();
 }
 
+/** Plain-language deployment status — never show raw enum values to users. */
+const STATUS_LABEL: Record<string, string> = {
+  ACTIVE: 'Published',
+  PENDING: 'Queued',
+  UPLOADING: 'Uploading',
+  PINNING: 'Publishing',
+  FAILED: 'Failed',
+};
+
 function statusDotColor(status?: string): string {
   if (status === 'ACTIVE') return 'bg-live';
   if (status === 'FAILED') return 'bg-red-400';
@@ -199,7 +208,7 @@ export default function Projects() {
                                   : 'warning'
                             }
                           >
-                            {latest.status}
+                            {STATUS_LABEL[latest.status] ?? latest.status}
                           </Badge>
                         )}
                       </div>

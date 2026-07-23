@@ -110,8 +110,7 @@ export default function DeployDomainPanel({ deployment }: DeployDomainPanelProps
               <>
                 {target.served ? (
                   <p className="text-live text-xs leading-relaxed">
-                    ✓ Live on IPFS — the gateway served your site
-                    {target.gatewayStatus ? ` (HTTP ${target.gatewayStatus})` : ''}. Pointing your{' '}
+                    ✓ Live on IPFS — we checked your link and your site loaded. Pointing your{' '}
                     <span className="font-mono">.pi</span> name here is still done in Pi’s portal;
                     Cherri can’t verify <span className="font-mono">.pi</span> resolution.
                   </p>
@@ -122,8 +121,7 @@ export default function DeployDomainPanel({ deployment }: DeployDomainPanelProps
                   </p>
                 ) : (
                   <p className="text-amber-400 text-xs leading-relaxed">
-                    Not serving yet
-                    {target.gatewayStatus ? ` (HTTP ${target.gatewayStatus})` : ''}.{' '}
+                    Not loading yet — we checked your link and the site didn’t come up.{' '}
                     {target.reason ?? 'The gateway hasn’t picked up your content yet — give it a minute.'}
                   </p>
                 )}

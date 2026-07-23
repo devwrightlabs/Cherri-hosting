@@ -99,7 +99,7 @@ export default function ValidationKeyLiveCheck({
             )}
             {!check.served && !check.indeterminate && (
               <p className="text-amber-400 text-xs leading-relaxed">
-                Not served yet{check.status ? ` (HTTP ${check.status})` : ''}.{' '}
+                Not showing up yet — we checked and the file didn&rsquo;t come back.{' '}
                 {check.reason ?? 'The gateway hasn’t picked it up yet — give it a minute.'}
               </p>
             )}

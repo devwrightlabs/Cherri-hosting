@@ -106,7 +106,7 @@ export default function ProjectDetail() {
         return;
       }
       downloadBlob(blob, `${project?.name ?? 'site'}.car`);
-      success('Site archive downloaded');
+      success('Site archive downloaded — a .car file is a portable copy of your whole site');
     } catch (err) {
       toastError(await readBlobError(err, 'We could not export your site right now.'));
     } finally {
@@ -238,11 +238,11 @@ export default function ProjectDetail() {
           )}
           <div className="space-y-2 text-xs">
             <div className="flex items-start gap-2">
-              <span className="text-ink-mut shrink-0 w-8">CID</span>
+              <span className="text-ink-mut shrink-0 w-28">Permanent address</span>
               <span className="font-mono text-ink break-all">{activeDeployment.cid}</span>
             </div>
             <div className="flex items-start gap-2">
-              <span className="text-ink-mut shrink-0 w-8">Link</span>
+              <span className="text-ink-mut shrink-0 w-28">Link</span>
               <a
                 href={activeDeployment.gateway}
                 target="_blank"

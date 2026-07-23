@@ -12,6 +12,15 @@ interface DomainGatewayProps {
   projects: Project[];
 }
 
+/** Plain-language deployment status — never show raw enum values to users. */
+const DEPLOY_STATUS_LABEL: Record<string, string> = {
+  ACTIVE: 'published',
+  PENDING: 'queued',
+  UPLOADING: 'uploading',
+  PINNING: 'publishing',
+  FAILED: 'failed',
+};
+
 const TIER_DOMAIN_LIMITS: Record<string, number> = {
   FREE: 1,
   TIER1: 1,
@@ -146,7 +155,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
 
       {/* Step 1 — Win a domain at Pi's auction */}
       <div className="mb-4">
-        <p className="text-xs font-medium text-surface-400 uppercase tracking-wider mb-2">
+        <p className="text-xs font-medium text-ink-mut uppercase tracking-wider mb-2">
           Step 1 — Win your domain
         </p>
         <p className="text-surface-400 text-xs leading-relaxed mb-3">
@@ -164,7 +173,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
 
       {/* Step 2 — Copy your site's live address */}
       <div className="border-t border-surface-700/40 pt-4 mb-4">
-        <p className="text-xs font-medium text-surface-400 uppercase tracking-wider mb-2">
+        <p className="text-xs font-medium text-ink-mut uppercase tracking-wider mb-2">
           Step 2 — Copy your site address
         </p>
         <p className="text-surface-400 text-xs leading-relaxed mb-3">
@@ -178,7 +187,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
             <select
               value={selectedProjectId}
               onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="w-full bg-surface-800 border border-surface-600 rounded-lg px-3 py-2 text-ink text-xs focus:outline-none focus:border-cherry-500"
+              className="w-full min-h-[48px] bg-surface-800 border border-surface-600 rounded-xl px-4 text-ink text-sm focus:outline-none focus:border-cherry-500/50 focus:ring-2 focus:ring-cherry-500 focus:ring-offset-2 focus:ring-offset-surface-950 transition-colors"
             >
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -191,7 +200,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
               <div className="bg-surface-800/60 border border-surface-700/60 rounded-lg p-2.5 space-y-2">
                 {latest.status !== 'ACTIVE' && (
                   <p className="text-amber-400 text-xs">
-                    This deployment is {latest.status.toLowerCase()} — wait until it's live
+                    This deployment is {DEPLOY_STATUS_LABEL[latest.status] ?? 'not live yet'} — wait until it's live
                     before pointing your domain at it.
                   </p>
                 )}
@@ -206,7 +215,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
                     <button
                       type="button"
                       onClick={() => void copy(latest.gateway, 'Address')}
-                      className="text-cherry-400 hover:text-cherry-300 text-xs flex-shrink-0"
+                      className="inline-flex items-center min-h-[44px] px-2 -mx-2 text-cherry-400 hover:text-cherry-300 text-xs flex-shrink-0"
                     >
                       Copy
                     </button>
@@ -215,7 +224,11 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
                 {latest.cid && (
                   <div className="border-t border-surface-700/40 pt-2">
                     <p className="text-[10px] text-surface-500 uppercase tracking-wider mb-1">
-                      Content id (CID)
+                      Permanent address (CID)
+                    </p>
+                    <p className="text-surface-500 text-[11px] leading-relaxed mb-1.5">
+                      A CID is your site's fingerprint on IPFS — the same content always
+                      gets the same address.
                     </p>
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-xs text-surface-400 break-all min-w-0 flex-1">
@@ -224,7 +237,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
                       <button
                         type="button"
                         onClick={() => void copy(latest.cid, 'CID')}
-                        className="text-cherry-400 hover:text-cherry-300 text-xs flex-shrink-0"
+                        className="inline-flex items-center min-h-[44px] px-2 -mx-2 text-cherry-400 hover:text-cherry-300 text-xs flex-shrink-0"
                       >
                         Copy
                       </button>
@@ -256,8 +269,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
                       <>
                         {domainTarget.served ? (
                           <p className="text-emerald-400 text-xs leading-relaxed">
-                            ✓ Live on IPFS — the gateway served your site
-                            {domainTarget.gatewayStatus ? ` (HTTP ${domainTarget.gatewayStatus})` : ''}.
+                            ✓ Live on IPFS — we checked your link and your site loaded.
                             Pointing your <span className="font-mono">.pi</span> name here is still done
                             in Pi's portal; Cherri can't verify <span className="font-mono">.pi</span>{' '}
                             resolution.
@@ -268,8 +280,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
                           </p>
                         ) : (
                           <p className="text-amber-400 text-xs leading-relaxed">
-                            Not serving yet
-                            {domainTarget.gatewayStatus ? ` (HTTP ${domainTarget.gatewayStatus})` : ''}.{' '}
+                            Not loading yet — we checked your link and the site didn't come up.{' '}
                             {domainTarget.reason}
                           </p>
                         )}
@@ -288,7 +299,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
                             <button
                               type="button"
                               onClick={() => void copy(domainTarget.dnslink, 'DNSLink')}
-                              className="text-cherry-400 hover:text-cherry-300 text-xs flex-shrink-0"
+                              className="inline-flex items-center min-h-[44px] px-2 -mx-2 text-cherry-400 hover:text-cherry-300 text-xs flex-shrink-0"
                             >
                               Copy
                             </button>
@@ -313,7 +324,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
 
       {/* Step 3 — Point the domain in Pi's portal (manual, Pi-controlled) */}
       <div className="border-t border-surface-700/40 pt-4 mb-4">
-        <p className="text-xs font-medium text-surface-400 uppercase tracking-wider mb-2">
+        <p className="text-xs font-medium text-ink-mut uppercase tracking-wider mb-2">
           Step 3 — Point it in Pi's portal
         </p>
         <p className="text-surface-400 text-xs leading-relaxed mb-3">
@@ -335,7 +346,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
 
       {/* Optional — record the domain on the project for your dashboard */}
       <div className="border-t border-surface-700/40 pt-4 mb-4">
-        <p className="text-xs font-medium text-surface-400 uppercase tracking-wider mb-2">
+        <p className="text-xs font-medium text-ink-mut uppercase tracking-wider mb-2">
           Optional — label it here
         </p>
         <p className="text-surface-400 text-xs leading-relaxed mb-3">
@@ -351,7 +362,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
               onKeyDown={(e) => { if (e.key === 'Enter') void handleSaveMapping(); }}
               placeholder="your-domain.pi"
               disabled={!canMapMore}
-              className="w-full bg-surface-800 border border-surface-600 rounded-lg px-3 py-2 text-ink text-xs placeholder-surface-500 focus:outline-none focus:border-cherry-500 disabled:opacity-50 font-mono"
+              className="w-full min-h-[48px] bg-surface-800 border border-surface-600 rounded-xl px-4 text-ink text-sm placeholder-surface-500 focus:outline-none focus:border-cherry-500/50 focus:ring-2 focus:ring-cherry-500 focus:ring-offset-2 focus:ring-offset-surface-950 disabled:opacity-50 font-mono transition-colors"
             />
 
             {!canMapMore && (
@@ -385,7 +396,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
       {/* Recorded domains list */}
       {Object.keys(localMappings).length > 0 && (
         <div className="border-t border-surface-700/40 pt-4">
-          <p className="text-xs font-medium text-surface-400 uppercase tracking-wider mb-2">
+          <p className="text-xs font-medium text-ink-mut uppercase tracking-wider mb-2">
             Saved domains
           </p>
           <div className="space-y-1.5">
@@ -405,7 +416,7 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
                   <button
                     type="button"
                     onClick={() => void handleRemoveMapping(projectId)}
-                    className="text-surface-600 hover:text-red-400 transition-colors flex-shrink-0 text-xs"
+                    className="inline-flex items-center min-h-[44px] px-2 -mx-2 text-surface-600 hover:text-red-400 transition-colors flex-shrink-0 text-xs"
                   >
                     Remove
                   </button>
