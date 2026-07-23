@@ -10,6 +10,7 @@ import EmptyState from '../components/ui/EmptyState';
 import PageHeader from '../components/ui/PageHeader';
 import StorageBar from '../components/dashboard/StorageBar';
 import DeploymentCard from '../components/dashboard/DeploymentCard';
+import { deploymentStatusLabel } from '../lib/statusLabels';
 import QuickDeploy from '../components/dashboard/QuickDeploy';
 import Pirc2Subscription from '../components/dashboard/Pirc2Subscription';
 import DomainGateway from '../components/dashboard/DomainGateway';
@@ -224,7 +225,7 @@ export default function Dashboard() {
                                     : 'warning'
                               }
                             >
-                              {latestDeploy.status}
+                              {deploymentStatusLabel(latestDeploy.status)}
                             </Badge>
                           )}
                         </div>

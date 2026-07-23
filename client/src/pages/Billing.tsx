@@ -9,6 +9,7 @@ import EmptyState from '../components/ui/EmptyState';
 import Skeleton from '../components/ui/Skeleton';
 import { useToast } from '../components/ui/Toast';
 import { invoicesApi, extractApiError, Invoice } from '../lib/api';
+import { invoiceStatusLabel } from '../lib/statusLabels';
 
 function formatCents(n: number) {
   return `$${(n / 100).toFixed(2)}`;
@@ -21,18 +22,6 @@ function statusVariant(status: string): 'success' | 'error' | 'warning' | 'defau
   return 'default';
 }
 
-const statusLabel: Record<string, string> = {
-  PAID: 'Paid',
-  OVERDUE: 'Overdue',
-  PENDING: 'Awaiting payment',
-  OPEN: 'Awaiting payment',
-};
-
-function friendlyStatus(status: string): string {
-  if (statusLabel[status]) return statusLabel[status];
-  const lower = status.toLowerCase().replace(/_/g, ' ');
-  return lower.charAt(0).toUpperCase() + lower.slice(1);
-}
 
 function DetailRow({
   label,
@@ -76,7 +65,7 @@ function InvoiceSheet({
         <div className="w-10 h-1 rounded-full bg-surface-700 mx-auto mb-5 sm:hidden" />
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-ink font-display">Invoice</h2>
-          <Badge variant={statusVariant(inv.status)}>{friendlyStatus(inv.status)}</Badge>
+          <Badge variant={statusVariant(inv.status)}>{invoiceStatusLabel(inv.status)}</Badge>
         </div>
 
         <div className="space-y-2.5 text-sm">
@@ -201,7 +190,7 @@ export default function Billing() {
                     {new Date(inv.cycleStart).toLocaleDateString()} –{' '}
                     {new Date(inv.cycleEnd).toLocaleDateString()}
                   </p>
-                  <Badge variant={statusVariant(inv.status)}>{friendlyStatus(inv.status)}</Badge>
+                  <Badge variant={statusVariant(inv.status)}>{invoiceStatusLabel(inv.status)}</Badge>
                 </div>
               </Card>
             </button>

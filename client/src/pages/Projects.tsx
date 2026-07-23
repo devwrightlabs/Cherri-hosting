@@ -10,6 +10,7 @@ import Skeleton from '../components/ui/Skeleton';
 import EmptyState from '../components/ui/EmptyState';
 import { useToast } from '../components/ui/Toast';
 import { projectsApi, extractApiError } from '../lib/api';
+import { deploymentStatusLabel } from '../lib/statusLabels';
 import { Project } from '../types';
 
 function relativeTime(dateStr: string): string {
@@ -23,15 +24,6 @@ function relativeTime(dateStr: string): string {
   if (days < 30) return `${days}d ago`;
   return new Date(dateStr).toLocaleDateString();
 }
-
-/** Plain-language deployment status — never show raw enum values to users. */
-const STATUS_LABEL: Record<string, string> = {
-  ACTIVE: 'Published',
-  PENDING: 'Queued',
-  UPLOADING: 'Uploading',
-  PINNING: 'Publishing',
-  FAILED: 'Failed',
-};
 
 function statusDotColor(status?: string): string {
   if (status === 'ACTIVE') return 'bg-live';
@@ -208,7 +200,7 @@ export default function Projects() {
                                   : 'warning'
                             }
                           >
-                            {STATUS_LABEL[latest.status] ?? latest.status}
+                            {deploymentStatusLabel(latest.status)}
                           </Badge>
                         )}
                       </div>

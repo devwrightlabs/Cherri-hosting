@@ -1,6 +1,7 @@
 import { Deployment } from '../../types';
 import Badge from '../ui/Badge';
 import Card from '../ui/Card';
+import { deploymentStatusLabel } from '../../lib/statusLabels';
 
 interface DeploymentCardProps {
   deployment: Deployment;
@@ -15,15 +16,6 @@ const statusVariant: Record<
   UPLOADING: 'info',
   PINNING: 'info',
   FAILED: 'error',
-};
-
-/** Plain-language status labels — never show raw enum values to users. */
-const statusLabel: Record<string, string> = {
-  ACTIVE: 'Published',
-  PENDING: 'Queued',
-  UPLOADING: 'Uploading',
-  PINNING: 'Publishing',
-  FAILED: 'Failed',
 };
 
 function formatBytes(bytes: number): string {
@@ -42,7 +34,7 @@ export default function DeploymentCard({ deployment }: DeploymentCardProps) {
       <div className="flex items-center justify-between gap-3 mb-3">
         <div className="flex items-center gap-2 min-w-0">
           <Badge variant={variant} dot>
-            {statusLabel[deployment.status] ?? deployment.status}
+            {deploymentStatusLabel(deployment.status)}
           </Badge>
           <span className="text-ink-mut text-xs">
             {new Date(deployment.createdAt).toLocaleDateString()}

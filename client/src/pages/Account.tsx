@@ -10,6 +10,7 @@ import StorageBar from '../components/dashboard/StorageBar';
 import Skeleton from '../components/ui/Skeleton';
 import { useToast } from '../components/ui/Toast';
 import { useAuth } from '../providers/AuthProvider';
+import { subscriptionStatusLabel } from '../lib/statusLabels';
 import { authApi, subscriptionsApi, extractApiError } from '../lib/api';
 
 interface UserProfile {
@@ -119,7 +120,7 @@ export default function Account() {
           <div className="space-y-5">
             {subData?.subscription && (
               <p className="text-xs text-ink-mut">
-                Status: <span className="text-ink">{subData.subscription.status}</span>
+                Status: <span className="text-ink">{subscriptionStatusLabel(subData.subscription.status)}</span>
                 {subData.subscription.currentPeriodEnd && (
                   <> · Renews {new Date(subData.subscription.currentPeriodEnd).toLocaleDateString()}</>
                 )}
