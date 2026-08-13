@@ -30,7 +30,34 @@ export const authApi = {
   signIn: (piAccessToken: string, username: string) =>
     apiClient.post('/auth/signin', { piAccessToken, username }),
   me: () => apiClient.get('/auth/me'),
-  updateProfile: (data: { email?: string }) => apiClient.patch('/auth/me', data),
+};
+
+// Support tickets — the only way to reach the operator (Pi-only app: no email).
+export interface SupportTicketMessage {
+  id: string;
+  fromOperator: boolean;
+  body: string;
+  createdAt: string;
+}
+
+export interface SupportTicket {
+  id: string;
+  subject: string;
+  status: 'OPEN' | 'AWAITING_OPERATOR' | 'AWAITING_USER' | 'CLOSED';
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+  messages: SupportTicketMessage[];
+}
+
+export const supportApi = {
+  list: () => apiClient.get<{ tickets: SupportTicket[] }>('/support/tickets'),
+  create: (subject: string, body: string) =>
+    apiClient.post<{ ticket: SupportTicket }>('/support/tickets', { subject, body }),
+  get: (id: string) => apiClient.get<{ ticket: SupportTicket }>(`/support/tickets/${id}`),
+  reply: (id: string, body: string) =>
+    apiClient.post<{ ticket: SupportTicket }>(`/support/tickets/${id}/reply`, { body }),
+  close: (id: string) => apiClient.post<{ ticket: SupportTicket }>(`/support/tickets/${id}/close`),
 };
 
 // Projects

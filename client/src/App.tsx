@@ -10,6 +10,7 @@ import Pricing from './pages/Pricing';
 import Account from './pages/Account';
 import Billing from './pages/Billing';
 import ProjectDetail from './pages/ProjectDetail';
+import { SupportList, SupportDetail } from './pages/Support';
 import ProtectedRoute from './components/ProtectedRoute';
 
 const router = createBrowserRouter([
@@ -60,6 +61,22 @@ const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <Deploy />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/support',
+    element: (
+      <ProtectedRoute>
+        <SupportList />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/support/:id',
+    element: (
+      <ProtectedRoute>
+        <SupportDetail />
       </ProtectedRoute>
     ),
   },

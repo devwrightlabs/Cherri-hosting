@@ -49,3 +49,7 @@ coverage/
 
 # Docker
 docker-compose.override.yml
+*.bak
+.pgdata/
+pgdata/
+.embedded-postgres/

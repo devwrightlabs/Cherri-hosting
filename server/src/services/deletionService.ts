@@ -40,7 +40,11 @@ export class DeletionError extends Error {
 // Test seams: let unit tests inject fakes so deletion ordering can be verified
 // without touching the real Pinata/Railway networks. Default to the real clients.
 let unpinFn: (cid: string) => Promise<void> = unpin;
+/** Whether a test seam has replaced unpinFn. When true, skip the isPinataConfigured
+ *  gate so the mock is always reachable regardless of local env vars. */
+let _unpinFnOverridden = false;
 export function __setUnpinFn(fn: ((cid: string) => Promise<void>) | null): void {
+  _unpinFnOverridden = fn !== null;
   unpinFn = fn ?? unpin;
 }
 
@@ -109,7 +113,10 @@ export async function deleteProjectFully(
     ...new Set(project.deployments.map((d) => d.cid).filter((c) => c && c.length > 0)),
   ];
   if (cids.length > 0) {
-    if (!isPinataConfigured()) {
+    // Skip the Pinata config gate when a test seam has replaced unpinFn — the mock
+    // must be reachable regardless of local env vars. In production _unpinFnOverridden
+    // is always false, so the gate remains in effect.
+    if (!isPinataConfigured() && !_unpinFnOverridden) {
       failures.push('IPFS pins still exist but IPFS is not configured to remove them.');
     } else {
       for (const cid of cids) {

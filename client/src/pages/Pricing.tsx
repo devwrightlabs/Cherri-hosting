@@ -99,7 +99,7 @@ const TIERS: TierDef[] = [
       { label: '2 GB storage' },
       { label: '1 Pi domain', soon: true },
       { label: 'Priority IPFS pinning' },
-      { label: 'Email support' },
+      { label: 'Priority support' },
     ],
     feeLine: 'Accept Pi payments — 3% fee, more in your pocket',
     cta: 'Upgrade with Pi',
@@ -282,7 +282,7 @@ export default function Pricing() {
             await refreshUser?.();
             success(`You're on ${tierLabel}`);
           } catch {
-            toastError('Payment recorded but activation failed. Please contact support.');
+            toastError('Payment recorded but activation failed. Please open a support ticket from Account → Support.');
           } finally {
             setPayingTier(null);
           }

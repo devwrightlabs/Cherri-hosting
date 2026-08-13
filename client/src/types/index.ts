@@ -11,7 +11,6 @@ export interface User {
   id: string;
   piUserId: string;
   username: string;
-  email?: string;
   tier: Tier;
   storageUsed: number;
   storageLimit: number;

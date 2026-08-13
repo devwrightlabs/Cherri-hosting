@@ -1,8 +1,8 @@
 /**
  * In-app user notifications (Phase 6).
  *
- * Email delivery is intentionally NOT implemented in this phase; this store is
- * the single source the client reads, and an email channel can later mirror it.
+ * Pi-only app: no email delivery channel exists or is planned. This store is
+ * the single source of truth and the client reads notifications from here only.
  *
  * CAP_WARNING_80 / CAP_REACHED_100 are part of the type union but are NEVER
  * emitted until Phase 4 metering produces real usage-vs-cap data — we never

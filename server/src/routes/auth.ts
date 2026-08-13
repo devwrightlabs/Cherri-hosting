@@ -38,7 +38,6 @@ authRouter.post('/signin', async (req: AuthenticatedRequest, res: Response): Pro
           id: true,
           piUserId: true,
           username: true,
-          email: true,
           tier: true,
           storageUsed: true,
           storageLimit: true,
@@ -70,7 +69,6 @@ authRouter.get('/me', piAuthMiddleware, async (req: AuthenticatedRequest, res: R
         id: true,
         piUserId: true,
         username: true,
-        email: true,
         tier: true,
         storageUsed: true,
         storageLimit: true,
@@ -91,35 +89,7 @@ authRouter.get('/me', piAuthMiddleware, async (req: AuthenticatedRequest, res: R
   }
 });
 
-/**
- * PATCH /api/auth/me
- * Update user email.
- */
-authRouter.patch('/me', piAuthMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  const schema = z.object({ email: z.string().email().optional() });
-  const parsed = schema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: 'Invalid request body' });
-    return;
-  }
-
-  try {
-    const updated = await prisma.user.update({
-      where: { id: req.user!.id },
-      data: parsed.data,
-      select: {
-        id: true,
-        piUserId: true,
-        username: true,
-        email: true,
-        tier: true,
-        storageUsed: true,
-        storageLimit: true,
-      },
-    });
-    res.json({ user: updated });
-  } catch (err) {
-    logger.error('Failed to update user', { error: err });
-    res.status(500).json({ error: 'Failed to update user' });
-  }
-});
+// Pi-only apps must not collect email addresses. There is intentionally no
+// PATCH /api/auth/me endpoint — user profile fields are Pi-authenticated
+// only (piUserId, username) and are never user-editable via email-style
+// contact info.

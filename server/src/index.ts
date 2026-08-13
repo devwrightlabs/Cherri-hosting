@@ -16,6 +16,7 @@ import { paymentsRouter } from './routes/payments';
 import { billingRouter } from './routes/billing';
 import { invoicesRouter } from './routes/invoices';
 import { notificationsRouter } from './routes/notifications';
+import { supportRouter } from './routes/support';
 import { operatorCostControlRouter } from './routes/operatorCostControl';
 import { operatorGoLiveRouter } from './routes/operatorGoLive';
 import { logger } from './utils/logger';
@@ -215,6 +216,7 @@ app.use('/api/payments', paymentsRouter);
 app.use('/api/billing', billingRouter);
 app.use('/api/invoices', invoicesRouter);
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/support', supportRouter);
 app.use('/api/operator/cost-control', operatorCostControlRouter);
 app.use('/api/operator/go-live', operatorGoLiveRouter);
 
