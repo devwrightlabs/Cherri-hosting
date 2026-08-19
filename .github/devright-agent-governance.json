@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "projectName": "Devright Labs Agent Governance Spec",
+  "version": "1.0.0",
+  "_source": "Core Architecture V4, §4.1 — canonical. Deploy a copy to each repo at .github/devright-agent-governance.json",
+  "orchestration": {
+    "pattern": "Orchestrator-Worker",
+    "primaryCoordinator": "Devright-Orchestrator",
+    "maxSubagentDepth": 2,
+    "timeoutPerTaskSeconds": 300
+  },
+  "evaluations": {
+    "targets": {
+      "minCodePassRate": 0.90,
+      "maxAllowedFalsePositives": 0.02,
+      "maxExecutionLatencyMs": 15000
+    },
+    "budgeting": {
+      "lightEvalsOnPR": true,
+      "fullSuiteOnMerge": true,
+      "maxLoopAttempts": 3
+    }
+  },
+  "guardrails": {
+    "piiPreValidation": true,
+    "sandboxExecution": {
+      "required": true,
+      "environment": "ephemeral-container",
+      "networkAccess": "restricted"
+    },
+    "mutativeActions": {
+      "requireApprovalFor": [
+        "git:push:main",
+        "database:migration:apply",
+        "deploy:production"
+      ]
+    }
+  },
+  "observability": {
+    "tracingEnabled": true,
+    "logPayloads": true,
+    "traceStorage": "delta-lake-tracking-store"
+  }
+}
