@@ -412,11 +412,21 @@ export function extractDeployError(err: unknown): DeployError {
     }
 
     // The server responded, but without a usable message body.
+    // Never surface the raw HTTP status code — map it to plain language.
+    if (status === 401 || status === 403) {
+      return { kind: 'generic', message: 'You are not authorised to do this. Try signing in again.' };
+    }
+    if (status === 404) {
+      return { kind: 'generic', message: 'The resource you requested was not found. It may have been deleted.' };
+    }
+    if (status === 429) {
+      return { kind: 'generic', message: 'Too many requests. Please wait a moment and try again.' };
+    }
+    if (status && status >= 500) {
+      return { kind: 'generic', message: 'Something went wrong on our end. Please try again in a moment.' };
+    }
     if (status) {
-      return {
-        kind: 'generic',
-        message: `The server returned an error (${status}). Please try again.`,
-      };
+      return { kind: 'generic', message: 'The request could not be completed. Please try again.' };
     }
 
     // No response at all — a true network-level failure. Never surface axios's

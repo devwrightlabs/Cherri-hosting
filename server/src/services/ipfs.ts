@@ -253,10 +253,19 @@ export function describePinError(err: unknown): string {
     detail = detail.slice(0, 300).trim();
 
     if (status === 401 || status === 403) {
-      return `Pinata rejected the request (${status}). The server's Pinata credentials are invalid or lack permission.${detail ? ` ${detail}` : ''}`;
+      return `IPFS storage rejected the request — the server's storage credentials are invalid or lack permission.${detail ? ` ${detail}` : ''}`;
+    }
+    if (status === 413) {
+      return `The file is too large for IPFS storage. Try a smaller upload, or contact support.${detail ? ` ${detail}` : ''}`;
+    }
+    if (status === 429) {
+      return `IPFS storage is rate-limiting requests right now. Please wait a moment and try again.`;
+    }
+    if (status && status >= 500) {
+      return `IPFS storage had a problem on our end. Please try again in a moment.${detail ? ` ${detail}` : ''}`;
     }
     if (status) {
-      return `Pinata error ${status}${detail ? `: ${detail}` : ''}`;
+      return `IPFS storage returned an error. Please try again.${detail ? ` ${detail}` : ''}`;
     }
     if (err.code === 'ECONNABORTED') {
       return 'Pinata timed out while pinning. Try again, or upload a smaller project.';
