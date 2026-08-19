@@ -179,3 +179,15 @@ export const PREMIUM_DEFAULT_CYCLES_AUTHORIZED = 12;
 
 /** IPFS CID version used when pinning content */
 export const IPFS_CID_VERSION = 1 as const;
+
+/**
+ * Current Acceptable Use Policy version.
+ *
+ * Bump this whenever the AUP text changes in a material way.  Users are
+ * asked to re-attest when their stored attestedTermsVersion differs from
+ * this constant — so the version must be a stable, meaningful identifier,
+ * not a hash or timestamp.
+ *
+ * T2.1 — matched to AUP docs/ACCEPTABLE-USE-POLICY.md § effective date.
+ */
+export const CURRENT_AUP_VERSION = '1.0.0' as const;

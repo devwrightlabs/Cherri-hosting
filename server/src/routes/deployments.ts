@@ -1,6 +1,16 @@
 import { Router, Response } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
+import {
+  requireAttestation,
+  AttestationRequiredError,
+  buildAttestationData,
+  validateAttestationPayload,
+} from '../services/attestation';
+import {
+  scanContent,
+  ScanVerdict,
+} from '../services/safety/contentScanner';
 import { piAuthMiddleware, AuthenticatedRequest } from '../middleware/piAuth';
 import { prisma } from '../utils/prismaClient';
 import { pinDirectory, pinFile, describePinError } from '../services/ipfs';
@@ -560,10 +570,56 @@ async function executePin(opts: {
     opts;
 
   try {
+    // ── T2.1: Attestation gate ─────────────────────────────────────────────────
+    // Fetch the deployment row to check attestation. This must happen before
+    // ANY pin attempt — the pin must never proceed on an unattested deploy.
+    const deploymentForAttestation = await prisma.deployment.findUnique({
+      where: { id: deploymentId },
+      select: { id: true, attestationAcceptedAt: true, attestedTermsVersion: true },
+    });
+    if (!deploymentForAttestation) throw new Error('Deployment record not found.');
+    requireAttestation(deploymentForAttestation);
+
     await prisma.deployment.update({
       where: { id: deploymentId },
       data: { status: 'UPLOADING' },
     });
+
+    // ── T2.2: Pre-publish content scan ────────────────────────────────────────
+    // Run the content scanner on the files BEFORE any hardening or pin.
+    // CLEAN → proceed; SUSPICIOUS → hold for operator review; BLOCKED → refuse.
+    if (pinFiles && pinFiles.length > 0) {
+      const scanResult = await scanContent(pinFiles);
+      if (scanResult.verdict === ScanVerdict.BLOCKED) {
+        const reasons = scanResult.findings.map((f) => f.description).join('; ');
+        throw new Error(
+          `Your deployment was blocked because it contains content that violates the Cherri Acceptable Use Policy. ` +
+            `${reasons ? `Detected: ${reasons}. ` : ''}` +
+            `Please review your site and remove any malicious, phishing, or wallet-drainer content before redeploying.`,
+        );
+      }
+      if (scanResult.verdict === ScanVerdict.SUSPICIOUS) {
+        // Hold for operator review — reuse the existing operator go-live lane.
+        const reasons = scanResult.findings.map((f) => f.description).join('; ');
+        logger.warn('Deployment held for operator review (content scanner: SUSPICIOUS)', {
+          deploymentId,
+          findings: scanResult.findings,
+        });
+        await prisma.deployment.update({
+          where: { id: deploymentId },
+          data: {
+            status: 'FAILED',
+            failureReason:
+              `Your site has been flagged for operator review before going live. ` +
+              `${reasons ? `Concern: ${reasons}. ` : ''}` +
+              `You'll be notified once the review is complete. This is usually resolved within a few hours.`,
+          },
+        });
+        if (stageId) releaseStage(stageId);
+        return;
+      }
+      // ScanVerdict.CLEAN → fall through and proceed to pin
+    }
 
     let pinResult;
     /** Entry file for directory pins — live links point here so the gateway

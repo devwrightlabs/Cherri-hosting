@@ -78,6 +78,12 @@ model Deployment {
   /// Honest human-readable detail for INDETERMINATE / FAILED checks.
   liveCheckDetail String?
   liveCheckAt     DateTime?
+  /// T2.1 AUP attestation — set when the user clicks "I agree" before publishing.
+  /// A deployment MUST NOT be pinned unless this is set. The version is the
+  /// CURRENT_AUP_VERSION constant at the time of attestation so we know which
+  /// policy version was agreed to, and can require re-attestation when it bumps.
+  attestationAcceptedAt  DateTime?
+  attestedTermsVersion   String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   projectId String
