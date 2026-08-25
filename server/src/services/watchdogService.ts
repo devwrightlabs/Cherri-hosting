@@ -132,7 +132,6 @@ async function persistCheck(result: WatchdogCheckResult): Promise<void> {
     await (db as any).watchdogCheck.create({
       data: {
         deploymentId: result.deploymentId,
-        url: result.url,
         status: result.status,
         httpCode: result.httpCode,
         responseTimeMs: result.responseTimeMs,
