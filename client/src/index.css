@@ -4,15 +4,15 @@
 
 @layer base {
   :root {
-    /* Spec design tokens (mirrors tailwind.config.js for raw CSS use). */
-    --bg:         #0f1117;
-    --surface:    #181b23;
-    --surface-2:  #20242e;
+    /* Devright Labs Governance Design System tokens (mirrors tailwind.config.js). */
+    --bg:         #0A0A0F;
+    --surface:    #1A1A24;
+    --surface-2:  #22222E;
     --border:     #2a2f3a;
-    --text:       #f4f5f7;
-    --text-mut:   #9ca0ad;
-    --gold:       #0fb5ae;
-    --gold-dim:   #0a8580;
+    --text:       #FFFFFF;
+    --text-mut:   #A0A0B0;
+    --gold:       #F0C040;
+    --gold-dim:   #b88e20;
     --live:       #10b981;
 
     /* Safe-area insets exposed as variables for layout math. */
@@ -30,7 +30,7 @@
   }
 
   body {
-    @apply bg-surface-950 text-ink font-sans;
+    @apply bg-surface-950 text-white font-sans;
     min-height: 100dvh;
     /* Kill horizontal scroll everywhere — acceptance criterion #1. */
     overflow-x: hidden;
@@ -62,7 +62,7 @@
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-cherry-600;
+    @apply bg-gold/60;
   }
 
   /* Respect users who ask for less motion. */
@@ -172,4 +172,36 @@
 
 .reveal-item {
   animation: reveal-up 0.5s ease-out both;
+}
+
+/* ─── Devright Labs Governance Design System overrides ─────────────────────── */
+/* Gold active-state ring utility */
+.ring-gold-active {
+  box-shadow: 0 0 0 3px rgba(240, 192, 64, 0.35);
+}
+
+/* Premium card elevation on #1A1A24 surface */
+.card-premium {
+  background: #1A1A24;
+  border: 1px solid rgba(240, 192, 64, 0.12);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.6), 0 8px 24px -16px rgba(240, 192, 64, 0.1);
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+.card-premium:hover {
+  border-color: rgba(240, 192, 64, 0.3);
+  box-shadow: 0 3px 14px -4px rgba(240, 192, 64, 0.25);
+  transform: translateY(-1px);
+}
+
+/* Gold glow button pulse */
+.btn-gold-glow {
+  box-shadow: 0 0 16px rgba(240, 192, 64, 0.4);
+}
+.btn-gold-glow:hover {
+  box-shadow: 0 0 28px rgba(240, 192, 64, 0.65);
+}
+
+/* Obsidian page background */
+body {
+  background-color: #0A0A0F;
 }

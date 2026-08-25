@@ -5,72 +5,72 @@ export default {
     extend: {
       colors: {
         /**
-         * Teal accent palette — Cherri's premium identity colour.
+         * Devright Labs Governance Design System tokens.
          * The palette key `cherry` is preserved so all existing utility
          * classes (e.g. `text-cherry-400`, `bg-cherry-500`) continue to work
-         * without a codebase-wide rename; values map to teal shades.
+         * without a codebase-wide rename; values now map to gold shades.
          */
         cherry: {
-          50: '#f0fffe',
-          100: '#ccfffe',
-          200: '#99f9f6',
-          300: '#5cf2ee',
-          400: '#0fb5ae', // primary teal
-          500: '#0c9a94', // hover teal
-          600: '#0a8580',
-          700: '#086f6a',
-          800: '#065a56',
-          900: '#044845',
-          950: '#022825',
+          50: '#fffef0',
+          100: '#fffbd0',
+          200: '#fff5a0',
+          300: '#ffec64',
+          400: '#F0C040', // primary gold — CTA buttons, active rings
+          500: '#d4a832', // hover gold
+          600: '#b88e20',
+          700: '#967415',
+          800: '#745a0d',
+          900: '#524007',
+          950: '#302503',
         },
         /** Direct semantic alias — exact same values as cherry. */
         accent: {
-          DEFAULT: '#0fb5ae',
-          50: '#f0fffe',
-          100: '#ccfffe',
-          200: '#99f9f6',
-          300: '#5cf2ee',
-          400: '#0fb5ae',
-          500: '#0c9a94',
-          600: '#0a8580',
-          700: '#086f6a',
-          800: '#065a56',
-          900: '#044845',
-          950: '#022825',
+          DEFAULT: '#F0C040',
+          50: '#fffef0',
+          100: '#fffbd0',
+          200: '#fff5a0',
+          300: '#ffec64',
+          400: '#F0C040',
+          500: '#d4a832',
+          600: '#b88e20',
+          700: '#967415',
+          800: '#745a0d',
+          900: '#524007',
+          950: '#302503',
         },
         /**
-         * Semantic action token — maps to the primary teal accent.
+         * Semantic action token — maps to the primary gold accent (#F0C040).
          * Use `text-gold`, `bg-gold`, `border-gold`, etc.
          */
         gold: {
-          DEFAULT: '#0fb5ae',
-          dim: '#0a8580', // pressed / disabled
+          DEFAULT: '#F0C040',
+          dim: '#b88e20', // pressed / disabled
         },
         /** Live / success state (deploy is live, service connected). */
         live: {
           DEFAULT: '#10b981',
         },
-        /** Text tokens. */
+        /** Text tokens — Devright Labs spec. */
         ink: {
-          DEFAULT: '#f4f5f7', // primary text
-          mut: '#9ca0ad',     // muted text
+          DEFAULT: '#FFFFFF', // primary text
+          mut: '#A0A0B0',     // secondary/muted text
         },
         /** Hairline border token. */
         hairline: '#2a2f3a',
         /**
-         * Dark-premium surface scale:
-         *   950 = --bg          #0F1117  (page background)
-         *   900 = --surface     #181B23  (card background)
-         *   800 = --surface-2   #20242E  (input / inner card)
+         * Dark-premium surface scale — Devright Labs spec:
+         *   950 = --bg          #0A0A0F  (Obsidian — page background)
+         *   900 = --surface     #1A1A24  (cards, modals, sidebar headers)
+         *   800 = --surface-2   #22222E  (input / inner card)
          *   700 = --border      #2A2F3A  (dividers)
          *   600                 #373D4C  (strong dividers / inactive)
          */
         surface: {
-          DEFAULT: '#181b23',
-          2: '#20242e',
-          950: '#0f1117',
-          900: '#181b23',
-          800: '#20242e',
+          DEFAULT: '#1A1A24',
+          2: '#22222E',
+          950: '#0A0A0F',
+          900: '#1A1A24',
+          800: '#22222E',
           700: '#2a2f3a',
           600: '#373d4c',
         },
@@ -82,22 +82,24 @@ export default {
       },
       backgroundImage: {
         /**
-         * Teal accent gradient — retained under both old and new key names
-         * so existing `bg-cherry-gradient`, `bg-gold-gradient` classes work.
+         * Gold accent gradient — CTA buttons, brand highlights.
+         * Retained under all old key names for backward compat.
          */
-        'cherry-gradient': 'linear-gradient(135deg, #16c4bd 0%, #0c9a94 100%)',
-        'accent-gradient': 'linear-gradient(135deg, #16c4bd 0%, #0c9a94 100%)',
-        'gold-gradient':   'linear-gradient(135deg, #16c4bd 0%, #0c9a94 100%)',
-        'dark-gradient':   'linear-gradient(180deg, #181b23 0%, #0f1117 100%)',
-        /** Hero splash gradient — teal → indigo. */
-        'hero-gradient':   'linear-gradient(135deg, #0fb5ae 0%, #5b5bd6 100%)',
+        'cherry-gradient': 'linear-gradient(135deg, #FFD060 0%, #D4A832 100%)',
+        'accent-gradient': 'linear-gradient(135deg, #FFD060 0%, #D4A832 100%)',
+        'gold-gradient':   'linear-gradient(135deg, #FFD060 0%, #D4A832 100%)',
+        'dark-gradient':   'linear-gradient(180deg, #1A1A24 0%, #0A0A0F 100%)',
+        /** Hero splash gradient — gold → deep indigo. */
+        'hero-gradient':   'linear-gradient(135deg, #F0C040 0%, #5b5bd6 100%)',
       },
       boxShadow: {
-        gold:    '0 8px 28px -6px rgba(15, 181, 174, 0.45)',
-        'gold-sm': '0 3px 14px -4px rgba(15, 181, 174, 0.4)',
-        live:    '0 8px 28px -6px rgba(16, 185, 129, 0.4)',
-        card:    '0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 24px -16px rgba(0, 0, 0, 0.9)',
-        sheet:   '0 -8px 40px -8px rgba(0, 0, 0, 0.7)',
+        gold:      '0 8px 28px -6px rgba(240, 192, 64, 0.45)',
+        'gold-sm': '0 3px 14px -4px rgba(240, 192, 64, 0.40)',
+        live:      '0 8px 28px -6px rgba(16, 185, 129, 0.40)',
+        card:      '0 1px 2px rgba(0,0,0,0.6), 0 8px 24px -16px rgba(0,0,0,0.95)',
+        sheet:     '0 -8px 40px -8px rgba(0,0,0,0.7)',
+        /** Focus ring glow for gold-active states. */
+        'gold-focus': '0 0 0 3px rgba(240, 192, 64, 0.35)',
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
@@ -107,6 +109,7 @@ export default {
         'stamp-in':   'stampIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
         shimmer:      'shimmer 1.6s linear infinite',
         'ring-spin':  'ringSpin 1s linear infinite',
+        'glow-pulse': 'glowPulse 2s ease-in-out infinite',
       },
       keyframes: {
         fadeIn: {
@@ -133,6 +136,10 @@ export default {
         ringSpin: {
           '0%':   { transform: 'rotate(0deg)' },
           '100%': { transform: 'rotate(360deg)' },
+        },
+        glowPulse: {
+          '0%, 100%': { boxShadow: '0 0 12px rgba(240, 192, 64, 0.3)' },
+          '50%':      { boxShadow: '0 0 28px rgba(240, 192, 64, 0.6)' },
         },
       },
     },

@@ -5,6 +5,8 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
+import { requestIdMiddleware } from './middleware/requestId';
+import { centralErrorHandler } from './middleware/errorHandler';
 import { authRouter } from './routes/auth';
 import { projectsRouter } from './routes/projects';
 import { deploymentsRouter } from './routes/deployments';
@@ -31,6 +33,9 @@ import {
   getRailwayHealth,
 } from './services/railwayStatusMonitor';
 import { startRailwayActionReconciler } from './services/railwayActionReconciler';
+import { watchdogRouter } from './routes/watchdog';
+import { startWatchdog } from './services/watchdogService';
+import { prisma } from './utils/prismaClient';
 
 // ---------------------------------------------------------------------------
 // Startup environment check (non-fatal by design)
@@ -82,7 +87,7 @@ if (!isRailwayConfigured()) {
 // These are last-resort guards; individual routes still handle their own errors.
 // ---------------------------------------------------------------------------
 process.on('unhandledRejection', (reason) => {
-  console.error('Unhandled promise rejection', { reason });
+  logger.error('Unhandled promise rejection', { reason });
 });
 
 process.on('uncaughtException', (err) => {
@@ -91,7 +96,7 @@ process.on('uncaughtException', (err) => {
   // instance. In development there is no supervisor, so we log and stay alive
   // to keep the app reachable while iterating (external-service errors are
   // already handled in their own routes/services and won't reach here).
-  console.error('Uncaught exception', {
+  logger.error('Uncaught exception', {
     message: err.message,
     stack: err.stack,
   });
@@ -172,6 +177,9 @@ app.use(
   }),
 );
 
+// Per-request correlation ID — attach before any route so requestId is available everywhere
+app.use(requestIdMiddleware);
+
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -186,9 +194,40 @@ app.use('/api', limiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Health check
+// ---------------------------------------------------------------------------
+// Health probes
+// /health  — legacy (kept for backward compat)
+// /healthz — liveness: 200 if the process is up, nothing more
+// /readyz  — readiness: 200 when DB is reachable + reports integration status;
+//            503 when the DB is not reachable (or not configured)
+// ---------------------------------------------------------------------------
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+app.get('/healthz', (_req, res) => {
+  res.status(200).json({ status: 'alive', timestamp: new Date().toISOString() });
+});
+
+app.get('/readyz', async (_req, res) => {
+  const integrations = integrationStatus();
+  let dbReachable = false;
+  if (integrations.database) {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      dbReachable = true;
+    } catch {
+      dbReachable = false;
+    }
+  }
+
+  const ready = dbReachable;
+  res.status(ready ? 200 : 503).json({
+    status: ready ? 'ready' : 'not_ready',
+    db: dbReachable,
+    integrations,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // Integration status — lets the frontend show a clear "degraded mode" banner
@@ -219,6 +258,7 @@ app.use('/api/notifications', notificationsRouter);
 app.use('/api/support', supportRouter);
 app.use('/api/operator/cost-control', operatorCostControlRouter);
 app.use('/api/operator/go-live', operatorGoLiveRouter);
+app.use('/api/watchdog', watchdogRouter);
 
 // Sandboxed staging previews (public, guarded by an unguessable stageId).
 // Mounted outside `/api` so it bypasses the rate limiter — a single preview
@@ -240,20 +280,10 @@ if (fs.existsSync(clientDist)) {
   });
 }
 
-// Global error handler
-app.use(
-  (
-    err: Error,
-    _req: express.Request,
-    res: express.Response,
-    _next: express.NextFunction,
-  ) => {
-    logger.error('Unhandled error', { message: err.message, stack: err.stack });
-    res.status(500).json({ error: 'Internal server error' });
-  },
-);
+// Central error handler (must be last middleware — four-argument signature)
+app.use(centralErrorHandler);
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   logger.info(`Cherri Hosting API running on port ${PORT}`);
   // Start the PiRC2 recurring-billing loop. It self-skips when PiRC2 is not
   // configured, so it is always safe to start.
@@ -283,6 +313,45 @@ app.listen(PORT, () => {
   // lane being live, the provisioning capability, and the provider being reachable,
   // so it is always safe to start and stays inert today.
   startRailwayActionReconciler();
+  // Start the Cherri Watchdog uptime monitor. Self-skips when DB is absent.
+  const watchdogHandle = startWatchdog();
 });
+
+// ---------------------------------------------------------------------------
+// Graceful shutdown — SIGTERM / SIGINT
+//
+// Stop accepting new connections, drain in-flight requests, close the DB pool,
+// and clear all scheduler intervals so the process exits cleanly under a
+// deployment supervisor (Railway, Fly, systemd, etc.).
+// ---------------------------------------------------------------------------
+const schedulerHandles: Array<NodeJS.Timeout | ReturnType<typeof setInterval> | null> = [];
+
+// Expose a seam so the watchdog handle can be registered after it is created.
+// (startRailwayActionReconciler etc. manage their own intervals internally.)
+process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.once('SIGINT',  () => gracefulShutdown('SIGINT'));
+
+function gracefulShutdown(signal: string): void {
+  logger.info(`Received ${signal}. Initiating graceful shutdown…`);
+
+  // Stop accepting new connections.
+  server.close(async () => {
+    logger.info('HTTP server closed. Draining DB connections…');
+    // Clear any watchdog interval (registered lazily after listen).
+    schedulerHandles.forEach((h) => { if (h) clearInterval(h); });
+    // Close the Prisma connection pool.
+    await prisma.$disconnect().catch((err: unknown) => {
+      logger.error('Error disconnecting from database on shutdown', { error: err });
+    });
+    logger.info('Graceful shutdown complete.');
+    process.exit(0);
+  });
+
+  // Force-exit after 30 s if drain takes too long.
+  setTimeout(() => {
+    logger.warn('Graceful shutdown timed out. Force-exiting.');
+    process.exit(1);
+  }, 30_000).unref();
+}
 
 export default app;

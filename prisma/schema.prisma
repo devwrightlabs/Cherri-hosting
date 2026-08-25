@@ -89,6 +89,9 @@ model Deployment {
   projectId String
   project   Project  @relation(fields: [projectId], references: [id])
 
+  watchdogChecks   WatchdogCheck[]
+  watchdogIncidents WatchdogIncident[]
+
   @@index([projectId])
 }
 
@@ -565,4 +568,36 @@ model SupportTicketMessage {
   createdAt    DateTime      @default(now())
 
   @@index([ticketId, createdAt])
+}
+
+/// Watchdog: a single HTTP probe result for an ACTIVE deployment.
+model WatchdogCheck {
+  id             String     @id @default(uuid())
+  deploymentId   String
+  deployment     Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  /// up | down | degraded
+  status         String
+  /// HTTP status code returned by the site. Null on network error/timeout.
+  httpCode       Int?
+  /// Round-trip time in milliseconds (capped at probe timeout on failure).
+  responseTimeMs Int
+  checkedAt      DateTime   @default(now())
+
+  @@index([deploymentId, checkedAt])
+}
+
+/// Watchdog: an open/closed availability incident for a deployment.
+/// An incident opens when a check transitions from "up" to "down/degraded"
+/// and closes when the site returns to "up".
+model WatchdogIncident {
+  id           String     @id @default(uuid())
+  deploymentId String
+  deployment   Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  url          String
+  openedAt     DateTime   @default(now())
+  /// Null while the incident is open.
+  closedAt     DateTime?
+  reason       String
+
+  @@index([deploymentId, openedAt])
 }

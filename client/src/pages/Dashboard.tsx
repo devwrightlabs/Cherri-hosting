@@ -14,6 +14,7 @@ import { deploymentStatusLabel } from '../lib/statusLabels';
 import QuickDeploy from '../components/dashboard/QuickDeploy';
 import Pirc2Subscription from '../components/dashboard/Pirc2Subscription';
 import DomainGateway from '../components/dashboard/DomainGateway';
+import WatchdogWidget from '../components/dashboard/WatchdogWidget';
 import Spinner from '../components/ui/Spinner';
 import Skeleton from '../components/ui/Skeleton';
 import SystemStatusBanner from '../components/SystemStatusBanner';
@@ -166,6 +167,7 @@ export default function Dashboard() {
       {/* Subscription + domain features */}
       <Pirc2Subscription onChange={handleUpgradeSuccess} />
       <DomainGateway projects={projects} />
+      <WatchdogWidget />
 
       {/* Recent projects */}
       <section className="animate-fade-in" style={{ animationDelay: '150ms' }}>
