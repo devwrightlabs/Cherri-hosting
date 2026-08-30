@@ -1,6 +1,12 @@
 // prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
+  // Emit the client into the SERVER package (the only runtime consumer) so the
+  // built server (server/dist) always loads a client that matches this schema.
+  // Without this, `prisma generate` writes to the repo-root node_modules while
+  // the server resolves its own node_modules/.prisma/client — a stale copy that
+  // silently omits the newest models (e.g. Watchdog), making db.<model> throw.
+  output   = "../server/node_modules/.prisma/client"
 }
 
 datasource db {
