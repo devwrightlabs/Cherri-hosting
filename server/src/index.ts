@@ -21,6 +21,7 @@ import { notificationsRouter } from './routes/notifications';
 import { supportRouter } from './routes/support';
 import { operatorCostControlRouter } from './routes/operatorCostControl';
 import { operatorGoLiveRouter } from './routes/operatorGoLive';
+import domainsRouter from './routes/domains';
 import { logger } from './utils/logger';
 import { integrationStatus, isRailwayConfigured } from './utils/integrations';
 import { startBillingScheduler } from './services/billingScheduler';
@@ -259,11 +260,17 @@ app.use('/api/support', supportRouter);
 app.use('/api/operator/cost-control', operatorCostControlRouter);
 app.use('/api/operator/go-live', operatorGoLiveRouter);
 app.use('/api/watchdog', watchdogRouter);
+app.use('/api/domains', domainsRouter);
 
 // Sandboxed staging previews (public, guarded by an unguessable stageId).
 // Mounted outside `/api` so it bypasses the rate limiter — a single preview
 // pulls many asset requests — and registered before the SPA catch-all below.
 app.use('/preview', previewRouter);
+
+// Domain verification file endpoint
+app.get('/.well-known/verification.txt', (_req, res) => {
+  res.status(404).json({ error: 'Verification file not found at this path' });
+});
 
 // Serve built React client (production only — only when client/dist exists)
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
@@ -279,6 +286,14 @@ if (fs.existsSync(clientDist)) {
     res.status(404).json({ error: 'Route not found' });
   });
 }
+
+// Handle /.well-known/* requests (verification files from deployments)
+app.use('/.well-known', (req, res) => {
+  res.status(404).json({ 
+    error: `Verification file not found: ${req.path}`,
+    hint: 'Add verification.txt to your project root and redeploy'
+  });
+});
 
 // Central error handler (must be last middleware — four-argument signature)
 app.use(centralErrorHandler);
@@ -354,4 +369,4 @@ function gracefulShutdown(signal: string): void {
   }, 30_000).unref();
 }
 
-export default app;
+export default server;

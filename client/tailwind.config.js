@@ -5,46 +5,35 @@ export default {
     extend: {
       colors: {
         /**
-         * Devright Labs Governance Design System tokens.
-         * The palette key `cherry` is preserved so all existing utility
-         * classes (e.g. `text-cherry-400`, `bg-cherry-500`) continue to work
-         * without a codebase-wide rename; values now map to gold shades.
+         * NEW THEME: Cyan/Teal primary (#06B6D4), Deep Blue secondary (#0C4A6E)
+         * Dark mode surfaces with high contrast.
          */
-        cherry: {
-          50: '#fffef0',
-          100: '#fffbd0',
-          200: '#fff5a0',
-          300: '#ffec64',
-          400: '#F0C040', // primary gold — CTA buttons, active rings
-          500: '#d4a832', // hover gold
-          600: '#b88e20',
-          700: '#967415',
-          800: '#745a0d',
-          900: '#524007',
-          950: '#302503',
+        primary: {
+          DEFAULT: '#06B6D4', // Cyan - primary buttons, active states
+          light: '#22D3EE',   // Light cyan
+          dark: '#0891B2',    // Dark cyan
+          muted: '#06B6D4',   // Muted cyan
         },
-        /** Direct semantic alias — exact same values as cherry. */
-        accent: {
-          DEFAULT: '#F0C040',
-          50: '#fffef0',
-          100: '#fffbd0',
-          200: '#fff5a0',
-          300: '#ffec64',
-          400: '#F0C040',
-          500: '#d4a832',
-          600: '#b88e20',
-          700: '#967415',
-          800: '#745a0d',
-          900: '#524007',
-          950: '#302503',
+        secondary: {
+          DEFAULT: '#0C4A6E', // Deep Blue - secondary actions
+          light: '#1e40af',   // Light blue
+          dark: '#082f49',    // Dark blue
         },
         /**
-         * Semantic action token — maps to the primary gold accent (#F0C040).
-         * Use `text-gold`, `bg-gold`, `border-gold`, etc.
+         * Keep cherry/gold for backward compatibility but remap to primary.
          */
+        cherry: {
+          400: '#06B6D4',
+          500: '#0891B2',
+        },
+        accent: {
+          DEFAULT: '#06B6D4',
+          400: '#06B6D4',
+          500: '#0891B2',
+        },
         gold: {
-          DEFAULT: '#F0C040',
-          dim: '#b88e20', // pressed / disabled
+          DEFAULT: '#06B6D4',
+          dim: '#0891B2',
         },
         /** Live / success state (deploy is live, service connected). */
         live: {
@@ -58,12 +47,7 @@ export default {
         /** Hairline border token. */
         hairline: '#2a2f3a',
         /**
-         * Dark-premium surface scale — Devright Labs spec:
-         *   950 = --bg          #0A0A0F  (Obsidian — page background)
-         *   900 = --surface     #1A1A24  (cards, modals, sidebar headers)
-         *   800 = --surface-2   #22222E  (input / inner card)
-         *   700 = --border      #2A2F3A  (dividers)
-         *   600                 #373D4C  (strong dividers / inactive)
+         * Dark-premium surface scale.
          */
         surface: {
           DEFAULT: '#1A1A24',
@@ -82,24 +66,23 @@ export default {
       },
       backgroundImage: {
         /**
-         * Gold accent gradient — CTA buttons, brand highlights.
-         * Retained under all old key names for backward compat.
+         * NEW: Cyan/Teal gradients
          */
-        'cherry-gradient': 'linear-gradient(135deg, #FFD060 0%, #D4A832 100%)',
-        'accent-gradient': 'linear-gradient(135deg, #FFD060 0%, #D4A832 100%)',
-        'gold-gradient':   'linear-gradient(135deg, #FFD060 0%, #D4A832 100%)',
+        'cherry-gradient': 'linear-gradient(135deg, #06B6D4 0%, #0891B2 100%)',
+        'accent-gradient': 'linear-gradient(135deg, #06B6D4 0%, #0891B2 100%)',
+        'gold-gradient':   'linear-gradient(135deg, #06B6D4 0%, #0891B2 100%)',
         'dark-gradient':   'linear-gradient(180deg, #1A1A24 0%, #0A0A0F 100%)',
-        /** Hero splash gradient — gold → deep indigo. */
-        'hero-gradient':   'linear-gradient(135deg, #F0C040 0%, #5b5bd6 100%)',
+        /** Hero splash gradient — cyan → deep blue. */
+        'hero-gradient':   'linear-gradient(135deg, #06B6D4 0%, #0C4A6E 100%)',
       },
       boxShadow: {
-        gold:      '0 8px 28px -6px rgba(240, 192, 64, 0.45)',
-        'gold-sm': '0 3px 14px -4px rgba(240, 192, 64, 0.40)',
+        gold:      '0 8px 28px -6px rgba(6, 182, 212, 0.45)',
+        'gold-sm': '0 3px 14px -4px rgba(6, 182, 212, 0.40)',
         live:      '0 8px 28px -6px rgba(16, 185, 129, 0.40)',
         card:      '0 1px 2px rgba(0,0,0,0.6), 0 8px 24px -16px rgba(0,0,0,0.95)',
         sheet:     '0 -8px 40px -8px rgba(0,0,0,0.7)',
-        /** Focus ring glow for gold-active states. */
-        'gold-focus': '0 0 0 3px rgba(240, 192, 64, 0.35)',
+        /** Focus ring glow for cyan-active states. */
+        'gold-focus': '0 0 0 3px rgba(6, 182, 212, 0.35)',
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
@@ -138,11 +121,11 @@ export default {
           '100%': { transform: 'rotate(360deg)' },
         },
         glowPulse: {
-          '0%, 100%': { boxShadow: '0 0 12px rgba(240, 192, 64, 0.3)' },
-          '50%':      { boxShadow: '0 0 28px rgba(240, 192, 64, 0.6)' },
+          '0%, 100%': { boxShadow: '0 0 12px rgba(6, 182, 212, 0.3)' },
+          '50%':      { boxShadow: '0 0 28px rgba(6, 182, 212, 0.6)' },
         },
       },
     },
   },
-  plugins: [],
+  plugins: [require('tailwindcss-animate')],
 };
