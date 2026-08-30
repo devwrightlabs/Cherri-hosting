@@ -1,0 +1,70 @@
+{
+  "branch": "golive/real-deploy-proof-20260829",
+  "timestamp": "2026-08-29T23:54:46.725Z",
+  "auth": {
+    "user": {
+      "id": "91bb0267-3ca2-4e80-9729-ddddef169763",
+      "piUserId": "pioneer_test",
+      "username": "pioneer_test",
+      "tier": "FREE",
+      "storageUsed": "789",
+      "storageLimit": "524288000",
+      "createdAt": "2026-08-29T23:52:32.977Z",
+      "_count": {
+        "projects": 1
+      }
+    }
+  },
+  "project": {
+    "id": "2e440149-3610-43ca-9383-f0116e3ae20a",
+    "name": "golive-test-project"
+  },
+  "test1": {
+    "pass": true,
+    "cid": "bafybeicso4z74vsckqr3pndztwf32jqebpydi3cjmu2tdvkbrvzxmuhriy",
+    "url": "https://gateway.pinata.cloud/ipfs/bafybeicso4z74vsckqr3pndztwf32jqebpydi3cjmu2tdvkbrvzxmuhriy/index.html",
+    "verifiedUrl": "https://bafybeicso4z74vsckqr3pndztwf32jqebpydi3cjmu2tdvkbrvzxmuhriy.ipfs.w3s.link/index.html",
+    "pinataApiConfirmed": true,
+    "pinataApiEntry": {
+      "date_pinned": "2026-08-29T23:54:47.315Z",
+      "size": 789,
+      "number_of_files": 4,
+      "replicationCount": 1
+    },
+    "renderCheck": "https://bafybeicso4z74vsckqr3pndztwf32jqebpydi3cjmu2tdvkbrvzxmuhriy.ipfs.w3s.link/index.html → HTTP 200, unique string 'Cherri-Test1-1788047686771' present in HTML body",
+    "renderVerifiedManually": true,
+    "note": "gateway.pinata.cloud returns 403 for HTML (ERR_ID:00023 public gateway restriction). Content confirmed live via w3s.link subdomain gateway and pinata list API."
+  },
+  "test2": {
+    "pass": true,
+    "cid": "bafybeidhf3j5bpq7dkztfb36d35vz56qe5f5fdfresrtrwgily6k6yhr2e",
+    "url": "https://gateway.pinata.cloud/ipfs/bafybeidhf3j5bpq7dkztfb36d35vz56qe5f5fdfresrtrwgily6k6yhr2e/index.html",
+    "verifiedUrl": "https://bafybeidhf3j5bpq7dkztfb36d35vz56qe5f5fdfresrtrwgily6k6yhr2e.ipfs.dweb.link/index.html",
+    "pinataApiConfirmed": true,
+    "pinataApiEntry": {
+      "date_pinned": "2026-08-29T23:55:27.603Z",
+      "size": 143244,
+      "number_of_files": 3,
+      "replicationCount": 1
+    },
+    "buildLog": "REAL npm install + vite build: vite v5.4.21 building for production, 29 modules transformed, dist/index.html 0.22kB, dist/assets/index-BWnCBQPI.js 142.76kB, built in 921ms",
+    "renderCheck": "https://bafybeidhf3j5bpq7dkztfb36d35vz56qe5f5fdfresrtrwgily6k6yhr2e.ipfs.dweb.link/index.html → HTTP 200, <div id='root'> present + JS bundle script tag, SPA shell confirmed",
+    "renderVerifiedManually": true,
+    "note": "REAL server-side build: npm install + vite build ran in buildService. 143KB bundle. gateway.pinata.cloud 403 for HTML (expected). dweb.link confirmed 200 with SPA shell."
+  },
+  "test3": {
+    "pass": false,
+    "cid": null,
+    "url": null,
+    "renderCheck": null,
+    "note": "Test repo 'nickvdyck/webbundlr-sample' does not exist on GitHub. Corrected to 'mdn/beginner-html-site-styled' for future runs. Non-fatal best-effort test."
+  },
+  "pinsToUnpin": [
+    "bafybeicso4z74vsckqr3pndztwf32jqebpydi3cjmu2tdvkbrvzxmuhriy"
+  ],
+  "keepLivePin": {
+    "cid": "bafybeidhf3j5bpq7dkztfb36d35vz56qe5f5fdfresrtrwgily6k6yhr2e",
+    "url": "https://bafybeidhf3j5bpq7dkztfb36d35vz56qe5f5fdfresrtrwgily6k6yhr2e.ipfs.dweb.link/index.html",
+    "description": "Real Vite+React build — kept live as demo"
+  }
+}

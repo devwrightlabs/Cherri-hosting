@@ -1908,8 +1908,34 @@ deploymentsRouter.post(
         return;
       }
 
+      // ── Attestation gate (pre-deployment-create) ──────────────────────────
+      // Accept attestation payload from the pin request body. When the client
+      // sends { attestation: { agreed: true, termsVersion: '1.0.0' } } we stamp
+      // the deployment at creation so executePin's gate passes. This mirrors
+      // what the UI does (the checkbox is in the deploy dialog before the pin).
+      let attestationData: { attestationAcceptedAt: Date; attestedTermsVersion: string } | undefined;
+      const attestationPayload = (req.body as Record<string, unknown>)?.attestation;
+      if (attestationPayload) {
+        try {
+          const validated = validateAttestationPayload(attestationPayload);
+          attestationData = buildAttestationData();
+          logger.info('Attestation accepted at pin time', { userId: req.user!.id, termsVersion: validated.termsVersion });
+        } catch (attErr) {
+          releaseStage(stage.id);
+          res.status(400).json({ error: (attErr as Error).message });
+          return;
+        }
+      }
+
       const deployment = await prisma.deployment.create({
-        data: { projectId: stage.projectId, cid: '', gateway: '', size, status: 'PENDING' },
+        data: {
+          projectId: stage.projectId,
+          cid: '',
+          gateway: '',
+          size,
+          status: 'PENDING',
+          ...(attestationData ?? {}),
+        },
       });
 
       // executePin owns the stage lifecycle from here: delete on success,

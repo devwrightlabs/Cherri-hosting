@@ -3,6 +3,58 @@ import axios from 'axios';
 import { prisma } from '../utils/prismaClient';
 import { logger } from '../utils/logger';
 
+// ─── LOCAL TEST SEAM (dev-auth) ───────────────────────────────────────────────
+//
+// NEVER active in production. Requires BOTH:
+//   CHERRI_DEV_AUTH=1   AND   NODE_ENV !== 'production'
+//
+// Token format: "dev:<piUserId>:<username>"
+// Example:      "dev:pioneer_test:pioneer_test"
+//
+// This seam upserts/loads the user by piUserId and skips the api.minepi.com
+// call, enabling headless testing without a real Pi Browser session. There is
+// NO way to activate it in production — the dual guard makes that impossible.
+// ─────────────────────────────────────────────────────────────────────────────
+async function tryDevAuth(
+  req: AuthenticatedRequest,
+  token: string,
+): Promise<boolean> {
+  // HARD guards: both must be true or we refuse immediately.
+  if (process.env.CHERRI_DEV_AUTH !== '1') return false;
+  if (process.env.NODE_ENV === 'production') return false;
+
+  if (!token.startsWith('dev:')) return false;
+
+  const parts = token.split(':');
+  if (parts.length < 3) return false;
+
+  const [, piUserId, ...usernameParts] = parts;
+  const username = usernameParts.join(':');
+
+  if (!piUserId || !username) return false;
+
+  // Upsert the user so the seam is idempotent across test runs.
+  const user = await prisma.user.upsert({
+    where: { piUserId },
+    update: { username },
+    create: { piUserId, username },
+  });
+
+  req.user = {
+    id: user.id,
+    piUserId: user.piUserId,
+    username: user.username,
+    tier: user.tier,
+  };
+
+  logger.warn('[DEV-AUTH SEAM] Authenticated via dev token — NOT for production use', {
+    piUserId,
+    username,
+  });
+  return true;
+}
+
+
 export interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
@@ -30,6 +82,12 @@ export async function piAuthMiddleware(
   }
 
   const accessToken = authHeader.slice(7);
+
+  // ── Dev-auth seam (test only, dual-guarded, never reaches production) ──
+  if (process.env.CHERRI_DEV_AUTH === '1' && process.env.NODE_ENV !== 'production') {
+    const handled = await tryDevAuth(req, accessToken);
+    if (handled) { next(); return; }
+  }
 
   try {
     // Verify token with Pi Platform API
