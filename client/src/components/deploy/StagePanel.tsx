@@ -2,9 +2,7 @@ import { useState } from 'react';
 import Button from '../ui/Button';
 import {
   addStagePiSdk,
-  addStageValidationKey,
   extractDeployError,
-  isPlausibleValidationKey,
   type StageHelperResult,
   type StageResult,
 } from '../../api/deployApi';
@@ -25,8 +23,6 @@ interface StagePanelProps {
   onProceed?: () => void;
   /** Merge refreshed verification facts after a "Configure for Pi" helper runs. */
   onHelperUpdate?: (patch: Partial<StageResult>) => void;
-  /** Remember the pasted validation key for the post-deploy served-file check. */
-  onValidationKeySaved?: (key: string) => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -103,84 +99,6 @@ function PiSdkRow({ sdk }: { sdk: StageResult['sdk'] }) {
 }
 
 // ─── "Configure for Pi" helpers ───────────────────────────────────────────────
-
-/**
- * Paste-your-validation-key helper. Writes the key as validation-key.txt at
- * the staged site's root (exactly as pasted — no extra whitespace), then
- * re-flips the verification row. Advisory — never blocks a deploy.
- */
-function ValidationKeyHelper({
-  stageId,
-  onSaved,
-}: {
-  stageId: string;
-  onSaved: (key: string, facts: StageHelperResult) => void;
-}) {
-  const [key, setKey] = useState('');
-  const [error, setError] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-
-  const save = async () => {
-    const trimmed = key.trim();
-    if (!isPlausibleValidationKey(trimmed)) {
-      setError(
-        "That doesn't look like a Pi validation key. It should be one long unbroken string of letters and numbers (no spaces or line breaks) — copy the whole key from Pi's developer portal and paste it exactly.",
-      );
-      return;
-    }
-    setIsSaving(true);
-    setError('');
-    try {
-      const facts = await addStageValidationKey(stageId, trimmed);
-      onSaved(trimmed, facts);
-    } catch (err: unknown) {
-      setError(extractDeployError(err).message);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  return (
-    <div className="ml-7 mt-2 rounded-lg bg-surface-900 border border-hairline p-3">
-      <p className="text-xs font-medium text-ink">Have your key? Paste it here</p>
-      <p className="text-ink-mut text-[11px] mt-1 leading-relaxed">
-        Cherri will add it to this upload as <span className="font-mono">validation-key.txt</span>{' '}
-        at your site root — exactly as pasted, nothing added. Cherri can&rsquo;t check it&rsquo;s
-        the right key for your domain; only Pi&rsquo;s portal can confirm that.
-      </p>
-      <textarea
-        value={key}
-        onChange={(e) => {
-          setKey(e.target.value);
-          if (error) setError('');
-        }}
-        rows={2}
-        autoCapitalize="none"
-        autoCorrect="off"
-        spellCheck={false}
-        placeholder="Paste your validation key from Pi's developer portal"
-        className="mt-2 w-full min-h-[48px] bg-surface-950 border border-surface-600 rounded-lg px-3 py-2.5 text-ink text-xs font-mono placeholder:text-ink-mut placeholder:font-sans resize-y focus:outline-none focus:border-cherry-500/50 focus:ring-2 focus:ring-cherry-500 focus:ring-offset-2 focus:ring-offset-surface-950 transition-colors"
-      />
-      {error && <p className="text-red-400 text-xs mt-2 leading-relaxed">{error}</p>}
-      <Button
-        size="md"
-        className="w-full justify-center mt-2"
-        disabled={key.trim().length === 0}
-        isLoading={isSaving}
-        onClick={() => void save()}
-      >
-        Add key to this upload
-      </Button>
-      <button
-        type="button"
-        onClick={() => openExternal(PI_DEVELOPER_PORTAL_URL)}
-        className="mt-2 w-full min-h-[44px] text-xs text-cherry-300 underline underline-offset-2"
-      >
-        Get a key in Pi&rsquo;s developer portal (opens in Pi Browser) ↗
-      </button>
-    </div>
-  );
-}
 
 /**
  * One-tap Pi SDK helper. Detect-before-inject is enforced server-side: if the
@@ -292,7 +210,15 @@ function PiSdkHelper({
 function PiSetupChecklist() {
   const steps = [
     <>
-      Register your app in{' '}
+      Using Pi login or payments? Make sure the <span className="text-ink">Pi SDK</span> is in
+      your app — add it below with one tap if it isn&rsquo;t.
+    </>,
+    <>
+      Deploy in step 2 to publish your site to IPFS. You&rsquo;ll get a working{' '}
+      <span className="text-ink">.pie gateway link</span>.
+    </>,
+    <>
+      Take that link to{' '}
       <button
         type="button"
         onClick={() => openExternal(PI_DEVELOPER_PORTAL_URL)}
@@ -300,20 +226,7 @@ function PiSetupChecklist() {
       >
         Pi&rsquo;s developer portal
       </button>{' '}
-      (the link opens in Pi Browser).
-    </>,
-    <>
-      Copy the <span className="text-ink">validation key</span> Pi gives you and paste it above —
-      Cherri serves it at <span className="font-mono">/validation-key.txt</span> so Pi can verify
-      your site.
-    </>,
-    <>
-      Using Pi login or payments? Make sure the <span className="text-ink">Pi SDK</span> is in
-      your app — add it above with one tap if it isn&rsquo;t.
-    </>,
-    <>
-      Deploy in step 2, then finish <span className="text-ink">.pi domain verification</span> in
-      Pi&rsquo;s portal — that last step happens on Pi&rsquo;s side, not in Cherri.
+      and finish your app verification there — that last step happens on Pi&rsquo;s side.
     </>,
   ];
   return (
@@ -342,7 +255,6 @@ export default function StagePanel({
   onCancel,
   onProceed,
   onHelperUpdate,
-  onValidationKeySaved,
 }: StagePanelProps) {
   // Bumped after a helper mutates the stage so the sandboxed preview iframe
   // reloads and shows the change (the preview is served with no-store).
@@ -415,7 +327,6 @@ export default function StagePanel({
 
   const applyFacts = (facts: StageHelperResult) => {
     onHelperUpdate?.({
-      hasValidationKey: facts.hasValidationKey,
       sdk: facts.sdk,
       fileCount: facts.fileCount,
       totalBytes: facts.totalBytes,
@@ -434,27 +345,6 @@ export default function StagePanel({
           okText="Build succeeded — your site is a deployable static bundle"
           warnText=""
         />
-        <div>
-          <CheckRow
-            ok={!!result.hasValidationKey}
-            okText="Pi validation key found (validation-key.txt)"
-            warnText="No validation-key.txt at your site root"
-            detail={
-              result.hasValidationKey
-                ? undefined
-                : 'Pi Network needs this file to verify .pi domain ownership. You can still deploy now and add it later — your .pi domain just won’t verify until it’s present.'
-            }
-          />
-          {!result.hasValidationKey && result.stageId && (
-            <ValidationKeyHelper
-              stageId={result.stageId}
-              onSaved={(key, facts) => {
-                onValidationKeySaved?.(key);
-                applyFacts(facts);
-              }}
-            />
-          )}
-        </div>
         <div>
           <PiSdkRow sdk={result.sdk} />
           {result.stageId && (

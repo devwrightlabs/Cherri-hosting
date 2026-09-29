@@ -118,7 +118,7 @@ test('mutateStage is rejected while a pin is in flight, succeeds after release',
   // Mid-pin: mutation must be refused so the pin only sees quota-checked files.
   const denied = mutateStage(s.id, USER, (stage) => {
     stage.files.push({
-      path: 'validation-key.txt',
+      path: 'extra-file.txt',
       buffer: Buffer.from('should-not-be-added'),
       mimeType: 'text/plain',
     });
@@ -131,7 +131,7 @@ test('mutateStage is rejected while a pin is in flight, succeeds after release',
   releaseStage(s.id);
   const allowed = mutateStage(s.id, USER, (stage) => {
     stage.files.push({
-      path: 'validation-key.txt',
+      path: 'extra-file.txt',
       buffer: Buffer.from('0123456789'),
       mimeType: 'text/plain',
     });

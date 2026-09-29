@@ -500,20 +500,6 @@ export function scanPiSdk(files: DeployFile[]): PiSdkScan {
 
   return { scriptDetected, initDetected, ready: scriptDetected && initDetected };
 }
-
-/**
- * Pi Network verifies `.pi` domain ownership by fetching a `validation-key.txt`
- * file from the site root. This check is advisory only — it never blocks a
- * preview or a deploy — but the UI surfaces a warning when the file is missing
- * so the user knows their `.pi` domain won't verify until they add it.
- *
- * `files` here are the deployable files with their root prefix already stripped,
- * so "served root" means a path with no slash: exactly `validation-key.txt`.
- */
-export function hasValidationKey(files: DeployFile[]): boolean {
-  return files.some((f) => f.path === 'validation-key.txt');
-}
-
 /**
  * Plausibility check for a Pi domain validation key. Pi's exact key format is
  * not publicly specified, so this is deliberately lenient — one long unbroken
@@ -521,10 +507,6 @@ export function hasValidationKey(files: DeployFile[]): boolean {
  * (sentences, URLs, empty strings, pasted HTML). Callers must trim first.
  */
 const VALIDATION_KEY_RE = /^[A-Za-z0-9_-]{20,512}$/;
-
-export function isPlausibleValidationKey(key: string): boolean {
-  return VALIDATION_KEY_RE.test(key);
-}
 
 /**
  * Inject the Pi SDK <script> + Pi.init call into a built HTML document's head.

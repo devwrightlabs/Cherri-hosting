@@ -40,8 +40,7 @@ import {
   detectMonorepo,
   resolveDeployable,
   scanPiSdk,
-  hasValidationKey,
-  isPlausibleValidationKey,
+
   injectPiSdkIntoHtml,
   shouldIgnoreFile,
   UploadTooLargeError,
@@ -236,7 +235,6 @@ async function respondBuildOrStage(
         .slice(0, 50)
         .map((f) => ({ path: f.path, size: f.buffer.length })),
       sdk,
-      hasValidationKey: hasValidationKey(resolution.files),
       needsBackend: backend.needsBackend,
       backendEligible,
       previewPath: `/preview/${stage.id}/`,
@@ -351,8 +349,7 @@ async function respondBuildOrStage(
         projectType: resolved.projectType,
         fileCount: resolved.files.length,
         totalBytes: deployBytes,
-        sdk,
-        hasValidationKey: hasValidationKey(resolved.files),
+        sdk
       },
     };
   };
@@ -973,7 +970,6 @@ deploymentsRouter.post(
           .slice(0, 50)
           .map((f) => ({ path: f.path, size: f.buffer.length })),
         sdk,
-        hasValidationKey: hasValidationKey(resolution.files),
         previewPath: `/preview/${stage.id}/`,
       });
     } catch (err) {
@@ -1636,56 +1632,6 @@ deploymentsRouter.get(
 const VALIDATION_KEY_FORMAT_MESSAGE =
   "That doesn't look like a Pi validation key. It should be one long unbroken string of letters and numbers (no spaces or line breaks) — copy the whole key from Pi's developer portal and paste it exactly.";
 
-/**
- * POST /api/deployments/stages/:stageId/validation-key — write the pasted Pi
- * validation key as `validation-key.txt` at the staged site's served root
- * (exact bytes: UTF-8, no BOM, no trailing newline). Replaces any existing
- * validation-key.txt. Advisory helper — never blocks a deploy.
- */
-deploymentsRouter.post(
-  '/stages/:stageId/validation-key',
-  (req: AuthenticatedRequest, res: Response): void => {
-    const stageId = getRouteParam(req.params.stageId);
-    const parsed = z.object({ key: z.string() }).safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: 'Paste your validation key first.' });
-      return;
-    }
-    const key = parsed.data.key.trim();
-    if (!isPlausibleValidationKey(key)) {
-      res.status(400).json({ error: VALIDATION_KEY_FORMAT_MESSAGE });
-      return;
-    }
-
-    const result = mutateStage(stageId, req.user!.id, (stage) => {
-      // Exact bytes at the served root — Pi fetches <site>/validation-key.txt
-      // and compares content, so no BOM, no whitespace, no trailing newline.
-      stage.files = stage.files.filter((f) => f.path !== 'validation-key.txt');
-      stage.files.push({
-        path: 'validation-key.txt',
-        buffer: Buffer.from(key, 'utf8'),
-        mimeType: 'text/plain',
-      });
-    });
-
-    if (!result.ok) {
-      if (result.reason === 'pinning') {
-        res.status(409).json({ error: 'This upload is already being deployed — the key can’t be added now.' });
-      } else {
-        res.status(404).json({ error: 'Staged upload not found or expired. Please upload again.' });
-      }
-      return;
-    }
-
-    logger.info('Validation key added to stage', { stageId });
-    res.json({
-      hasValidationKey: hasValidationKey(result.stage.files),
-      sdk: scanPiSdk(result.stage.files),
-      fileCount: result.stage.files.length,
-      totalBytes: result.stage.totalBytes,
-    });
-  },
-);
 
 /**
  * POST /api/deployments/stages/:stageId/pi-sdk — inject the Pi SDK script tag
@@ -1753,103 +1699,6 @@ deploymentsRouter.post(
   },
 );
 
-/**
- * GET /api/deployments/:deploymentId/validation-key-check — REAL post-deploy
- * confirmation that `<site>/validation-key.txt` is actually served by the
- * gateway, optionally comparing its content to `?expected=<key>` (the key the
- * user pasted this session — the stage is gone after pinning, so the client
- * supplies it; without it we honestly report reachability only).
- *
- * Same 3-state honesty as the domain-target check: served / not served /
- * indeterminate (rate-limit or network failure ≠ "down").
- */
-deploymentsRouter.get(
-  '/:deploymentId/validation-key-check',
-  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    const deploymentId = getRouteParam(req.params.deploymentId);
-    try {
-      const deployment = await prisma.deployment.findFirst({
-        where: { id: deploymentId, project: { userId: req.user!.id } },
-      });
-      if (!deployment) {
-        res.status(404).json({ error: 'Deployment not found' });
-        return;
-      }
-      if (!deployment.cid) {
-        res.status(409).json({
-          error: 'This deployment has no IPFS content yet. Deploy it to IPFS first.',
-        });
-        return;
-      }
-
-      const base = (deployment.gateway || `https://gateway.pinata.cloud/ipfs/${deployment.cid}`)
-        .replace(/\/+$/, '');
-      const keyUrl = `${base}/validation-key.txt`;
-
-      const rawExpected = typeof req.query.expected === 'string' ? req.query.expected.trim() : '';
-      const expected = isPlausibleValidationKey(rawExpected) ? rawExpected : null;
-
-      let served = false;
-      let indeterminate = false;
-      let status: number | null = null;
-      let reason: string | undefined;
-      let matches: boolean | null = null;
-
-      try {
-        const resp = await fetch(keyUrl, {
-          method: 'GET',
-          redirect: 'follow',
-          headers: { 'User-Agent': 'Cherri-Hosting' },
-          signal: AbortSignal.timeout(20_000),
-        });
-        status = resp.status;
-        if (resp.ok) {
-          served = true;
-          if (expected) {
-            // Strip a BOM + surrounding whitespace before comparing — gateways
-            // serve the exact pinned bytes, but the user's own hand-made file
-            // may have an editor-added BOM/newline; content equality is what
-            // Pi's verifier cares about.
-            const body = (await resp.text()).replace(/^\uFEFF/, '').trim();
-            matches = body === expected;
-          } else {
-            await resp.body?.cancel().catch(() => undefined);
-          }
-        } else {
-          await resp.body?.cancel().catch(() => undefined);
-          if (resp.status === 429) {
-            indeterminate = true;
-            reason =
-              'The public IPFS gateway is rate-limiting verification right now — the file may already be live. Try again in a moment.';
-          } else if (resp.status === 404) {
-            reason =
-              'The gateway answered but has no validation-key.txt at your site root — this deployment was published without one.';
-          } else {
-            reason = `Gateway returned HTTP ${resp.status}.`;
-          }
-        }
-      } catch {
-        indeterminate = true;
-        reason =
-          'Could not reach the IPFS gateway to verify — it may still be propagating. Try again shortly.';
-      }
-
-      res.json({
-        url: keyUrl,
-        served,
-        indeterminate,
-        status,
-        reason,
-        // null = we had no expected key to compare against (reachability only).
-        matches,
-        checkedAt: new Date().toISOString(),
-      });
-    } catch (err) {
-      logger.error('Failed to check validation key', { error: err });
-      res.status(500).json({ error: 'Failed to verify the validation key.' });
-    }
-  },
-);
 
 /**
  * POST /api/deployments/:stageId/pin — pin a previously staged upload to IPFS.

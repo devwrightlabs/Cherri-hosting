@@ -5,7 +5,7 @@ import DropZone from '../components/deploy/DropZone';
 import DeployReveal from '../components/deploy/DeployReveal';
 import StagePanel from '../components/deploy/StagePanel';
 import DeployDomainPanel from '../components/deploy/DeployDomainPanel';
-import ValidationKeyLiveCheck from '../components/deploy/ValidationKeyLiveCheck';
+
 import BuildLogPanel from '../components/deploy/BuildLogPanel';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
@@ -142,10 +142,7 @@ export default function Deploy() {
   const [isResuming, setIsResuming] = useState(false);
 
   // The validation key pasted via the Stage 1 helper THIS session — kept so the
-  // post-deploy check can confirm the live site serves exactly what was pasted.
-  // (The staged upload is gone after pinning, so the client is the only place
-  // that still knows the expected value.)
-  const [pastedKey, setPastedKey] = useState<string | null>(null);
+
 
   // Stage 2 — pinning (the reveal sequence)
   const [isPinning, setIsPinning] = useState(false);
@@ -243,7 +240,7 @@ export default function Deploy() {
             totalBytes: info.stage.totalBytes,
             fileTree: [],
             sdk: info.stage.sdk,
-            hasValidationKey: info.stage.hasValidationKey,
+
             previewPath: info.stage.previewPath,
           });
           // Keep the persisted record until the stage is consumed (pin/reset) so
@@ -426,9 +423,7 @@ export default function Deploy() {
     setStageProgress(0);
     setDeployError(null);
     setBuildInfo(null);
-    setIsResuming(false);
-    setPastedKey(null);
-    if (buildPollRef.current !== null) clearTimeout(buildPollRef.current);
+    setIsResuming(false);    if (buildPollRef.current !== null) clearTimeout(buildPollRef.current);
   };
 
   // Full reset — clear files and start over.
@@ -445,9 +440,7 @@ export default function Deploy() {
     setDeployError(null);
     setDeployStartedAt(null);
     setBuildInfo(null);
-    setIsResuming(false);
-    setPastedKey(null);
-    if (buildPollRef.current !== null) clearTimeout(buildPollRef.current);
+    setIsResuming(false);    if (buildPollRef.current !== null) clearTimeout(buildPollRef.current);
   };
 
   // ── Derived flow state ───────────────────────────────────────────────────────
@@ -567,12 +560,7 @@ export default function Deploy() {
                   <span className="text-ink-mut">· {formatBytes(stageResult.totalBytes)}</span>
                 </span>
               </div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-ink-mut">Pi validation key</span>
-                <span className={stageResult.hasValidationKey ? 'text-live' : 'text-amber-400'}>
-                  {stageResult.hasValidationKey ? '✓ Present' : '⚠ Missing'}
-                </span>
-              </div>
+
             </div>
           </div>
         )}
@@ -587,7 +575,6 @@ export default function Deploy() {
             onHelperUpdate={(patch) =>
               setStageResult((prev) => (prev ? { ...prev, ...patch } : prev))
             }
-            onValidationKeySaved={setPastedKey}
           />
         )}
 
@@ -726,13 +713,6 @@ export default function Deploy() {
               onReset={reset}
               customDomain={projects.find((p) => p.id === selectedProjectId)?.customDomain}
             />
-
-            {deploymentStatus === 'ACTIVE' && liveDeployment && stageResult?.hasValidationKey && (
-              <ValidationKeyLiveCheck
-                deploymentId={liveDeployment.id}
-                expectedKey={pastedKey}
-              />
-            )}
 
             {deploymentStatus === 'ACTIVE' && liveDeployment && (
               <DeployDomainPanel deployment={liveDeployment} />

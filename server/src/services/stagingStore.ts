@@ -109,12 +109,12 @@ export type MutateResult =
   | { ok: false; reason: 'not_found' | 'pinning' };
 
 /**
- * Atomically mutate a staged upload's files (e.g. add validation-key.txt or
- * inject the Pi SDK) BEFORE it is pinned. Mirrors claimStage's atomicity:
- * ownership + pinning are checked and the mutation applied synchronously with
- * no awaits in between, so a concurrent /pin cannot interleave. The mutation
- * callback MUST be synchronous. totalBytes is recomputed after the mutation so
- * quota checks at pin time stay accurate.
+ * Atomically mutate a staged upload's files (e.g. inject the Pi SDK) BEFORE it
+ * is pinned. Mirrors claimStage's atomicity: ownership + pinning are checked
+ * and the mutation applied synchronously with no awaits in between, so a
+ * concurrent /pin cannot interleave. The mutation callback MUST be synchronous.
+ * totalBytes is recomputed after the mutation so quota checks at pin time stay
+ * accurate.
  */
 export function mutateStage(
   id: string,
