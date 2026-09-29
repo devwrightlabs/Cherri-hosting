@@ -168,8 +168,19 @@ app.use(
     origin: (origin, cb) => {
       // Allow same-origin requests (origin undefined) and listed origins
       if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
-      // Also allow any *.replit.app or *.minepi.com production domain
-      if (/\.replit\.app$/.test(origin) || /\.minepi\.com$/.test(origin)) {
+      // Also allow any *.replit.app, *.minepi.com, or *.up.railway.app
+      // production domain. Without the Railway pattern, Vite's default
+      // `crossorigin` attribute on the built module script/style tags put
+      // same-origin asset requests into CORS mode; this handler then threw
+      // for the app's own Railway domain, which Express turned into a 500 —
+      // blocking the JS/CSS bundle and leaving the page blank. Confirmed
+      // 2026-09-29 via real-browser network/console logs against
+      // cherri-hosting-production.up.railway.app.
+      if (
+        /\.replit\.app$/.test(origin) ||
+        /\.minepi\.com$/.test(origin) ||
+        /\.up\.railway\.app$/.test(origin)
+      ) {
         return cb(null, true);
       }
       cb(new Error(`CORS: origin ${origin} not allowed`));
