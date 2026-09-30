@@ -10,6 +10,11 @@
     <meta name="theme-color" content="#0F1117" />
     <meta name="description" content="Deploy to the permanent web. Upload your site, get an IPFS URL in seconds, pay with Pi." />
     <title>Cherri Hosting · Deploy to the permanent web</title>
+    <!-- Foundation Pi SDK — must load before any window.Pi.* call. Loaded
+         statically here (not injected via JS) so window.Pi exists as early as
+         possible; PiSDKProvider still awaits Pi.init() before treating the
+         SDK as ready. -->
+    <script src="https://sdk.minepi.com/pi-sdk.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

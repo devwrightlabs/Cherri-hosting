@@ -64,9 +64,21 @@ export interface AuthenticatedRequest extends Request {
   };
 }
 
-interface PiMeResponse {
-  uid: string;
-  username: string;
+// App Studio checks the accessToken against the Pi Platform on our behalf and
+// returns the *only* identity this app may trust. We must never call the Pi
+// Platform's own /v2/me directly to authenticate a user, and never trust a
+// uid/username supplied by the client itself (request body/query/header) —
+// only what this verified exchange returns.
+// Ref: https://pi-apps.github.io/pi-sdk-docs/quick-start/genai/Authentication
+const APP_STUDIO_LOGIN_URL =
+  'https://backend.appstudio-u7cm9zhmha0ruwv8.piappengine.com/pi/auth/v1/login';
+
+interface AppStudioLoginResponse {
+  sessionToken: string;
+  user: {
+    uid: string;
+    username: string;
+  };
 }
 
 export async function piAuthMiddleware(
@@ -90,16 +102,22 @@ export async function piAuthMiddleware(
   }
 
   try {
-    // Verify token with Pi Platform API
-    const piResponse = await axios.get<PiMeResponse>(
-      'https://api.minepi.com/v2/me',
+    // Exchange the client's Pi accessToken for a verified identity via App
+    // Studio. App Studio checks the token against the Pi Platform itself, so
+    // the uid/username it returns are the only identity this app may trust —
+    // every downstream authorization decision (req.user.id/.tier/etc.) flows
+    // from our own DB record keyed off this verified uid, never from a
+    // client-supplied value. Do not call api.minepi.com/v2/me directly here.
+    const appStudioResponse = await axios.post<AppStudioLoginResponse>(
+      APP_STUDIO_LOGIN_URL,
+      { accessToken },
       {
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers: { 'Content-Type': 'application/json' },
         timeout: 8000,
       },
     );
 
-    const { uid, username } = piResponse.data;
+    const { uid, username } = appStudioResponse.data.user;
 
     // Find or create user
     let user = await prisma.user.findUnique({ where: { piUserId: uid } });

@@ -27,6 +27,16 @@ const MAX_RETRY_DELAY_MS = 30_000;
 
 function loadPiSDKScript(): Promise<void> {
   return new Promise((resolve, reject) => {
+    // Fast path: client/index.html loads the foundation SDK statically in
+    // <head> (a real <script> tag in the served HTML, not JS-injected) so
+    // window.Pi is normally already present by the time this runs. Only fall
+    // back to dynamic injection/retry below for the rare case it hasn't
+    // finished loading yet (slow network, flaky Pi Browser webview).
+    if (window.Pi) {
+      resolve();
+      return;
+    }
+
     const existing = document.getElementById('pi-sdk-script');
     if (existing) {
       if (window.Pi) {
