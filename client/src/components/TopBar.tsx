@@ -1,7 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import LogoMark from './ui/LogoMark';
-import EnvToggle from './EnvToggle';
 import NotificationBell from './NotificationBell';
 import { usePiEnv } from '../lib/piEnv';
 import { useAuth } from '../providers/AuthProvider';
@@ -12,8 +11,8 @@ interface TopBarProps {
 }
 
 /**
- * Sticky top bar: brand mark + TESTNET badge left, notification bell + TEST|LIVE toggle right.
- * z-50 + relative ensures it stays above the env-switch confirm sheet (z-40).
+ * Sticky top bar: brand mark + testnet indicator left, notification bell right.
+ * z-50 + relative keeps it above sheet overlays (z-40).
  */
 export default function TopBar({ right, title }: TopBarProps) {
   const env = usePiEnv();
@@ -35,7 +34,6 @@ export default function TopBar({ right, title }: TopBarProps) {
         <div className="ml-auto flex items-center gap-2">
           {right}
           {isAuthenticated && <NotificationBell />}
-          <EnvToggle />
         </div>
       </div>
     </header>

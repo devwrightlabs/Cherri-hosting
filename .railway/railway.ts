@@ -8,7 +8,16 @@ export default defineRailway(() => {
     source: github("devwrightlabs/Cherri-hosting", { checkSuites: false }),
     replicas: { "us-west2": 1 },
     networking: { privateNetworkEndpoint: "cherri-hosting" },
-    env: { DATABASE_URL: preserve(), JWT_SECRET: preserve(), NODE_ENV: preserve(), PINATA_DEDICATED_GATEWAY: preserve(), PINATA_JWT: preserve(), PI_API_KEY: preserve(), PI_APP_ID: preserve(), SUPABASE_ANON_KEY: preserve(), SUPABASE_SERVICE_ROLE_KEY: preserve(), SUPABASE_URL: preserve() },
+    env: {
+      DATABASE_URL: preserve(), JWT_SECRET: preserve(), NODE_ENV: preserve(), PINATA_DEDICATED_GATEWAY: preserve(), PINATA_JWT: preserve(), PI_API_KEY: preserve(), PI_APP_ID: preserve(), SUPABASE_ANON_KEY: preserve(), SUPABASE_SERVICE_ROLE_KEY: preserve(), SUPABASE_URL: preserve(),
+      // FIX (2026-09-30): every Pi payment/upgrade attempt was failing
+      // ("Pi pricing is briefly unavailable") because billing's live Pi/USD
+      // price source (server/src/services/piPriceService.ts) was never
+      // configured — it deliberately refuses to invent a price (honest 503)
+      // rather than fall back to a guess. Both listed providers are public,
+      // no API key needed; failover order matters (first is primary).
+      PI_PRICE_SOURCE: "coingecko,bitget",
+    },
     // FIX (2026-09-29): Railpack builds from the repo root and the root
     // package.json has no scripts/main, so it can never detect a start
     // command — every deploy since 2026-08-27 failed at the prepare step

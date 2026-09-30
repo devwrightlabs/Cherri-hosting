@@ -159,7 +159,7 @@ const FAQ = [
   },
   {
     q: 'Can I use a custom domain?',
-    a: "Domains are acquired through Pi Network's official domain auction — Cherri does not sell domains. Once you own a Pi domain, any paid tier lets you map it to your deployment.",
+    a: "Pi Network's domain auction is closed and isn't accepting new registrations. If you already won a .pi domain before it closed, any paid tier lets you map it to your deployment. Everyone else gets a permanent Cherri-hosted link that works on its own — paste it straight into the Pi Developer Portal, no domain required.",
   },
   {
     q: 'What if I exceed my storage?',

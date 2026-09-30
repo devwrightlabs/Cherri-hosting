@@ -12,7 +12,6 @@ import StorageBar from '../components/dashboard/StorageBar';
 import DeploymentCard from '../components/dashboard/DeploymentCard';
 import { deploymentStatusLabel } from '../lib/statusLabels';
 import QuickDeploy from '../components/dashboard/QuickDeploy';
-import Pirc2Subscription from '../components/dashboard/Pirc2Subscription';
 import DomainGateway from '../components/dashboard/DomainGateway';
 import WatchdogWidget from '../components/dashboard/WatchdogWidget';
 import Spinner from '../components/ui/Spinner';
@@ -43,7 +42,7 @@ function statusDotColor(status?: string): string {
 }
 
 export default function Dashboard() {
-  const { user, refreshUser } = useAuth();
+  const { user } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [projectsError, setProjectsError] = useState('');
@@ -66,11 +65,6 @@ export default function Dashboard() {
   useEffect(() => {
     loadProjects();
   }, [loadProjects]);
-
-  const handleUpgradeSuccess = useCallback(async () => {
-    await refreshUser();
-    loadProjects();
-  }, [refreshUser, loadProjects]);
 
   const allDeployments: Deployment[] = projects
     .flatMap((p) => p.deployments ?? [])
@@ -165,7 +159,6 @@ export default function Dashboard() {
       </section>
 
       {/* Subscription + domain features */}
-      <Pirc2Subscription onChange={handleUpgradeSuccess} />
       <DomainGateway projects={projects} />
       <WatchdogWidget />
 

@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import Card from '../ui/Card';
 import Button from '../ui/Button';
-import { PI_DOMAIN_PORTAL_URL } from '../../lib/constants';
-import { openExternal } from '../../lib/openExternal';
 import { projectsApi, deploymentsApi, DomainTarget } from '../../lib/api';
 import { Project } from '../../types';
 import { useAuth } from '../../providers/AuthProvider';
@@ -145,36 +143,18 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
     <Card>
       <div className="flex items-center gap-2 mb-1">
         <span className="text-lg">🌐</span>
-        <h2 className="text-sm font-semibold text-ink">Connect a Pi domain</h2>
+        <h2 className="text-sm font-semibold text-ink">Your hosted link</h2>
       </div>
       <p className="text-surface-500 text-xs leading-relaxed mb-4">
-        Take your site to a <span className="font-mono">.pi</span> address in three steps.
-        Pi Network controls <span className="font-mono">.pi</span> domains, so the final
-        link-up happens in Pi's domain portal — not here.
+        This address is your site, live and hosted by Cherri. It already works on its own —
+        paste it straight into the Pi Developer Portal to register your app, no{' '}
+        <span className="font-mono">.pi</span> domain required.
       </p>
 
-      {/* Step 1 — Win a domain at Pi's auction */}
+      {/* Copy your site's live address */}
       <div className="mb-4">
         <p className="text-xs font-medium text-ink-mut uppercase tracking-wider mb-2">
-          Step 1 — Win your domain
-        </p>
-        <p className="text-surface-400 text-xs leading-relaxed mb-3">
-          Domains are bought at Pi Network's official auction — Cherri doesn't sell them.
-        </p>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="w-full justify-center"
-          onClick={() => openExternal(PI_DOMAIN_PORTAL_URL)}
-        >
-          Browse domain auctions on Pi →
-        </Button>
-      </div>
-
-      {/* Step 2 — Copy your site's live address */}
-      <div className="border-t border-surface-700/40 pt-4 mb-4">
-        <p className="text-xs font-medium text-ink-mut uppercase tracking-wider mb-2">
-          Step 2 — Copy your site address
+          Copy your site address
         </p>
         <p className="text-surface-400 text-xs leading-relaxed mb-3">
           Pick the project you want on your domain, then copy its deployment address.
@@ -322,26 +302,20 @@ export default function DomainGateway({ projects }: DomainGatewayProps) {
         )}
       </div>
 
-      {/* Step 3 — Point the domain in Pi's portal (manual, Pi-controlled) */}
+      {/* Already own a .pi domain? (Pi's auction is closed — no new domains,
+          no known working portal link to send people to; just the raw value
+          they need, applied wherever they already manage that domain.) */}
       <div className="border-t border-surface-700/40 pt-4 mb-4">
         <p className="text-xs font-medium text-ink-mut uppercase tracking-wider mb-2">
-          Step 3 — Point it in Pi's portal
+          Already own a .pi domain?
         </p>
-        <p className="text-surface-400 text-xs leading-relaxed mb-3">
-          Open your domain in Pi's portal and use the address from step 2 as its target,
-          following Pi's instructions there. Cherri serves your site over HTTPS at that
-          address; how a <span className="font-mono">.pi</span> domain resolves to it — and any{' '}
-          <span className="font-mono">.pi</span> certificate — is controlled by Pi Network, not
-          Cherri.
+        <p className="text-surface-400 text-xs leading-relaxed">
+          Pi's domain auction is closed and isn't accepting new registrations. If you already
+          won a <span className="font-mono">.pi</span> domain before it closed, use the DNSLink
+          value above (after verifying) wherever you manage that domain today — Cherri serves
+          your site over HTTPS at the address above; how a <span className="font-mono">.pi</span>{' '}
+          domain resolves to it is controlled by Pi Network, not Cherri.
         </p>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="w-full justify-center"
-          onClick={() => openExternal(PI_DOMAIN_PORTAL_URL)}
-        >
-          Open Pi domain portal →
-        </Button>
       </div>
 
       {/* Optional — record the domain on the project for your dashboard */}
